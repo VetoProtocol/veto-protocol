@@ -10,11 +10,16 @@ export const MIGRATIONS_DIR = path.join(
 );
 
 export function loadEnv(): void {
+  // The app .env sets NODE_ENV=development. Letting it overwrite vitest's
+  // NODE_ENV=test would disable the test-only guard in the Permit fake, so
+  // preserve whatever the runner chose.
+  const runnerEnv = process.env['NODE_ENV'];
   try {
     process.loadEnvFile(path.join(MIGRATIONS_DIR, '..', '..', '..', '.env'));
   } catch {
     /* already present in the environment */
   }
+  if (runnerEnv !== undefined) process.env['NODE_ENV'] = runnerEnv;
 }
 
 export function testPool(): Pool {
