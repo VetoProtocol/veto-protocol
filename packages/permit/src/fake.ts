@@ -12,6 +12,7 @@
  *     is Permit's job and is not simulated here.
  */
 
+import { delegatorFact } from './model.ts';
 import { PolicyUnavailableError, type AgentFact, type PolicyFacts } from './port.ts';
 
 export interface FakePolicyFacts extends PolicyFacts {
@@ -48,7 +49,9 @@ export function createFakePolicyFacts(): FakePolicyFacts {
   return {
     async syncAgent(fact: AgentFact): Promise<void> {
       failIfBroken('syncAgent');
-      keyFor(fact.workspaceId).add(`agent:${fact.agentId}#owner=${fact.ownerUserId}`);
+      // Shared with the real adapter so a test asserting a fact string here is
+      // asserting the string Permit would actually yield.
+      keyFor(fact.workspaceId).add(delegatorFact(fact.agentId, fact.ownerUserId));
     },
 
     async removeAgent(workspaceId: string, agentId: string): Promise<void> {

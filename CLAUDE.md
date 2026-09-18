@@ -62,8 +62,12 @@ outside a test env, and the app `.env` sets `NODE_ENV=development`.
 
 - `docs/threat-model.md` §8 sign-off is **unticked**. §16 gates storing production
   credentials on that review, so stage 2's vault work is blocked until it happens.
-- No real Permit adapter, no Permit environment, no PDP latency measurement. Hosted PDP
-  is the only option here (no container runtime), which may collide with P95 < 200 ms.
+- **A local PDP is required in production.** The hosted PDP was measured at min 211 ms,
+  p50 ~225 ms, p95 293–739 ms per check — the fastest single check exceeds the whole
+  §11 200 ms P95 budget. There is no container runtime on this machine, so development
+  runs against hosted and accepts the latency. See `docs/permit-setup.md`.
+- Permit principal keys are `agent|{id}` / `human|{id}`, not §4.2's `agent:{id}` —
+  Permit rejects colons in user keys. `packages/permit/src/model.ts` explains.
 - `packages/db/migrations/0002` carries a stale comment about burning a revoked
   `client_id`; `0006` replaced that constraint and explains why.
 
