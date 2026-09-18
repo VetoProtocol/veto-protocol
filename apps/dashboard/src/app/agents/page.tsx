@@ -74,9 +74,17 @@ export default async function AgentsPage() {
         </div>
 
         {agents.length === 0 ? (
-          <p style={{ padding: '4px 18px 24px', color: 'var(--text-faint)' }}>
-            No agents registered yet.
-          </p>
+          <div
+            style={{
+              margin: '4px 18px 22px',
+              padding: '20px 18px',
+              border: '1px dashed var(--border-strong)',
+              color: 'var(--text-faint)',
+              fontSize: 12.5,
+            }}
+          >
+            No agents registered yet. Register one below — it starts with no access at all.
+          </div>
         ) : (
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>

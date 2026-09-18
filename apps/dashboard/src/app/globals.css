@@ -53,6 +53,9 @@
 
 body {
   margin: 0;
+  /* Nothing in this layout is meant to scroll sideways; wide content scrolls
+     inside its own container instead. */
+  overflow-x: hidden;
   background: var(--bg);
   color: var(--text);
   font-family: var(--font-mono);
@@ -86,20 +89,37 @@ a {
 
 /* Skip link. CSS-only: an onFocus handler would make the layout a client
    component, and the first control on the page should not need JavaScript to
-   work. */
+   work.
+
+   Hidden by clipping to a 1px box rather than by `left: -9999px`. Offscreen
+   positioning leaves a real element 9999px wide of the viewport, which some
+   browsers paint a sliver of at the edge and which can widen the page; clipping
+   keeps it findable by assistive technology while occupying nothing. */
 .skip-link {
   position: absolute;
-  left: -9999px;
-  top: 0;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
   z-index: 10;
-  padding: 10px 16px;
   background: var(--text);
   color: var(--bg);
 }
 
 .skip-link:focus {
+  position: fixed;
   left: 12px;
   top: 12px;
+  width: auto;
+  height: auto;
+  margin: 0;
+  padding: 10px 16px;
+  overflow: visible;
+  clip-path: none;
 }
 
 ::selection {
