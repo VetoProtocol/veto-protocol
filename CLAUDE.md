@@ -38,13 +38,19 @@ outside a test env, and the app `.env` sets `NODE_ENV=development`.
 | `packages/permit` | `PolicyFacts` port + test-only fake. **No real adapter yet.** |
 | `packages/identity` | Agent registration, revocation, sessions, audit writer |
 | `apps/api` | Fastify control plane (§5). `createApp()` only — no server entrypoint. |
+| `apps/dashboard` | Next.js dashboard. Theme matches vetoprotocol.live; dark only. |
 
-`apps/dashboard` (Next.js) does not exist yet.
+The dashboard has no sign-in yet: OIDC is the next piece of phase 6, and until it
+lands nothing can mint a session, so every page renders signed out.
 
 ### Conventions this repo already commits to
 
 - **Relative imports carry `.ts` extensions**, not `.js`. `node --experimental-strip-types`
   cannot resolve `.js` specifiers, and `allowImportingTsExtensions` is on.
+- **No TypeScript parameter properties.** `node --experimental-strip-types` only
+  erases types, and a parameter property emits an assignment, so such a file compiles
+  under vitest and then fails whenever anything runs it directly. Assign fields in the
+  constructor body instead.
 - **`pg` is CommonJS.** `import pg from 'pg'; const { Pool } = pg;` — a named ESM import
   fails at runtime, not at typecheck.
 - **Every tenant-scoped query runs inside `withWorkspace()`**, which sets

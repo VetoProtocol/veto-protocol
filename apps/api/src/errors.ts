@@ -12,12 +12,18 @@
  */
 
 export class HttpError extends Error {
-  constructor(
-    readonly status: number,
-    readonly code: string,
-    message: string,
-  ) {
+  readonly status: number;
+  readonly code: string;
+
+  // Fields assigned explicitly rather than declared as constructor parameter
+  // properties. `node --experimental-strip-types` cannot run those — it only
+  // erases types, and a parameter property emits an assignment — so a file
+  // using them compiles under vitest and then fails the moment anything runs it
+  // the way this repo runs its own entry points.
+  constructor(status: number, code: string, message: string) {
     super(message);
+    this.status = status;
+    this.code = code;
     this.name = 'HttpError';
   }
 }

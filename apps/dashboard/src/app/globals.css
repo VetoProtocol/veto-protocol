@@ -1,0 +1,138 @@
+/*
+ * Theme, taken from vetoprotocol.live.
+ *
+ * The product surface and the marketing site are the same system, so the tokens
+ * below are read off that page rather than invented: near-black ground, hairline
+ * borders, monospace for every piece of chrome, and a grotesk reserved for
+ * headlines.
+ *
+ * Dark only, deliberately. The brand commits to one ground, and a light variant
+ * nobody has designed would be a worse surface than none. That is a decision,
+ * not an omission — every colour below is stated, none inherited.
+ *
+ * The decision palette is the important part. allow / challenge / deny are the
+ * three results in §5.3 and the site already draws them as allow / approve /
+ * block chips. They are never interchangeable, so they never share a colour,
+ * and colour is never the only signal — every chip carries its own word.
+ */
+
+:root {
+  color-scheme: dark;
+
+  --bg: #0a0a0a;
+  --bg-panel: #0c0c0c;
+  --bg-raised: #131313;
+  --bg-input: #0f0f0f;
+
+  --border: #1e1e1e;
+  --border-strong: #2c2c2c;
+  --border-focus: #4a4a4a;
+
+  --text: #ededed;
+  --text-dim: #8a8a8a;
+  --text-faint: #565656;
+
+  /* §5.3 decision semantics. One colour each, never reused for anything else. */
+  --allow: #4e9e6a;
+  --allow-bg: rgba(78, 158, 106, 0.08);
+  --challenge: #c9a03e;
+  --challenge-bg: rgba(201, 160, 62, 0.08);
+  --deny: #d1504a;
+  --deny-bg: rgba(209, 80, 74, 0.08);
+
+  --grid-line: rgba(255, 255, 255, 0.022);
+  --grid-size: 44px;
+
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font-sans: var(--font-inter), -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  min-height: 100vh;
+}
+
+/* The faint plotting grid behind the page. Purely decorative, so it is hidden
+   from assistive technology by being a background rather than an element. */
+.grid-ground {
+  background-image:
+    linear-gradient(var(--grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+  background-size: var(--grid-size) var(--grid-size);
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+/* One focus treatment everywhere. §11 requires the dashboard to be
+   keyboard-complete, which is worth nothing if the focused element is
+   invisible — so this is never removed, only styled. */
+:where(a, button, input, select, summary, [tabindex]):focus-visible {
+  outline: 1px solid var(--text);
+  outline-offset: 2px;
+}
+
+/* Skip link. CSS-only: an onFocus handler would make the layout a client
+   component, and the first control on the page should not need JavaScript to
+   work. */
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  z-index: 10;
+  padding: 10px 16px;
+  background: var(--text);
+  color: var(--bg);
+}
+
+.skip-link:focus {
+  left: 12px;
+  top: 12px;
+}
+
+::selection {
+  background: var(--text);
+  color: var(--bg);
+}
+
+.label {
+  font-size: 10.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.headline {
+  font-family: var(--font-sans);
+  font-weight: 500;
+  letter-spacing: -0.025em;
+  line-height: 1.05;
+  margin: 0;
+}
+
+.path {
+  color: var(--text-faint);
+  font-size: 11.5px;
+  letter-spacing: 0.02em;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

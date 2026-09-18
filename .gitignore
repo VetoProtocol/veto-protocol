@@ -31,3 +31,7 @@ coverage/
 *.save
 *.deb
 *.docx
+
+# Next.js
+.next/
+next-env.d.ts
