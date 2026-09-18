@@ -2,7 +2,8 @@
 
 import { useActionState } from 'react';
 import { Button } from '@/components/button';
-import { EMPTY, revokeAgentAction, type ActionState } from './actions';
+import { revokeAgentAction } from './actions';
+import { EMPTY, type ActionState } from './action-state';
 
 /**
  * Revocation, behind a disclosure.

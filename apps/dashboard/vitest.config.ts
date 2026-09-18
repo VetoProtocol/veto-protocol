@@ -13,6 +13,8 @@ export default defineConfig({
       // rather than removed from the source — the guard stays real where it
       // matters.
       'server-only': path.join(here, 'test', 'server-only-stub.ts'),
+      'next/cache': path.join(here, 'test', 'next-stubs.ts'),
+      'next/headers': path.join(here, 'test', 'next-stubs.ts'),
     },
   },
   test: { include: ['test/**/*.test.ts'], env: { NODE_ENV: 'test' } },

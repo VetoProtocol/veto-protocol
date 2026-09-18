@@ -1,15 +1,9 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
+import type { ActionState } from './action-state';
 import { ApiError, registerAgent, revokeAgent } from '@/lib/api';
 import { currentSession } from '@/lib/session';
-
-export interface ActionState {
-  readonly error: string | null;
-  readonly notice: string | null;
-}
-
-export const EMPTY: ActionState = { error: null, notice: null };
 
 /**
  * Register an agent.

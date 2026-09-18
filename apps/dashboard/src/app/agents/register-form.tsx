@@ -2,7 +2,8 @@
 
 import { useActionState } from 'react';
 import { Button } from '@/components/button';
-import { EMPTY, registerAgentAction, type ActionState } from './actions';
+import { registerAgentAction } from './actions';
+import { EMPTY, type ActionState } from './action-state';
 
 const field: React.CSSProperties = {
   font: 'inherit',
