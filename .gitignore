@@ -1,0 +1,33 @@
+# dependencies
+node_modules/
+.pnpm-store/
+
+# build output
+dist/
+build/
+.next/
+*.tsbuildinfo
+
+# env & secrets — never commit
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# test/coverage
+coverage/
+.vitest/
+
+# editor / OS
+.DS_Store
+*.swp
+*.swo
+.idea/
+.vscode/
+
+# repo clutter (see CLAUDE.md "Repository state")
+*.crdownload
+*.save
+*.deb
+*.docx
