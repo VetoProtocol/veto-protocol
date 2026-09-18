@@ -330,6 +330,47 @@ describe('tool calls go through the pipeline', () => {
     expect(error.data.expires_at).toBeTruthy();
   });
 
+  it('resumes a challenge only with the grant, and only once', async () => {
+    const file = `/Finance/resume-${suffix()}.xlsx`;
+    await withWorkspace(pool, WS_A, (db) =>
+      db.query(
+        `insert into policies (id,workspace_id,subject,action,resource_filter,conditions,effect,version)
+         values ($1,$2,$3,'read',$4,'{}'::jsonb,'challenge','polv_g')`,
+        [`pol_${suffix()}${suffix()}`, WS_A, LIVE, JSON.stringify({ type: 'google_file', ids: [file] })],
+      ),
+    );
+    policy.allow(WS_A, LIVE, 'read', 'google_file', file);
+
+    const challenged = (await call('google_drive.read_file', { file_id: file })).json().error;
+    const approvalId: string = challenged.data.approval_id;
+
+    // The human says yes.
+    await withWorkspace(pool, WS_A, (db) =>
+      db.query(
+        `update approvals set status='approved', resolved_at=now() where workspace_id=$1 and id=$2`,
+        [WS_A, approvalId],
+      ),
+    );
+
+    const withGrant = (id: string, args: Record<string, unknown> = { file_id: file }) =>
+      post(rpc('tools/call', { name: 'google_drive.read_file', arguments: args, approval_id: id }), live());
+
+    const allowed = (await withGrant(approvalId)).json();
+    expect(allowed.error).toBeUndefined();
+    expect(allowed.result.isError).toBe(false);
+
+    // Single use.
+    expect((await withGrant(approvalId)).json().error.data.reason_code).toBe('APPROVAL_REPLAYED');
+  });
+
+  it('rejects a non-string approval_id before deciding', async () => {
+    const res = await post(
+      rpc('tools/call', { name: 'google_drive.read_file', arguments: { file_id: '/x' }, approval_id: 7 }),
+      live(),
+    );
+    expect(res.json().error.code).toBe(RPC.INVALID_PARAMS);
+  });
+
   it('never dresses a refusal up as a tool result', async () => {
     // A denial arriving as content is a denial the model can try to work with.
     const body = (await call('google_drive.read_file', { file_id: '/nothing-granted' })).json();

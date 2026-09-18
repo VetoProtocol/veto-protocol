@@ -1,5 +1,6 @@
 export * from './types.ts';
 export * from './pipeline.ts';
+export * from './approvals.ts';
 export * from './policy-store.ts';
 export * from './risk.ts';
 export * from './destination.ts';

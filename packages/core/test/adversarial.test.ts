@@ -88,8 +88,8 @@ describe('adversarial scenario registry', () => {
     const pending = pendingScenarios().map((s) => s.id);
     // Not an aspiration: this is the list stage 2 closes, and it shrinks as
     // phases land.
-    // Shrinks as phases land. S1 needs the full loop; S3 and S5 are the
-    // approval state machine in phase 6.
-    expect(pending).toEqual(['S1', 'S3', 'S5']);
+    // Only the prompt-injection scenario remains: it needs the full loop,
+    // including an upstream call that can return attacker-written content.
+    expect(pending).toEqual(['S1']);
   });
 });

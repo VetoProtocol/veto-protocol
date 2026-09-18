@@ -20,6 +20,7 @@ import type { Authenticator } from './principal.ts';
 import { registerAgentRoutes } from './routes/agents.ts';
 import { registerAuthRoutes } from './routes/auth.ts';
 import { registerDecisionRoutes } from './routes/decisions.ts';
+import { registerApprovalRoutes } from './routes/approvals.ts';
 
 export interface AppDeps {
   readonly pool: Pool;
@@ -95,6 +96,7 @@ export function createApp(deps: AppDeps): FastifyInstance {
   registerAgentRoutes(app, { pool: deps.pool, redis: deps.redis, policy: deps.policy });
   registerAuthRoutes(app, { pool: deps.pool });
   registerDecisionRoutes(app, { pool: deps.pool, redis: deps.redis, decisions: deps.decisions });
+  registerApprovalRoutes(app, { pool: deps.pool });
 
   return app;
 }

@@ -166,6 +166,15 @@ approver-is-not-the-delegator all deny with their existing reason codes.
 
 **Exit:** the replay, expiry and wrong-approver tests from phase 1 go green.
 
+**Done 2026-09-18**, 17 tests. Eleven of the twelve adversarial scenarios are
+now implemented; only S1, indirect prompt injection, remains, and it needs an
+upstream call that can return attacker-written content — phase 5.
+
+Migration 0008 fixes a constraint 0003 got wrong: `resolved_has_timestamp`
+excluded 'consumed', so every redemption of an approved grant violated it. The
+fix keeps `resolved_at` rather than clearing it — erasing who-approved-when at
+the moment the grant is spent removes it exactly when an auditor wants it.
+
 ## Decisions to make before phase 3
 
 | # | Question | Leaning |

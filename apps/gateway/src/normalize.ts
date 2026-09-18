@@ -46,6 +46,7 @@ export function normalize(
   rawArguments: Readonly<Record<string, unknown>>,
   session: GatewaySession,
   requestId: string,
+  approvalId?: string | null,
 ): EvaluateInput {
   const validate = validators.get(tool.name);
   if (!validate) throw new RpcError(RPC.INVALID_PARAMS, 'Unknown tool');
@@ -72,5 +73,9 @@ export function normalize(
     // into the SSRF check at step 6.
     destination: null,
     occurredAt: new Date().toISOString(),
+    // Carried beside the arguments, never inside them. The digest covers
+    // `arguments`, so an approval id in there would change the digest of the
+    // retry and the grant would never match the action it was granted for.
+    approvalId: approvalId ?? null,
   };
 }

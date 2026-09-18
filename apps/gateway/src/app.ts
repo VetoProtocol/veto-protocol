@@ -218,7 +218,20 @@ export function createGateway(deps: GatewayDeps): FastifyInstance {
     // upstream call and audit event. It is minted here, at the edge.
     const requestId = `req_${String(request.id).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40) || 'anon'}`;
 
-    const input = normalize(tool, (rawArgs ?? {}) as Record<string, unknown>, session, requestId);
+    // §5.3: a challenge resumes only with the grant. The client presents it at
+    // the params level, outside `arguments`, so it stays out of the digest.
+    const presented = rpc.params['approval_id'];
+    if (presented !== undefined && typeof presented !== 'string') {
+      throw new RpcError(RPC.INVALID_PARAMS, 'approval_id must be a string');
+    }
+
+    const input = normalize(
+      tool,
+      (rawArgs ?? {}) as Record<string, unknown>,
+      session,
+      requestId,
+      presented ?? null,
+    );
 
     const decision = await evaluate(
       { pool: deps.pool, redis: deps.redis, policy: deps.policy },

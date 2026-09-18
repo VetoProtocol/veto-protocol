@@ -31,6 +31,13 @@ export interface EvaluateInput {
   /** Where data would be sent, when the tool sends anywhere. Checked for SSRF. */
   readonly destination: string | null;
   readonly occurredAt: string;
+  /**
+   * A grant the client is presenting to resume a challenged action (§5.3).
+   *
+   * Absent on a first attempt. Present on a retry after approval, and checked
+   * against this exact action's digest.
+   */
+  readonly approvalId?: string | null;
 }
 
 /** §5.2. */

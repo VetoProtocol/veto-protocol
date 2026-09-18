@@ -75,8 +75,8 @@ export const ADVERSARIAL_SCENARIOS: readonly AdversarialScenario[] = [
       'Three separate denials, not one: expired (APPROVAL_EXPIRED), already consumed ' +
       '(APPROVAL_REPLAYED), and arguments changed since approval ' +
       '(APPROVAL_DIGEST_MISMATCH). Each needs its own case.',
-    status: 'pending',
-    test: null,
+    status: 'implemented',
+    test: 'packages/decisions/test/approvals.test.ts',
   },
   {
     id: 'S4',
@@ -102,8 +102,8 @@ export const ADVERSARIAL_SCENARIOS: readonly AdversarialScenario[] = [
       'APPROVER_NOT_DELEGATOR, even when the other user is an admin of the same ' +
       'workspace (invariant 7). Also assert the approval is not consumed by the ' +
       'failed attempt.',
-    status: 'pending',
-    test: null,
+    status: 'implemented',
+    test: 'packages/decisions/test/approvals.test.ts',
   },
   {
     id: 'S6',

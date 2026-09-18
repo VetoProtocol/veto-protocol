@@ -35,6 +35,7 @@ import type Redis from 'ioredis';
 import type { DecisionResponse, EvaluateInput } from './types.ts';
 import { loadPolicies, matchPolicies } from './policy-store.ts';
 import { assessRisk } from './risk.ts';
+import { redeemApproval } from './approvals.ts';
 import { currentUsage, reserve } from './volume.ts';
 
 export interface PipelineDeps {
@@ -162,7 +163,26 @@ export async function evaluate(deps: PipelineDeps, input: EvaluateInput): Promis
     if (risk?.result === 'deny') return deny(risk.reasonCode);
     if (risk?.result === 'challenge') held = challenge(risk.reasonCode);
 
-    if (held) return held;
+    if (held) {
+      // A challenge resumes only with an unexpired, single-use grant that names
+      // this exact action. Without one, the challenge stands.
+      if (!input.approvalId) return held;
+
+      const redeemed = await withWorkspace(deps.pool, input.workspaceId, (db) =>
+        redeemApproval(db, {
+          workspaceId: input.workspaceId,
+          approvalId: input.approvalId ?? '',
+          humanId: input.humanId,
+          actionDigest: digest,
+        }),
+      );
+
+      // A refused grant denies rather than re-challenging: replayed, expired
+      // and digest-mismatched are deny codes, and handing back another approval
+      // would let an attacker grind against one.
+      if (!redeemed.ok) return deny(redeemed.reasonCode);
+      held = null;
+    }
 
     // Only now does an allow spend budget.
     if (limit !== undefined) {
@@ -268,6 +288,33 @@ async function persist(
 
     let approvalId: string | null = null;
     if (args.outcome.result === 'challenge') {
+      // One live grant per action per approver, enforced by a partial unique
+      // index. A second challenge for the same action reuses the outstanding
+      // approval rather than opening a rival one — two pending grants for one
+      // action would mean redeeming either satisfies it, which is not what
+      // single-use means.
+      const existing = await db.query<{ id: string }>(
+        `select id from approvals
+          where workspace_id = $1 and approver_id = $2 and action_digest = $3
+            and status = 'pending' and expires_at > now()
+          limit 1`,
+        [input.workspaceId, input.humanId, args.digest],
+      );
+
+      const live = existing.rows[0];
+      if (live) {
+        approvalId = live.id;
+        await writeAuditEvent(db, {
+          workspaceId: input.workspaceId,
+          actor: input.agentId,
+          eventType: `decision.${args.outcome.result}`,
+          resourceRef: `${input.resource.type}:${input.resource.id}`,
+          outcome: args.outcome.result,
+          correlationId: input.requestId,
+        });
+        return approvalId;
+      }
+
       approvalId = newId('apr_');
       await db.query(
         `insert into approvals
