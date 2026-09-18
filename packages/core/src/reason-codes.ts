@@ -13,16 +13,26 @@
 /** Spec §5.3. These three are not interchangeable. */
 export type DecisionResult = 'allow' | 'deny' | 'challenge';
 
+/**
+ * The pipeline steps of spec §3.3, in order.
+ *
+ * A value rather than a bare type, because the order is meaningful — a control
+ * that runs at the wrong step is a defect regardless of its tests (CLAUDE.md) —
+ * and because things outside the type system need to check membership.
+ */
+export const PIPELINE_STAGES = [
+  'identity',
+  'session',
+  'precheck',
+  'policy',
+  'risk',
+  'credential',
+  'approval',
+  'outcome',
+] as const;
+
 /** Which pipeline step (spec §3.3) produced the code. */
-export type PipelineStage =
-  | 'identity'
-  | 'session'
-  | 'precheck'
-  | 'policy'
-  | 'risk'
-  | 'credential'
-  | 'approval'
-  | 'outcome';
+export type PipelineStage = (typeof PIPELINE_STAGES)[number];
 
 export interface ReasonCodeSpec {
   readonly result: DecisionResult;

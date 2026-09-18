@@ -42,6 +42,9 @@ after phase 3 is.
 
 **Exit:** signed-off threat model, with the stage-1 deltas recorded.
 
+**Done 2026-09-18**, except the owner's acceptance of residual risk (§8.1) —
+four items, listed there, that are not the implementer's call to make.
+
 ### Phase 1 — Adversarial tests first
 
 Write the §12.1 scenarios as failing tests before the features they target,
@@ -62,6 +65,13 @@ retrofit them to.
 Plus the standing four: OAuth CSRF, token replay, IDOR, cross-tenant.
 
 **Exit:** all red, each naming the pipeline step it exercises.
+
+**Registry done 2026-09-18**: `packages/core/src/adversarial.ts` holds all twelve
+scenarios with the threat each maps to, the pipeline step it exercises, and —
+the important field — what the test must actually assert. Four are already
+green from stage 1; the eight §12.1 scenarios are pending and stage 2 closes
+them. A test reads the count of §12.1 bullets out of the spec itself, so an
+amended spec fails the build rather than leaving us quietly under-covered.
 
 ### Phase 2 — The gateway skeleton
 
@@ -144,7 +154,7 @@ approver-is-not-the-delegator all deny with their existing reason codes.
 
 | # | Question | Leaning |
 | --- | --- | --- |
-| D1 | Local PDP for development? | Yes if a container runtime can be installed — the hosted PDP measured 211 ms minimum against a 200 ms budget for the whole pipeline. Otherwise accept dev latency and treat local as a deployment requirement |
+| D1 | Local PDP for development? | **Blocked on the operator.** podman 5.4.2 is in apt but needs sudo, which is password-gated here. `sudo apt install podman` unblocks it. Until then, development runs against the hosted PDP and local stays a deployment requirement |
 | D2 | Gateway in-process with the API, or separate? | Separate. Different trust boundary, different traffic, and invariant 8 reads better when there is exactly one thing that can enforce |
 | D3 | Where do volume limits live? | Redis, per (workspace, agent, window). Postgres cannot take per-request write load, and §12.1's split-bulk-request test needs a shared counter |
 | D4 | KMS for envelope encryption in development? | Deferred to phase 4 — depends on whether a cloud KMS is available or a local key wrapper stands in |
