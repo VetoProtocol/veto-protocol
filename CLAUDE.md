@@ -22,6 +22,8 @@ pnpm -r test                 # all packages
 pnpm --filter @veto/api test # one package
 pnpm --filter @veto/api exec vitest run -t 'IDOR'   # one test by name
 pnpm --filter @veto/db migrate                     # apply pending migrations
+pnpm --filter @veto/api start                      # control plane on :4000
+pnpm --filter @veto/dashboard dev                  # dashboard on :3000
 ```
 
 `db`, `identity` and `api` tests need a live Postgres and Redis and read `DATABASE_URL`
@@ -37,11 +39,13 @@ outside a test env, and the app `.env` sets `NODE_ENV=development`.
 | `packages/db` | Pool, `withWorkspace`, migration runner, `migrations/*.sql` |
 | `packages/permit` | `PolicyFacts` port + test-only fake. **No real adapter yet.** |
 | `packages/identity` | Agent registration, revocation, sessions, audit writer |
+| `packages/tokens` | Short-lived internal capability tokens. HMAC, no algorithm field. |
 | `apps/api` | Fastify control plane (§5). `createApp()` only — no server entrypoint. |
 | `apps/dashboard` | Next.js dashboard. Theme matches vetoprotocol.live; dark only. |
 
-The dashboard has no sign-in yet: OIDC is the next piece of phase 6, and until it
-lands nothing can mint a session, so every page renders signed out.
+Sign-in is OIDC against any conformant provider (`docs/auth-setup.md`). There is
+**no auto-provisioning**: an unknown subject is refused, and membership is
+inserted by hand until an invitation flow exists.
 
 ### Conventions this repo already commits to
 
@@ -60,6 +64,12 @@ lands nothing can mint a session, so every page renders signed out.
   to run if an applied file changed on disk. Write a new migration instead.
 - **Audit events take a typed input that cannot carry content** — no body, token or
   challenge field exists on `AuditEventInput`. That type is the control (invariant 5).
+- **Migration 0007 widens invariant 4, deliberately.** `resolve_identity_subject()`
+  reads `users` across tenants because sign-in must find the workspace before it can
+  scope to one. It takes one exact subject, returns two columns, filters to active
+  users, and is SELECT-only. Do not extend it.
+- **Every route asserts its credential scope** (`requireScope`). A sign-in credential
+  cannot reach the agent routes and vice versa.
 - New HTTP routes get a closed request schema (`additionalProperties: false`) and a
   response schema. Fastify's AJV defaults (`removeAdditional`, `coerceTypes`) are
   disabled in `createApp` — do not re-enable them.

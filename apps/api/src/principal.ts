@@ -16,6 +16,16 @@ import type { FastifyRequest } from 'fastify';
 export interface Principal {
   readonly workspaceId: string;
   readonly userId: string;
+  /**
+   * Coarse scope from the credential, e.g. 'control-plane'.
+   *
+   * Routes assert the scope they require. It is not an authorization decision —
+   * it stops a credential minted for one purpose being replayed at another
+   * (invariant 8 keeps the real decision in the pipeline).
+   */
+  readonly action: string;
+  /** Set when an agent is acting for the human; null for a person at a keyboard. */
+  readonly agentId: string | null;
 }
 
 export type Authenticator = (request: FastifyRequest) => Promise<Principal | null>;

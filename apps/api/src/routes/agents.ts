@@ -32,6 +32,7 @@ import {
   type Agent,
 } from '@veto/identity';
 import { ERROR_SCHEMA, HttpError } from '../errors.ts';
+import { requireScope, SCOPE_CONTROL_PLANE } from '../scope.ts';
 import { assertWorkspaceUnlocked } from '../workspace.ts';
 
 export interface AgentRoutesDeps {
@@ -138,6 +139,7 @@ export function registerAgentRoutes(app: FastifyInstance, deps: AgentRoutesDeps)
       },
     },
     async (request: FastifyRequest<{ Body: RegisterBody }>, reply) => {
+      requireScope(request, SCOPE_CONTROL_PLANE);
       const { workspaceId, userId } = request.principal;
       const body = request.body;
 
@@ -169,6 +171,7 @@ export function registerAgentRoutes(app: FastifyInstance, deps: AgentRoutesDeps)
       },
     },
     async (request) => {
+      requireScope(request, SCOPE_CONTROL_PLANE);
       const { workspaceId } = request.principal;
       const agents = await withWorkspace(pool, workspaceId, (db) => listAgents(db, workspaceId));
       return { agents: agents.map(serializeAgent) };
@@ -184,6 +187,7 @@ export function registerAgentRoutes(app: FastifyInstance, deps: AgentRoutesDeps)
       },
     },
     async (request: FastifyRequest<{ Params: AgentIdParams }>) => {
+      requireScope(request, SCOPE_CONTROL_PLANE);
       const { workspaceId } = request.principal;
       const agent = await withWorkspace(pool, workspaceId, (db) =>
         findAgent(db, workspaceId, request.params.agentId),
@@ -224,6 +228,7 @@ export function registerAgentRoutes(app: FastifyInstance, deps: AgentRoutesDeps)
       },
     },
     async (request: FastifyRequest<{ Params: AgentIdParams }>) => {
+      requireScope(request, SCOPE_CONTROL_PLANE);
       const { workspaceId, userId } = request.principal;
       const { agentId } = request.params;
 

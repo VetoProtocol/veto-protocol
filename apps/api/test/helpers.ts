@@ -82,7 +82,15 @@ export function headerAuthenticator(): (r: FastifyRequest) => Promise<Principal 
     const workspaceId = request.headers['x-test-workspace'];
     const userId = request.headers['x-test-user'];
     if (typeof workspaceId !== 'string' || typeof userId !== 'string') return null;
-    return { workspaceId, userId };
+
+    // Scope defaults to control-plane; a test that needs another passes it.
+    const action = request.headers['x-test-scope'];
+    return {
+      workspaceId,
+      userId,
+      action: typeof action === 'string' ? action : 'control-plane',
+      agentId: null,
+    };
   };
 }
 

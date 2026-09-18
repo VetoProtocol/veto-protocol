@@ -18,6 +18,7 @@ import { DuplicateLiveAgentError } from '@veto/identity';
 import { errorBody, HttpError } from './errors.ts';
 import type { Authenticator } from './principal.ts';
 import { registerAgentRoutes } from './routes/agents.ts';
+import { registerAuthRoutes } from './routes/auth.ts';
 
 export interface AppDeps {
   readonly pool: Pool;
@@ -89,6 +90,7 @@ export function createApp(deps: AppDeps): FastifyInstance {
   );
 
   registerAgentRoutes(app, { pool: deps.pool, redis: deps.redis, policy: deps.policy });
+  registerAuthRoutes(app, { pool: deps.pool });
 
   return app;
 }

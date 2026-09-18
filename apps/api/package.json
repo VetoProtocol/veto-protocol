@@ -3,7 +3,11 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "scripts": { "typecheck": "tsc --noEmit", "test": "vitest run" },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "start": "node --experimental-strip-types src/server.ts"
+  },
   "dependencies": {
     "@veto/core": "workspace:*",
     "@veto/db": "workspace:*",
@@ -11,12 +15,14 @@
     "@veto/permit": "workspace:*",
     "fastify": "5.2.1",
     "ioredis": "5.4.2",
-    "pg": "8.13.1"
+    "pg": "8.13.1",
+    "@veto/tokens": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "22.10.2",
     "@types/pg": "8.11.10",
     "typescript": "5.7.2",
-    "vitest": "2.1.8"
+    "vitest": "2.1.8",
+    "@veto/tokens": "workspace:*"
   }
 }

@@ -82,6 +82,18 @@ async function request<T>(path: string, init: RequestInit & { credential: string
   return body as T;
 }
 
+/** Sign-in lookup. Uses the identity-resolve scope, which reaches nothing else. */
+export const resolveIdentity = async (
+  credential: string,
+  subject: string,
+): Promise<Array<{ user_id: string; workspace_id: string }>> => {
+  const { identities } = await request<{ identities: Array<{ user_id: string; workspace_id: string }> }>(
+    '/v1/auth/resolve',
+    { method: 'POST', credential, body: JSON.stringify({ subject }) },
+  );
+  return identities;
+};
+
 export const listAgents = (credential: string): Promise<{ agents: Agent[] }> =>
   request('/v1/agents', { method: 'GET', credential });
 

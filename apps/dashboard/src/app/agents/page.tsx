@@ -1,3 +1,4 @@
+import { redirect } from 'next/navigation';
 import { Panel } from '@/components/panel';
 import { Chip, type Tone } from '@/components/chip';
 import { ApiError, listAgents, type Agent } from '@/lib/api';
@@ -18,7 +19,9 @@ const STATUS_TONE: Record<Agent['status'], Tone> = {
 
 export default async function AgentsPage() {
   const session = await currentSession();
-  if (!session) return <SignedOut />;
+  // One place to land when there is no session, shared with every failed
+  // sign-in, so the product has a single answer to "you are not signed in".
+  if (!session) redirect('/signed-out');
 
   let agents: Agent[];
   try {
@@ -44,6 +47,30 @@ export default async function AgentsPage() {
             Every identity registered in this workspace. Registering an agent grants it nothing —
             it can act only once a connection and policy attach to it.
           </p>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginTop: 16 }}>
+            <span style={{ color: 'var(--text-faint)', fontSize: 11.5 }}>
+              signed in as {session.userId}
+            </span>
+            {/* POST, so no third-party page can sign the user out by linking. */}
+            <form action="/logout" method="post">
+              <button
+                type="submit"
+                style={{
+                  font: 'inherit',
+                  fontSize: 11.5,
+                  background: 'none',
+                  border: 0,
+                  padding: 0,
+                  color: 'var(--text-dim)',
+                  cursor: 'pointer',
+                  borderBottom: '1px dotted var(--border-strong)',
+                }}
+              >
+                sign out
+              </button>
+            </form>
+          </div>
         </div>
 
         {agents.length === 0 ? (
@@ -107,26 +134,6 @@ export default async function AgentsPage() {
         <RegisterForm />
       </Panel>
     </>
-  );
-}
-
-function SignedOut() {
-  return (
-    <Panel title="SIGN IN" meta="IDENTITY REQUIRED">
-      <div style={{ padding: 22, display: 'grid', gap: 12 }}>
-        <p className="path" style={{ margin: 0 }}>
-          ~/auth
-        </p>
-        <h1 className="headline" style={{ fontSize: 28 }}>
-          You are not signed in.
-        </h1>
-        <p style={{ color: 'var(--text-dim)', maxWidth: 560, fontSize: 12.5, margin: 0 }}>
-          The dashboard reads and changes authorization state, so it shows nothing without a
-          verified identity. OIDC sign-in is the next piece of this phase; until it lands there is
-          no way to obtain a session, which is the correct behaviour rather than a placeholder.
-        </p>
-      </div>
-    </Panel>
   );
 }
 
