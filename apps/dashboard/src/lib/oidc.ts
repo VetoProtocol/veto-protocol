@@ -24,9 +24,19 @@
  *    provider and checked on return.
  *  * **Open redirect** — the redirect URI is built from configuration, never
  *    from the request, and post-sign-in navigation is a fixed path.
+ *
+ * ## Why it does not use the ambient fetch
+ *
+ * Next instruments the global `fetch` to add its own caching and
+ * deduplication. Every request here is an authentication step — discovery,
+ * token exchange, JWKS — and none of them may be served from a cache or
+ * coalesced with another request. Under `next start` the instrumented fetch
+ * also hung outright, which is how this was found; correctness is the reason it
+ * stays.
  */
 
 import 'server-only';
+import { fetch as undiciFetch } from 'undici';
 import * as client from 'openid-client';
 
 export interface OidcSettings {
@@ -61,6 +71,21 @@ export function oidcSettings(): OidcSettings {
   };
 }
 
+/**
+ * An uninstrumented fetch, pinned to no-store.
+ *
+ * `undici.fetch` rather than the global one, so Next's patch is out of the
+ * path entirely.
+ */
+type CustomFetch = NonNullable<client.Configuration[typeof client.customFetch]>;
+
+// undici's RequestInit and the DOM's differ in optionality, which
+// exactOptionalPropertyTypes makes visible. The shapes are compatible at
+// runtime; the cast is confined to this one line rather than loosening the
+// whole module.
+const directFetch = ((url: string, options: unknown) =>
+  undiciFetch(url, options as Parameters<typeof undiciFetch>[1])) as unknown as CustomFetch;
+
 let cached: Promise<client.Configuration> | null = null;
 
 /**
@@ -71,7 +96,23 @@ let cached: Promise<client.Configuration> | null = null;
  * key id, so provider key rotation still works.
  */
 export function discover(settings: OidcSettings): Promise<client.Configuration> {
-  cached ??= client.discovery(new URL(settings.issuer), settings.clientId, settings.clientSecret);
+  cached ??= client
+    .discovery(new URL(settings.issuer), settings.clientId, settings.clientSecret, undefined, {
+      [client.customFetch]: directFetch,
+    })
+    .then((config) => {
+      // The same fetch has to carry the later token and JWKS requests, not just
+      // discovery.
+      config[client.customFetch] = directFetch;
+      return config;
+    })
+    .catch((error: unknown) => {
+      // Do not cache a failed discovery: a provider that was briefly
+      // unreachable would otherwise stay unreachable for the life of the
+      // process.
+      cached = null;
+      throw error;
+    });
   return cached;
 }
 
