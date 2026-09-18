@@ -121,6 +121,16 @@ folder-to-file inheritance.
 policy, with decisions persisted and audited. Permit-unavailable and
 emergency-lock tests from phase 1 go green.
 
+**Done 2026-09-18**, 50 new tests. Five of the twelve adversarial scenarios
+moved to implemented: S2 (scope widening), S4 (bulk splitting), S6 (emergency
+lock), S7 (Permit outage), S8 (SSRF). S1 needs the full loop; S3 and S5 are the
+approval state machine in phase 6.
+
+The gateway calls the pipeline **in process**. `/v1/decisions/evaluate` exists
+for explaining and simulating a decision, and deliberately is not how the
+gateway asks — if it were, anything holding a credential could ask too, and
+invariant 8 would quietly become "the gateway is one of the callers".
+
 ### Phase 4 — Google connection and credential vault
 
 *Blocked on phase 0.*

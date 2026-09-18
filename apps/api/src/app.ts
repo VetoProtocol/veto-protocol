@@ -13,17 +13,20 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import type { Pool } from 'pg';
 import type Redis from 'ioredis';
-import { PolicyUnavailableError, type PolicyFacts } from '@veto/permit';
+import { PolicyUnavailableError, type PolicyDecisions, type PolicyFacts } from '@veto/permit';
 import { DuplicateLiveAgentError } from '@veto/identity';
 import { errorBody, HttpError } from './errors.ts';
 import type { Authenticator } from './principal.ts';
 import { registerAgentRoutes } from './routes/agents.ts';
 import { registerAuthRoutes } from './routes/auth.ts';
+import { registerDecisionRoutes } from './routes/decisions.ts';
 
 export interface AppDeps {
   readonly pool: Pool;
   readonly redis: Redis;
   readonly policy: PolicyFacts;
+  /** The §4.3 check, for /v1/decisions/evaluate. Decides only; never executes. */
+  readonly decisions: PolicyDecisions;
   /** Required. See principal.ts — there is no unauthenticated configuration. */
   readonly authenticate: Authenticator;
   readonly logger?: boolean;
@@ -91,6 +94,7 @@ export function createApp(deps: AppDeps): FastifyInstance {
 
   registerAgentRoutes(app, { pool: deps.pool, redis: deps.redis, policy: deps.policy });
   registerAuthRoutes(app, { pool: deps.pool });
+  registerDecisionRoutes(app, { pool: deps.pool, redis: deps.redis, decisions: deps.decisions });
 
   return app;
 }

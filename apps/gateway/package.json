@@ -16,7 +16,9 @@
     "@veto/tokens": "workspace:*",
     "fastify": "5.2.1",
     "ioredis": "5.4.2",
-    "pg": "8.13.1"
+    "pg": "8.13.1",
+    "@veto/decisions": "workspace:*",
+    "ajv": "8.17.1"
   },
   "devDependencies": {
     "@types/node": "22.10.2",

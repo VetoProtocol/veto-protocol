@@ -16,7 +16,8 @@
     "fastify": "5.2.1",
     "ioredis": "5.4.2",
     "pg": "8.13.1",
-    "@veto/tokens": "workspace:*"
+    "@veto/tokens": "workspace:*",
+    "@veto/decisions": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "22.10.2",

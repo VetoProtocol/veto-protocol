@@ -9,12 +9,17 @@
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Pool } from 'pg';
+import type Redis from 'ioredis';
 import type { FastifyInstance } from 'fastify';
+import { withWorkspace } from '@veto/db';
+import { createFakePolicyDecisions, type FakePolicyDecisions } from '@veto/permit';
 import { createGateway, PROTOCOL_VERSION } from '../src/app.ts';
 import { RPC } from '../src/jsonrpc.ts';
-import { SECRET, gatewayToken, rpc, seedAgent, suffix, testPool } from './helpers.ts';
+import { SECRET, gatewayToken, rpc, seedAgent, suffix, testPool, testRedis } from './helpers.ts';
 
 let pool: Pool;
+let redis: Redis;
+let policy: FakePolicyDecisions;
 let app: FastifyInstance;
 
 const s = suffix();
@@ -32,6 +37,8 @@ const PUBLIC_URL = 'https://gateway.veto.example';
 
 beforeAll(async () => {
   pool = testPool();
+  redis = testRedis();
+  policy = createFakePolicyDecisions();
   await seedAgent(pool, WS_A, ALICE, LIVE, 'claude-desktop');
   await seedAgent(pool, WS_A, ALICE, REVOKED, 'cursor', 'revoked');
   await seedAgent(pool, WS_A, BOB, SUSPENDED, 'zed', 'suspended');
@@ -39,6 +46,8 @@ beforeAll(async () => {
 
   app = createGateway({
     pool,
+    redis,
+    policy,
     capabilitySecret: SECRET,
     publicUrl: PUBLIC_URL,
     authorizationServer: 'https://app.veto.example',
@@ -49,6 +58,7 @@ beforeAll(async () => {
 afterAll(async () => {
   await app.close();
   await pool.end();
+  redis.disconnect();
 });
 
 const post = (payload: unknown, token?: string) =>
@@ -247,41 +257,85 @@ describe('a client can connect and list', () => {
   });
 });
 
-describe('every tool call is denied', () => {
-  const calls = [
-    ['google_drive.read_file', { file_id: '1abc' }],
-    ['google_drive.read_file', { file_id: '1abc', declared_intent: 'Summarize the report' }],
-    ['google_drive.list_folder', { folder_id: 'fold_1' }],
-    ['google_drive.read_file', {}],
-    ['not_a_real_tool', { anything: true }],
-  ] as const;
+describe('tool calls go through the pipeline', () => {
+  const call = (name: string, args: unknown) =>
+    post(rpc('tools/call', { name, arguments: args }), live());
 
-  it.each(calls)('denies %s', async (name, args) => {
-    const res = await post(rpc('tools/call', { name, arguments: args }), live());
+  it('denies by default — nothing is granted until a policy says so', async () => {
+    for (const [name, args] of [
+      ['google_drive.read_file', { file_id: '/Work/report.md' }],
+      ['google_drive.list_folder', { folder_id: '/Work' }],
+      ['not_a_real_tool', { anything: true }],
+    ] as const) {
+      const res = await call(name, args);
 
-    // 200 with a JSON-RPC error: a denial is a normal outcome, not a transport
-    // failure.
-    expect(res.statusCode).toBe(200);
-    const error = res.json().error;
-    expect(error.code).toBe(RPC.DENIED);
-    expect(error.data.result).toBe('deny');
-    expect(error.data.reason_code).toBe('TOOL_NOT_ALLOWED');
-    expect(error.data.correlation_id).toBeTruthy();
+      // 200 with a JSON-RPC error: a denial is a normal outcome, not a
+      // transport failure.
+      expect(res.statusCode, name).toBe(200);
+      const error = res.json().error;
+      expect(error.code, name).toBe(RPC.DENIED);
+      expect(error.data.result, name).toBe('deny');
+      expect(error.data.reason_code, name).toBe('TOOL_NOT_ALLOWED');
+      expect(error.data.correlation_id, name).toBeTruthy();
+    }
   });
 
-  it('never returns a tool result, even a failed one', async () => {
-    // A denial must not arrive as content the model can treat as output.
-    const body = (await post(rpc('tools/call', { name: 'google_drive.read_file', arguments: { file_id: 'x' } }), live())).json();
+  it('rejects arguments before deciding anything', async () => {
+    // Invariant 9: validation runs before policy evaluation, so a malformed
+    // call never reaches a decision and never produces a digest.
+    for (const args of [{}, { file_id: '' }, { file_id: 'x', nope: 1 }, { file_id: 12 }]) {
+      const res = await call('google_drive.read_file', args);
+      expect(res.json().error.code, JSON.stringify(args)).toBe(RPC.INVALID_PARAMS);
+      expect(res.json().error.data.reason_code).toBe('ARGUMENT_SCHEMA_INVALID');
+    }
+  });
+
+  it('allows once a policy and Permit agree, and says nothing was fetched', async () => {
+    const file = `/Work/ok-${suffix()}.md`;
+    await withWorkspace(pool, WS_A, (db) =>
+      db.query(
+        `insert into policies (id,workspace_id,subject,action,resource_filter,conditions,effect,version)
+         values ($1,$2,$3,'read',$4,'{}'::jsonb,'allow','polv_g')`,
+        [`pol_${suffix()}${suffix()}`, WS_A, LIVE, JSON.stringify({ type: 'google_file', ids: [file] })],
+      ),
+    );
+    policy.allow(WS_A, LIVE, 'read', 'google_file', file);
+
+    const res = await call('google_drive.read_file', { file_id: file });
+    const result = res.json().result;
+
+    expect(res.json().error).toBeUndefined();
+    expect(result.isError).toBe(false);
+    // An allow is not an execution. Phase 5 makes the upstream call; pretending
+    // otherwise would hand the model a result it would act on.
+    expect(result.content[0].text).toContain('not connected yet');
+  });
+
+  it('challenges, and names the approval the human must resolve', async () => {
+    const file = `/Finance/q-${suffix()}.xlsx`;
+    await withWorkspace(pool, WS_A, (db) =>
+      db.query(
+        `insert into policies (id,workspace_id,subject,action,resource_filter,conditions,effect,version)
+         values ($1,$2,$3,'read',$4,'{}'::jsonb,'challenge','polv_g')`,
+        [`pol_${suffix()}${suffix()}`, WS_A, LIVE, JSON.stringify({ type: 'google_file', ids: [file] })],
+      ),
+    );
+    policy.allow(WS_A, LIVE, 'read', 'google_file', file);
+
+    const error = (await call('google_drive.read_file', { file_id: file })).json().error;
+
+    expect(error.data.result).toBe('challenge');
+    expect(error.data.reason_code).toBe('APPROVAL_REQUIRED');
+    expect(error.data.approval_id).toMatch(/^apr_/);
+    expect(error.data.expires_at).toBeTruthy();
+  });
+
+  it('never dresses a refusal up as a tool result', async () => {
+    // A denial arriving as content is a denial the model can try to work with.
+    const body = (await call('google_drive.read_file', { file_id: '/nothing-granted' })).json();
 
     expect(body.result).toBeUndefined();
-    expect(JSON.stringify(body)).not.toContain('isError');
-  });
-
-  it('rejects a malformed tools/call before deciding anything', async () => {
-    for (const params of [{}, { name: '' }, { name: 'google_drive.read_file', arguments: [] }]) {
-      const res = await post(rpc('tools/call', params), live());
-      expect(res.json().error.code).toBe(RPC.INVALID_PARAMS);
-    }
+    expect(body.error.code).toBe(RPC.DENIED);
   });
 });
 
@@ -290,6 +344,8 @@ describe('construction', () => {
     expect(() =>
       createGateway({
         pool,
+        redis,
+        policy,
         capabilitySecret: 'short',
         publicUrl: PUBLIC_URL,
         authorizationServer: 'https://app.veto.example',

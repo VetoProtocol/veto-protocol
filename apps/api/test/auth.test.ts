@@ -10,7 +10,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Pool } from 'pg';
 import type Redis from 'ioredis';
-import { createFakePolicyFacts } from '@veto/permit';
+import { createFakePolicyDecisions, createFakePolicyFacts } from '@veto/permit';
 import { mintCapability, verifyCapability } from '@veto/tokens';
 import type { FastifyInstance } from 'fastify';
 import { createApp } from '../src/app.ts';
@@ -37,6 +37,7 @@ beforeAll(async () => {
     pool,
     redis,
     policy: createFakePolicyFacts(),
+    decisions: createFakePolicyDecisions(),
     authenticate: headerAuthenticator(),
   });
   await app.ready();

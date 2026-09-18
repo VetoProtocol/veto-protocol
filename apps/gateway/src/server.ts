@@ -7,7 +7,9 @@
  * possible failure to debug.
  */
 
+import Redis from 'ioredis';
 import { createPool, loadRepoEnv } from '@veto/db';
+import { createPermitPolicyDecisions, permitConfigFromEnv } from '@veto/permit';
 import { createGateway } from './app.ts';
 
 loadRepoEnv();
@@ -19,9 +21,13 @@ function required(name: string): string {
 }
 
 const pool = createPool(required('DATABASE_URL'));
+const redis = new Redis(required('REDIS_URL'));
+const policy = createPermitPolicyDecisions(permitConfigFromEnv());
 
 const app = createGateway({
   pool,
+  redis,
+  policy,
   capabilitySecret: required('VETO_CAPABILITY_SECRET'),
   publicUrl: process.env['GATEWAY_PUBLIC_URL'] ?? 'http://localhost:4100',
   authorizationServer: process.env['GATEWAY_AUTH_SERVER'] ?? 'http://localhost:3000',
@@ -37,6 +43,8 @@ for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   process.once(signal, () => {
     void (async () => {
       await app.close();
+      await policy.close();
+      redis.disconnect();
       await pool.end();
     })();
   });

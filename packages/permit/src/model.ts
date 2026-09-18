@@ -51,6 +51,25 @@ export const PERMIT_USER_KEY_PATTERN = /^[A-Za-z0-9|@+\-._]+$/;
 export const AGENT_RESOURCE = 'veto_agent';
 export const HUMAN_RESOURCE = 'veto_human';
 
+/**
+ * Drive resource types (§4.2), matching the tool catalogue's resourceType.
+ *
+ * A file and the folder containing it are different resources with different
+ * permissions — the §12.1 "authorized for one file, asks for the folder"
+ * scenario is precisely this distinction.
+ */
+export const FILE_RESOURCE = 'google_file';
+export const FOLDER_RESOURCE = 'google_folder';
+
+/**
+ * Folder-to-file containment.
+ *
+ * Declared on the file, naming the folder as subject, so a grant on a folder
+ * can reach the files inside it. The reverse never holds: being granted a file
+ * says nothing about its folder.
+ */
+export const RELATION_PARENT = 'parent';
+
 /** Relation-endpoint keys. */
 export const agentInstanceKey = (agentId: string): string => `${AGENT_RESOURCE}:${agentId}`;
 export const humanInstanceKey = (userId: string): string => `${HUMAN_RESOURCE}:${userId}`;

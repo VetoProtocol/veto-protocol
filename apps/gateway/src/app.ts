@@ -6,14 +6,17 @@
  * services because they have different trust boundaries and because invariant 8
  * reads better when exactly one process can enforce.
  *
- * ## What phase 2 deliberately does not do
+ * ## Where a tool call goes
  *
- * Every `tools/call` is denied, with `TOOL_NOT_ALLOWED`. That is the exit
- * condition, not a stub: CLAUDE.md requires deterministic deny-by-default to
- * ship before anything can allow, so the gateway is built refusing everything
- * and phase 3 adds the pipeline that can say yes. A gateway that allowed by
- * default while the pipeline was "coming soon" would be the exact failure this
- * product exists to prevent.
+ * `tools/call` validates arguments against the tool's strict schema
+ * (invariant 9), normalizes the call, and hands it to the §3.3 pipeline. The
+ * pipeline decides; the gateway enforces what it decided.
+ *
+ * An `allow` does not yet reach Google. Step 8 — minting the narrowest upstream
+ * token and making the call — is phase 5, so an allowed action returns a result
+ * saying it was authorized and not executed. That is stated plainly rather than
+ * faked, because a tool result that looks like data the model can use, when
+ * nothing was fetched, is a lie the model would act on.
  *
  * ## Denials are JSON-RPC errors, not tool results
  *
@@ -26,6 +29,10 @@
 
 import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
 import type { Pool } from 'pg';
+import type Redis from 'ioredis';
+import { evaluate } from '@veto/decisions';
+import type { PolicyDecisions } from '@veto/permit';
+import { normalize } from './normalize.ts';
 import { RPC, RpcError, parseRpcRequest, rpcError, rpcResult, type RpcRequest } from './jsonrpc.ts';
 import { GATEWAY_AUDIENCE, resolveSession, unauthenticated, type GatewaySession } from './session.ts';
 import { findTool, toolListing } from './tools.ts';
@@ -35,6 +42,9 @@ export const PROTOCOL_VERSION = '2025-06-18';
 
 export interface GatewayDeps {
   readonly pool: Pool;
+  readonly redis: Redis;
+  /** The §4.3 check. Unreachable means deny, and is recorded as its own reason. */
+  readonly policy: PolicyDecisions;
   /** Verifies gateway capability tokens. Required — there is no open configuration. */
   readonly capabilitySecret: string;
   /** This gateway's public origin. Only Veto-controlled URLs are ever returned. */
@@ -181,48 +191,94 @@ export function createGateway(deps: GatewayDeps): FastifyInstance {
     rpc: RpcRequest,
     session: GatewaySession,
     request: FastifyRequest,
-  ): Promise<never> {
+  ): Promise<unknown> {
     const name = rpc.params['name'];
     if (typeof name !== 'string' || name === '') {
       throw new RpcError(RPC.INVALID_PARAMS, 'name is required');
     }
 
-    const args = rpc.params['arguments'];
-    if (args !== undefined && (typeof args !== 'object' || args === null || Array.isArray(args))) {
+    const rawArgs = rpc.params['arguments'];
+    if (rawArgs !== undefined && (typeof rawArgs !== 'object' || rawArgs === null || Array.isArray(rawArgs))) {
       throw new RpcError(RPC.INVALID_PARAMS, 'arguments must be an object');
     }
 
     const tool = findTool(name);
     if (!tool) {
-      // An unknown tool is refused as a denial, not as "no such method". The
-      // catalogue is not secret, but a caller probing for tools should get the
-      // same shape of answer as one asking for a tool it may not use.
-      throw denied('TOOL_NOT_ALLOWED', 'This tool is not available to this agent.', session, request);
+      // An unknown tool is refused as a denial rather than "no such method".
+      // The catalogue is not secret, but a caller probing for tools should get
+      // the same shape of answer as one asking for a tool it may not use.
+      throw denied(
+        { reasonCode: 'TOOL_NOT_ALLOWED', humanMessage: 'This tool is not available to this agent.' },
+        session,
+        request,
+      );
     }
 
-    // Phase 2 ends here, on purpose. Argument validation against the tool's
-    // strict schema, then the nine-step pipeline, land in phase 3. Until then
-    // there is no path through this function that reaches an upstream service.
+    // §8 requires a correlation id spanning request, decision, approval,
+    // upstream call and audit event. It is minted here, at the edge.
+    const requestId = `req_${String(request.id).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40) || 'anon'}`;
+
+    const input = normalize(tool, (rawArgs ?? {}) as Record<string, unknown>, session, requestId);
+
+    const decision = await evaluate(
+      { pool: deps.pool, redis: deps.redis, policy: deps.policy },
+      input,
+    );
+
+    if (decision.result === 'allow') {
+      return {
+        content: [
+          {
+            type: 'text',
+            text:
+              `Authorized (${decision.decisionId}). Upstream execution is not connected yet, ` +
+              `so nothing was fetched.`,
+          },
+        ],
+        // Not an error: the decision succeeded. The absence of data is stated
+        // in the text rather than dressed up as a result.
+        isError: false,
+      };
+    }
+
     throw denied(
-      'TOOL_NOT_ALLOWED',
-      'No policy grants this agent that action yet.',
+      {
+        reasonCode: decision.reasonCode,
+        humanMessage: decision.humanMessage,
+        decisionId: decision.decisionId,
+        result: decision.result,
+        approvalId: decision.approvalId,
+        expiresAt: decision.expiresAt,
+        policyVersion: decision.policyVersion,
+      },
       session,
       request,
     );
   }
 
   function denied(
-    reasonCode: string,
-    humanMessage: string,
+    decision: {
+      reasonCode: string;
+      humanMessage: string;
+      decisionId?: string;
+      result?: string;
+      approvalId?: string | null;
+      expiresAt?: string | null;
+      policyVersion?: string | null;
+    },
     session: GatewaySession,
     request: FastifyRequest,
   ): RpcError {
-    return new RpcError(RPC.DENIED, humanMessage, {
-      result: 'deny',
-      reason_code: reasonCode,
-      human_message: humanMessage,
-      // One correlation id spans request, decision, approval, upstream call and
-      // audit event (§8). Fastify's request id is that id at this end.
+    // §5.2's response shape, carried in the error's data. A challenge names the
+    // approval and when it expires, so a client can point the human at it.
+    return new RpcError(RPC.DENIED, decision.humanMessage, {
+      result: decision.result ?? 'deny',
+      reason_code: decision.reasonCode,
+      human_message: decision.humanMessage,
+      ...(decision.decisionId === undefined ? {} : { decision_id: decision.decisionId }),
+      ...(decision.approvalId ? { approval_id: decision.approvalId } : {}),
+      ...(decision.expiresAt ? { expires_at: decision.expiresAt } : {}),
+      ...(decision.policyVersion ? { policy_version: decision.policyVersion } : {}),
       correlation_id: request.id,
       agent_id: session.agentId,
     });

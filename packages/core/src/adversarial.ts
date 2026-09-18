@@ -62,8 +62,8 @@ export const ADVERSARIAL_SCENARIOS: readonly AdversarialScenario[] = [
       'The grant is for a file id; a folder request is a different resource and denies ' +
       'with RESOURCE_OUT_OF_SCOPE. Must also deny when the folder is the file\'s own ' +
       'parent — inheritance flows down, not up.',
-    status: 'pending',
-    test: null,
+    status: 'implemented',
+    test: 'packages/decisions/test/pipeline.test.ts',
   },
   {
     id: 'S3',
@@ -89,8 +89,8 @@ export const ADVERSARIAL_SCENARIOS: readonly AdversarialScenario[] = [
       'if implemented as a rate limit: throttling is an availability control and never ' +
       'an authorization one (§7.1). The counter is shared, so the test must run the ' +
       'requests through the real store, not a per-request counter.',
-    status: 'pending',
-    test: null,
+    status: 'implemented',
+    test: 'packages/decisions/test/pipeline.test.ts',
   },
   {
     id: 'S5',
@@ -114,8 +114,8 @@ export const ADVERSARIAL_SCENARIOS: readonly AdversarialScenario[] = [
     asserts:
       'An in-flight session denies on its next request with WORKSPACE_LOCKED, checked ' +
       'at step 3 before any policy evaluation. Permit must not be consulted at all.',
-    status: 'pending',
-    test: null,
+    status: 'implemented',
+    test: 'packages/decisions/test/pipeline.test.ts',
   },
   {
     id: 'S7',
@@ -126,8 +126,8 @@ export const ADVERSARIAL_SCENARIOS: readonly AdversarialScenario[] = [
     asserts:
       'POLICY_UNAVAILABLE and deny. Assert the recorded decision keeps permit_result ' +
       'and veto_result distinct, and that no upstream call was made.',
-    status: 'pending',
-    test: null,
+    status: 'implemented',
+    test: 'packages/decisions/test/pipeline.test.ts',
   },
   {
     id: 'S8',
@@ -140,8 +140,8 @@ export const ADVERSARIAL_SCENARIOS: readonly AdversarialScenario[] = [
       'including the cloud metadata address), IPv6 equivalents, and any hostname that ' +
       'resolves into them. DNS rebinding means the check must bind to the resolved ' +
       'address actually connected to, not the name.',
-    status: 'pending',
-    test: null,
+    status: 'implemented',
+    test: 'packages/decisions/test/risk.test.ts',
   },
   {
     id: 'S9',

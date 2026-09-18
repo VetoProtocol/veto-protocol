@@ -12,7 +12,7 @@
  */
 
 import { createPool, loadRepoEnv } from '@veto/db';
-import { createPermitPolicyFacts, permitConfigFromEnv } from '@veto/permit';
+import { createPermitPolicyDecisions, createPermitPolicyFacts, permitConfigFromEnv } from '@veto/permit';
 import Redis from 'ioredis';
 import { createApp } from './app.ts';
 import { capabilityAuthenticator } from './capability-auth.ts';
@@ -28,12 +28,15 @@ function required(name: string): string {
 
 const pool = createPool(required('DATABASE_URL'));
 const redis = new Redis(required('REDIS_URL'));
-const policy = createPermitPolicyFacts(permitConfigFromEnv());
+const permitConfig = permitConfigFromEnv();
+const policy = createPermitPolicyFacts(permitConfig);
+const decisions = createPermitPolicyDecisions(permitConfig);
 
 const app = createApp({
   pool,
   redis,
   policy,
+  decisions,
   authenticate: capabilityAuthenticator(required('VETO_CAPABILITY_SECRET')),
   logger: true,
 });
@@ -50,6 +53,7 @@ for (const signal of ['SIGINT', 'SIGTERM'] as const) {
     void (async () => {
       await app.close();
       await policy.close();
+      await decisions.close();
       redis.disconnect();
       await pool.end();
     })();

@@ -10,7 +10,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Pool } from 'pg';
 import type Redis from 'ioredis';
-import { createFakePolicyFacts, type FakePolicyFacts } from '@veto/permit';
+import { createFakePolicyDecisions, createFakePolicyFacts, type FakePolicyFacts } from '@veto/permit';
 import { withWorkspace } from '@veto/db';
 import { findAgent } from '@veto/identity';
 import type { FastifyInstance } from 'fastify';
@@ -35,7 +35,13 @@ beforeAll(async () => {
   policy = createFakePolicyFacts();
   await seed(pool, WS_A, [ALICE, BOB]);
   await seed(pool, WS_B, [CAROL]);
-  app = createApp({ pool, redis, policy, authenticate: headerAuthenticator() });
+  app = createApp({
+    pool,
+    redis,
+    policy,
+    decisions: createFakePolicyDecisions(),
+    authenticate: headerAuthenticator(),
+  });
   await app.ready();
 });
 
@@ -64,7 +70,7 @@ describe('authentication', () => {
 
   it('cannot be constructed without an authenticator', () => {
     expect(() =>
-      createApp({ pool, redis, policy, authenticate: undefined as never }),
+      createApp({ pool, redis, policy, decisions: createFakePolicyDecisions(), authenticate: undefined as never }),
     ).toThrow(/fail closed/);
   });
 });

@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import Redis from 'ioredis';
 import type { Pool } from 'pg';
 import { createPool } from '@veto/db';
 import { mintCapability } from '@veto/tokens';
@@ -9,7 +10,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 
 export const SECRET = 'g'.repeat(48);
 
-export function testPool(): Pool {
+function loadEnv(): void {
   const runnerEnv = process.env['NODE_ENV'];
   try {
     process.loadEnvFile(path.join(here, '..', '..', '..', '.env'));
@@ -17,7 +18,16 @@ export function testPool(): Pool {
     /* already present */
   }
   if (runnerEnv !== undefined) process.env['NODE_ENV'] = runnerEnv;
+}
+
+export function testPool(): Pool {
+  loadEnv();
   return createPool(process.env['DATABASE_URL'] ?? '');
+}
+
+export function testRedis(): Redis {
+  loadEnv();
+  return new Redis(process.env['REDIS_URL'] ?? 'redis://localhost:6379');
 }
 
 export const suffix = (): string => Math.random().toString(36).slice(2, 10);

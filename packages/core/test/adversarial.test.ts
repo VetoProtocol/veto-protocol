@@ -88,6 +88,8 @@ describe('adversarial scenario registry', () => {
     const pending = pendingScenarios().map((s) => s.id);
     // Not an aspiration: this is the list stage 2 closes, and it shrinks as
     // phases land.
-    expect(pending).toEqual(['S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7', 'S8']);
+    // Shrinks as phases land. S1 needs the full loop; S3 and S5 are the
+    // approval state machine in phase 6.
+    expect(pending).toEqual(['S1', 'S3', 'S5']);
   });
 });
