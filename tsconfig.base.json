@@ -17,6 +17,7 @@
     "declarationMap": true,
     "sourceMap": true,
     "isolatedModules": true,
+    "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true

@@ -5,7 +5,7 @@ import {
   digestsEqual,
   UndigestibleValueError,
   type DigestibleAction,
-} from '../src/action-digest.js';
+} from '../src/action-digest.ts';
 
 const base: DigestibleAction = {
   workspace_id: 'ws_1',

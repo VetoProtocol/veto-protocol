@@ -14,4 +14,11 @@ export default tseslint.config(
       eqeqeq: ['error', 'always'],
     },
   },
+  {
+    // Tests only. A non-null assertion in production authorization code can let
+    // an unchecked value cross a trust boundary; in a test the worst case is a
+    // failing assertion, which is the point of a test.
+    files: ['**/test/**/*.ts', '**/*.test.ts'],
+    rules: { '@typescript-eslint/no-non-null-assertion': 'off' },
+  },
 );

@@ -5,7 +5,7 @@ import {
   resultFor,
   UNKNOWN_REASON,
   type ReasonCode,
-} from '../src/reason-codes.js';
+} from '../src/reason-codes.ts';
 
 const codes = Object.keys(REASON_CODES) as ReasonCode[];
 

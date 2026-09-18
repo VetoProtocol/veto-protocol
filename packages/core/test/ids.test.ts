@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { AgentId, HumanId, InvalidIdError, WorkspaceId } from '../src/ids.js';
+import { AgentId, HumanId, InvalidIdError, WorkspaceId } from '../src/ids.ts';
 
 describe('branded ids', () => {
   it('accepts a well-formed id', () => {
