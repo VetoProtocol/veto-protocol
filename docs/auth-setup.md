@@ -75,21 +75,15 @@ So the first sign-in has to fail once, to tell you your subject:
    ```
    [auth] no workspace for subject oidc|1078...
    ```
-4. Insert the membership. There is no admin UI yet, so this is SQL:
+4. Create the membership:
 
-```sql
--- Replace the subject with the one from the log.
-begin;
-select set_config('veto.workspace_id', 'ws_yourworkspace', true);
-
-insert into workspaces (id, name, type)
-values ('ws_yourworkspace', 'Your workspace', 'organization')
-on conflict do nothing;
-
-insert into users (id, workspace_id, identity_subject)
-values ('usr_you', 'ws_yourworkspace', 'oidc|1078...');
-commit;
+```bash
+pnpm --filter @veto/identity invite -- --subject "oidc|1078..." --workspace "Your workspace"
 ```
+
+It prints the workspace and user ids it created. Idempotent on the subject, so
+running it twice returns the existing membership rather than forking a second
+identity for the same person.
 
 Sign in again and you are in.
 

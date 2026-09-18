@@ -11,11 +11,14 @@
  * in" is far harder to diagnose than one that refuses to start.
  */
 
-import { createPool } from '@veto/db';
+import { createPool, loadRepoEnv } from '@veto/db';
 import { createPermitPolicyFacts, permitConfigFromEnv } from '@veto/permit';
 import Redis from 'ioredis';
 import { createApp } from './app.ts';
 import { capabilityAuthenticator } from './capability-auth.ts';
+
+// The repo-root .env, with anything already in the environment winning over it.
+loadRepoEnv();
 
 function required(name: string): string {
   const value = (process.env[name] ?? '').trim();

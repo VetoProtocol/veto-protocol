@@ -8,7 +8,8 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "invite": "node --experimental-strip-types src/invite-cli.ts"
   },
   "dependencies": {
     "@veto/core": "workspace:*",

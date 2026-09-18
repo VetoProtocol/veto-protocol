@@ -1,3 +1,24 @@
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+/*
+ * Next loads `.env` from its own directory, but this repo keeps one at the
+ * root so every package reads the same file. Load it here, before the server
+ * starts, and let anything already set in the environment win — the reverse
+ * precedence is what let `.env` clobber NODE_ENV elsewhere in this repo.
+ */
+{
+  const before = { ...process.env };
+  try {
+    process.loadEnvFile(path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '.env'));
+    for (const [key, value] of Object.entries(before)) {
+      if (value !== undefined) process.env[key] = value;
+    }
+  } catch {
+    // No .env; the environment is the only source.
+  }
+}
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,

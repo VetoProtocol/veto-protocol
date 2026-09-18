@@ -15,6 +15,12 @@ export default tseslint.config(
     },
   },
   {
+    // Build configuration runs in Node before any bundler sees it, so the Node
+    // globals are real here even though nothing in src/ may use them freely.
+    files: ['**/*.mjs', '**/*.config.js'],
+    languageOptions: { globals: { process: 'readonly', console: 'readonly' } },
+  },
+  {
     // Tests only. A non-null assertion in production authorization code can let
     // an unchecked value cross a trust boundary; in a test the worst case is a
     // failing assertion, which is the point of a test.
