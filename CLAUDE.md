@@ -24,7 +24,7 @@ pnpm --filter @veto/api exec vitest run -t 'IDOR'   # one test by name
 pnpm --filter @veto/db migrate                     # apply pending migrations
 pnpm --filter @veto/api start                      # control plane on :4000
 pnpm --filter @veto/dashboard dev                  # dashboard on :3000
-pnpm --filter @veto/identity invite -- --subject "oidc|<sub>" --workspace "Name"
+pnpm --filter @veto/identity invite -- --subject "oidc|<from the auth log>" --workspace "Name"
 ```
 
 Both entry points load the repo-root `.env`, with anything already set in the

@@ -71,15 +71,23 @@ So the first sign-in has to fail once, to tell you your subject:
 
 1. Run both services, open <http://localhost:3000/login>, sign in.
 2. You land on "that account is not a member of any workspace here".
-3. The API-side log line names the subject:
+3. The dashboard's terminal names your subject. Copy it **from your own log
+   line** — it is a ~21 digit number unique to your account:
    ```
-   [auth] no workspace for subject oidc|1078...
+   [auth] no workspace for subject oidc|PASTE-THIS-PART
    ```
 4. Create the membership:
 
 ```bash
-pnpm --filter @veto/identity invite -- --subject "oidc|1078..." --workspace "Your workspace"
+pnpm --filter @veto/identity invite -- \
+  --subject "oidc|PASTE-THIS-PART" \
+  --workspace "Your workspace"
 ```
+
+> Use the subject from **your** log line. Inviting a made-up subject creates a
+> membership for whoever that account actually belongs to — the format is a real
+> Google account id, so a plausible-looking invention may not be unallocated.
+> If you do it by accident, delete that `users` row before signing in.
 
 It prints the workspace and user ids it created. Idempotent on the subject, so
 running it twice returns the existing membership rather than forking a second
