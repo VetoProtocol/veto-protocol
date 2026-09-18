@@ -4,21 +4,68 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository state — read this first
 
-**There is no code yet.** This repo currently contains exactly one thing that matters:
-`veto-protocol-spec.md` — the authoritative v1.0 developer specification. Everything
+`veto-protocol-spec.md` is the authoritative v1.0 developer specification. Everything
 below is derived from it; when this file and the spec disagree, **the spec wins**.
+Section references (§3.3, §12.1) point there. An older version of this file called it
+`SPEC.md` — that filename does not exist.
 
-Consequences for working here:
+**Stage 1 is built.** Identities can be modelled and revoked, over HTTP, with tenant
+isolation enforced in three places. Stage 2 (MCP gateway) has not started.
 
-- There is no `package.json`, no build, no lint, no test runner, and no CI. Do not
-  claim to have run them. The first implementation task includes choosing and
-  scaffolding them (stack is fixed below; tooling choices are not).
-- This directory is **not a git repository**. `git init` before the first commit.
-- Section references are to `veto-protocol-spec.md` (e.g. §3.3, §12.1). An older
-  version of this file called it `SPEC.md` — that filename does not exist.
-- Stray junk in the root (`*.crdownload`, `CLAUDE.md.save`, `.CLAUDE.md.swp`,
-  `claude-desktop_amd64.deb`, the source `.docx`) is not project content. Add a
-  `.gitignore` before the first commit rather than committing them.
+### Commands
+
+```bash
+pnpm install
+pnpm -r typecheck            # tsc --noEmit in every package
+pnpm lint                    # eslint; no-explicit-any and no-non-null-assertion are errors
+pnpm -r test                 # all packages
+pnpm --filter @veto/api test # one package
+pnpm --filter @veto/api exec vitest run -t 'IDOR'   # one test by name
+pnpm --filter @veto/db migrate                     # apply pending migrations
+```
+
+`db`, `identity` and `api` tests need a live Postgres and Redis and read `DATABASE_URL`
+and `REDIS_URL` from `.env` (gitignored; see `.env.example`). They run with
+`fileParallelism: false` and pin `NODE_ENV=test` — the Permit fake refuses to construct
+outside a test env, and the app `.env` sets `NODE_ENV=development`.
+
+### Layout
+
+| Package | Holds |
+| --- | --- |
+| `packages/core` | Branded ids, the 25 reason codes, action digest. No I/O. |
+| `packages/db` | Pool, `withWorkspace`, migration runner, `migrations/*.sql` |
+| `packages/permit` | `PolicyFacts` port + test-only fake. **No real adapter yet.** |
+| `packages/identity` | Agent registration, revocation, sessions, audit writer |
+| `apps/api` | Fastify control plane (§5). `createApp()` only — no server entrypoint. |
+
+`apps/dashboard` (Next.js) does not exist yet.
+
+### Conventions this repo already commits to
+
+- **Relative imports carry `.ts` extensions**, not `.js`. `node --experimental-strip-types`
+  cannot resolve `.js` specifiers, and `allowImportingTsExtensions` is on.
+- **`pg` is CommonJS.** `import pg from 'pg'; const { Pool } = pg;` — a named ESM import
+  fails at runtime, not at typecheck.
+- **Every tenant-scoped query runs inside `withWorkspace()`**, which sets
+  `veto.workspace_id` transaction-locally. Session scope would leak across pooled
+  checkouts. RLS is `FORCE`d because the `veto` role owns the tables.
+- **Migrations are immutable once applied.** The runner records a checksum and refuses
+  to run if an applied file changed on disk. Write a new migration instead.
+- **Audit events take a typed input that cannot carry content** — no body, token or
+  challenge field exists on `AuditEventInput`. That type is the control (invariant 5).
+- New HTTP routes get a closed request schema (`additionalProperties: false`) and a
+  response schema. Fastify's AJV defaults (`removeAdditional`, `coerceTypes`) are
+  disabled in `createApp` — do not re-enable them.
+
+### Open items
+
+- `docs/threat-model.md` §8 sign-off is **unticked**. §16 gates storing production
+  credentials on that review, so stage 2's vault work is blocked until it happens.
+- No real Permit adapter, no Permit environment, no PDP latency measurement. Hosted PDP
+  is the only option here (no container runtime), which may collide with P95 < 200 ms.
+- `packages/db/migrations/0002` carries a stale comment about burning a revoked
+  `client_id`; `0006` replaced that constraint and explains why.
 
 ## What we're building
 
