@@ -1,6 +1,6 @@
 # Veto Protocol — Threat Model
 
-**Status:** reviewed 2026-09-18, awaiting owner acceptance of residual risk · **Stage:** 1 complete (spec §13) · **Covers:** Veto Protocol v1.0 MVP
+**Status:** reviewed and accepted 2026-09-18 · **Stage:** 2 in progress (spec §13) · **Covers:** Veto Protocol v1.0 MVP
 
 > **Gate.** Spec §16 requires this document to be complete and reviewed **before any
 > production credential is stored**. The credential vault (stage 2) does not start
@@ -237,8 +237,8 @@ Reviewed **2026-09-18**, against stage 1 as built rather than as planned.
 | Stage-1 deltas incorporated | ✅ boundaries 4 and 5, T15–T17, §4.3, PDP latency |
 | Controls claimed as green actually run in CI | ✅ verified against the suite, not against intent |
 | Reviewed by the implementer | ✅ |
-| **Residual risk accepted by the project owner** | ☐ **pending — see below** |
-| Production credentials may now be stored | ☐ blocked on the line above |
+| **Residual risk accepted by the project owner** | ✅ 2026-09-18 |
+| Production credentials may now be stored | ✅ **unblocked** |
 
 ### 8.1 What the owner is being asked to accept
 
@@ -254,4 +254,9 @@ implementer's to make. Four residual risks, each unfixable within v1.0's scope:
 4. **Presence and intent are signals, never proof.** Both can be wrong; only fresh
    passkey verification is strong, and it is required exactly where policy says so.
 
-Accepting these unblocks the credential vault (§16). Nothing else is waiting on it.
+**Accepted by the project owner on 2026-09-18**, all four. The §16 gate on
+storing production credentials is lifted, and the credential vault may be built.
+
+Acceptance is of these four as written. It is not a standing waiver: a change
+that alters any of them — a new trust boundary, a second cross-tenant read, a
+credential held somewhere new — brings this document back for review.

@@ -28,8 +28,10 @@ Out, deliberately:
 ## Blocker to clear first
 
 §16 gates storing production credentials on a completed threat-model review, and
-phase 4 below stores Google refresh tokens. `docs/threat-model.md` §8 is
-unticked. **Phases 0–3 can proceed; phase 4 cannot start until it is signed off.**
+phase 4 below stores Google refresh tokens.
+
+**Cleared 2026-09-18.** The review is done and the project owner accepted the
+four residual risks in `threat-model.md` §8.1. Phase 4 may proceed.
 
 ## Phases
 
@@ -147,6 +149,15 @@ endpoint (§9.1).
 **Exit:** a connection is established, stored encrypted, and revocable; the
 credential never appears in a log, an audit event, or an API response.
 
+**Vault and broker done 2026-09-18**, 30 tests. The OAuth authorization-code
+route is the remaining piece — the token exchange and revocation adapters exist
+and are tested against a fake provider.
+
+D4 answered: no cloud KMS is available here, so `createLocalKeyWrapper` stands
+in behind a `KeyWrapper` port. It is honest about being weaker — the master key
+lives in the process environment — and swapping it for Cloud KMS changes one
+construction site.
+
 ### Phase 5 — Upstream call and the full loop
 
 Step 8: on allow, mint the narrowest token and call Drive, forwarding *exactly*
@@ -182,7 +193,7 @@ the moment the grant is spent removes it exactly when an auditor wants it.
 | D1 | Local PDP for development? | **Blocked on the operator.** podman 5.4.2 is in apt but needs sudo, which is password-gated here. `sudo apt install podman` unblocks it. Until then, development runs against the hosted PDP and local stays a deployment requirement |
 | D2 | Gateway in-process with the API, or separate? | Separate. Different trust boundary, different traffic, and invariant 8 reads better when there is exactly one thing that can enforce |
 | D3 | Where do volume limits live? | Redis, per (workspace, agent, window). Postgres cannot take per-request write load, and §12.1's split-bulk-request test needs a shared counter |
-| D4 | KMS for envelope encryption in development? | Deferred to phase 4 — depends on whether a cloud KMS is available or a local key wrapper stands in |
+| D4 | KMS for envelope encryption in development? | **Answered.** No cloud KMS here, so a local wrapper stands in behind the `KeyWrapper` port. Production swaps the implementation, not the callers |
 
 ## Risks
 

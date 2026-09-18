@@ -153,6 +153,37 @@ importers:
         specifier: 2.1.8
         version: 2.1.8(@types/node@22.10.2)
 
+  packages/connections:
+    dependencies:
+      '@veto/core':
+        specifier: workspace:*
+        version: link:../core
+      '@veto/db':
+        specifier: workspace:*
+        version: link:../db
+      '@veto/identity':
+        specifier: workspace:*
+        version: link:../identity
+      '@veto/vault':
+        specifier: workspace:*
+        version: link:../vault
+      pg:
+        specifier: 8.13.1
+        version: 8.13.1
+    devDependencies:
+      '@types/node':
+        specifier: 22.10.2
+        version: 22.10.2
+      '@types/pg':
+        specifier: 8.11.10
+        version: 8.11.10
+      typescript:
+        specifier: 5.7.2
+        version: 5.7.2
+      vitest:
+        specifier: 2.1.8
+        version: 2.1.8(@types/node@22.10.2)
+
   packages/core:
     devDependencies:
       '@types/node':
@@ -266,6 +297,18 @@ importers:
         version: 2.1.8(@types/node@22.10.2)
 
   packages/tokens:
+    devDependencies:
+      '@types/node':
+        specifier: 22.10.2
+        version: 22.10.2
+      typescript:
+        specifier: 5.7.2
+        version: 5.7.2
+      vitest:
+        specifier: 2.1.8
+        version: 2.1.8(@types/node@22.10.2)
+
+  packages/vault:
     devDependencies:
       '@types/node':
         specifier: 22.10.2

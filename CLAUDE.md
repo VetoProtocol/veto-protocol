@@ -49,6 +49,8 @@ outside a test env, and the app `.env` sets `NODE_ENV=development`.
 | `packages/identity` | Agent registration, revocation, sessions, audit writer |
 | `packages/tokens` | Short-lived internal capability tokens. HMAC, no algorithm field. |
 | `packages/decisions` | The §3.3 pipeline. Decides; never executes. |
+| `packages/vault` | Envelope encryption. The encryption context is a tenant boundary. |
+| `packages/connections` | Credential vault and broker. Never returns a refresh token. |
 | `apps/api` | Fastify control plane (§5). Manages objects; not an enforcement point. |
 | `apps/gateway` | **The** MCP enforcement point (§3.1). Every tools/call denies until phase 3. |
 | `apps/dashboard` | Next.js dashboard. Theme matches vetoprotocol.live; dark only. |
@@ -78,6 +80,9 @@ inserted by hand until an invitation flow exists.
   reads `users` across tenants because sign-in must find the workspace before it can
   scope to one. It takes one exact subject, returns two columns, filters to active
   users, and is SELECT-only. Do not extend it.
+- **The vault never returns a refresh token.** `Connection` has no field that could
+  carry one; the broker hands back a short-lived access token instead. Keep it
+  unrepresentable rather than remembering not to.
 - **The pipeline decides and never fetches.** An `allow` means "you may", not "it
   happened". Step 8 is phase 5.
 - **Every route asserts its credential scope** (`requireScope`). A sign-in credential
