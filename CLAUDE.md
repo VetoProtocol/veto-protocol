@@ -23,6 +23,7 @@ pnpm --filter @veto/api test # one package
 pnpm --filter @veto/api exec vitest run -t 'IDOR'   # one test by name
 pnpm --filter @veto/db migrate                     # apply pending migrations
 pnpm --filter @veto/api start                      # control plane on :4000
+pnpm --filter @veto/gateway start                  # MCP gateway on :4100
 pnpm --filter @veto/dashboard dev                  # dashboard on :3000
 pnpm --filter @veto/identity invite -- --subject "oidc|<from the auth log>" --workspace "Name"
 ```
@@ -47,7 +48,8 @@ outside a test env, and the app `.env` sets `NODE_ENV=development`.
 | `packages/permit` | `PolicyFacts` port + test-only fake. **No real adapter yet.** |
 | `packages/identity` | Agent registration, revocation, sessions, audit writer |
 | `packages/tokens` | Short-lived internal capability tokens. HMAC, no algorithm field. |
-| `apps/api` | Fastify control plane (§5). `createApp()` only — no server entrypoint. |
+| `apps/api` | Fastify control plane (§5). Manages objects; not an enforcement point. |
+| `apps/gateway` | **The** MCP enforcement point (§3.1). Every tools/call denies until phase 3. |
 | `apps/dashboard` | Next.js dashboard. Theme matches vetoprotocol.live; dark only. |
 
 Sign-in is OIDC against any conformant provider (`docs/auth-setup.md`). There is

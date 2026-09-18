@@ -2,7 +2,19 @@ import js from '@eslint/js';
 import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
-  { ignores: ['**/dist/**', '**/node_modules/**', '**/.next/**', '**/coverage/**'] },
+  {
+    ignores: [
+      '**/dist/**',
+      '**/node_modules/**',
+      '**/.next/**',
+      '**/coverage/**',
+      // Third-party bundles shipped as-is. Linting somebody else's minified
+      // build reports thousands of findings nobody can act on.
+      '**/vendor/**',
+      // Exported copies of the design mockup. Not source.
+      'MockUpp/**',
+    ],
+  },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {

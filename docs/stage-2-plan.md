@@ -88,6 +88,12 @@ Returns only Veto-controlled URLs (invariant 8).
 **Exit:** a real MCP client connects, lists tools, and every `call_tool` is
 denied with `TOOL_NOT_ALLOWED`. Deny-by-default before anything can allow.
 
+**Done 2026-09-18**, 23 tests. The session check reads the agent's row on every
+request rather than trusting the token, which is what makes §11's five-second
+revocation real — a test flips an agent to revoked mid-session and the next call
+is refused. Nine distinct ways of being unauthenticated all return one identical
+body, so a revoked agent learns exactly as much as a stranger.
+
 ### Phase 3 — The decision pipeline
 
 `POST /v1/decisions/evaluate` with the §5.1 request and §5.2 response, and the

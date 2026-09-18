@@ -104,6 +104,46 @@ importers:
         specifier: 2.1.8
         version: 2.1.8(@types/node@22.10.2)
 
+  apps/gateway:
+    dependencies:
+      '@veto/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@veto/db':
+        specifier: workspace:*
+        version: link:../../packages/db
+      '@veto/identity':
+        specifier: workspace:*
+        version: link:../../packages/identity
+      '@veto/permit':
+        specifier: workspace:*
+        version: link:../../packages/permit
+      '@veto/tokens':
+        specifier: workspace:*
+        version: link:../../packages/tokens
+      fastify:
+        specifier: 5.2.1
+        version: 5.2.1
+      ioredis:
+        specifier: 5.4.2
+        version: 5.4.2
+      pg:
+        specifier: 8.13.1
+        version: 8.13.1
+    devDependencies:
+      '@types/node':
+        specifier: 22.10.2
+        version: 22.10.2
+      '@types/pg':
+        specifier: 8.11.10
+        version: 8.11.10
+      typescript:
+        specifier: 5.7.2
+        version: 5.7.2
+      vitest:
+        specifier: 2.1.8
+        version: 2.1.8(@types/node@22.10.2)
+
   packages/core:
     devDependencies:
       '@types/node':
