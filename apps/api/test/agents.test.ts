@@ -10,6 +10,8 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Pool } from 'pg';
 import type Redis from 'ioredis';
+import { randomBytes } from 'node:crypto';
+import { createLocalKeyWrapper } from '@veto/vault';
 import { createFakePolicyDecisions, createFakePolicyFacts, type FakePolicyFacts } from '@veto/permit';
 import { withWorkspace } from '@veto/db';
 import { findAgent } from '@veto/identity';
@@ -40,6 +42,7 @@ beforeAll(async () => {
     redis,
     policy,
     decisions: createFakePolicyDecisions(),
+    wrapper: createLocalKeyWrapper(randomBytes(32).toString('base64')),
     authenticate: headerAuthenticator(),
   });
   await app.ready();
@@ -70,7 +73,7 @@ describe('authentication', () => {
 
   it('cannot be constructed without an authenticator', () => {
     expect(() =>
-      createApp({ pool, redis, policy, decisions: createFakePolicyDecisions(), authenticate: undefined as never }),
+      createApp({ pool, redis, policy, decisions: createFakePolicyDecisions(), wrapper: createLocalKeyWrapper(randomBytes(32).toString('base64')), authenticate: undefined as never }),
     ).toThrow(/fail closed/);
   });
 });

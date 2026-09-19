@@ -14,6 +14,8 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import type { Pool } from 'pg';
 import type Redis from 'ioredis';
 import { PolicyUnavailableError, type PolicyDecisions, type PolicyFacts } from '@veto/permit';
+import type { GoogleOAuthConfig, UpstreamTokenExchange } from '@veto/connections';
+import type { KeyWrapper } from '@veto/vault';
 import { DuplicateLiveAgentError } from '@veto/identity';
 import { errorBody, HttpError } from './errors.ts';
 import type { Authenticator } from './principal.ts';
@@ -21,6 +23,7 @@ import { registerAgentRoutes } from './routes/agents.ts';
 import { registerAuthRoutes } from './routes/auth.ts';
 import { registerDecisionRoutes } from './routes/decisions.ts';
 import { registerApprovalRoutes } from './routes/approvals.ts';
+import { registerConnectionRoutes } from './routes/connections.ts';
 
 export interface AppDeps {
   readonly pool: Pool;
@@ -28,6 +31,11 @@ export interface AppDeps {
   readonly policy: PolicyFacts;
   /** The §4.3 check, for /v1/decisions/evaluate. Decides only; never executes. */
   readonly decisions: PolicyDecisions;
+  /** Wraps the data keys protecting stored provider credentials. */
+  readonly wrapper: KeyWrapper;
+  /** Null when Google is not configured; the connect route then refuses rather than half-works. */
+  readonly google?: GoogleOAuthConfig | null;
+  readonly exchange?: UpstreamTokenExchange | null;
   /** Required. See principal.ts — there is no unauthenticated configuration. */
   readonly authenticate: Authenticator;
   readonly logger?: boolean;
@@ -97,6 +105,12 @@ export function createApp(deps: AppDeps): FastifyInstance {
   registerAuthRoutes(app, { pool: deps.pool });
   registerDecisionRoutes(app, { pool: deps.pool, redis: deps.redis, decisions: deps.decisions });
   registerApprovalRoutes(app, { pool: deps.pool });
+  registerConnectionRoutes(app, {
+    pool: deps.pool,
+    wrapper: deps.wrapper,
+    google: deps.google ?? null,
+    exchange: deps.exchange ?? null,
+  });
 
   return app;
 }

@@ -26,6 +26,9 @@ importers:
 
   apps/api:
     dependencies:
+      '@veto/connections':
+        specifier: workspace:*
+        version: link:../../packages/connections
       '@veto/core':
         specifier: workspace:*
         version: link:../../packages/core
@@ -44,6 +47,9 @@ importers:
       '@veto/tokens':
         specifier: workspace:*
         version: link:../../packages/tokens
+      '@veto/vault':
+        specifier: workspace:*
+        version: link:../../packages/vault
       fastify:
         specifier: 5.2.1
         version: 5.2.1
@@ -109,6 +115,9 @@ importers:
 
   apps/gateway:
     dependencies:
+      '@veto/connections':
+        specifier: workspace:*
+        version: link:../../packages/connections
       '@veto/core':
         specifier: workspace:*
         version: link:../../packages/core
@@ -127,6 +136,9 @@ importers:
       '@veto/tokens':
         specifier: workspace:*
         version: link:../../packages/tokens
+      '@veto/vault':
+        specifier: workspace:*
+        version: link:../../packages/vault
       ajv:
         specifier: 8.17.1
         version: 8.17.1

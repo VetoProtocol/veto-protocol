@@ -308,7 +308,7 @@ describe('tool calls go through the pipeline', () => {
     expect(result.isError).toBe(false);
     // An allow is not an execution. Phase 5 makes the upstream call; pretending
     // otherwise would hand the model a result it would act on.
-    expect(result.content[0].text).toContain('not connected yet');
+    expect(result.content[0].text).toContain('not configured');
   });
 
   it('challenges, and names the approval the human must resolve', async () => {

@@ -33,6 +33,7 @@ import type Redis from 'ioredis';
 import { evaluate } from '@veto/decisions';
 import type { PolicyDecisions } from '@veto/permit';
 import { normalize } from './normalize.ts';
+import { executeAllowed, type ExecuteDeps } from './execute.ts';
 import { RPC, RpcError, parseRpcRequest, rpcError, rpcResult, type RpcRequest } from './jsonrpc.ts';
 import { GATEWAY_AUDIENCE, resolveSession, unauthenticated, type GatewaySession } from './session.ts';
 import { findTool, toolListing } from './tools.ts';
@@ -45,6 +46,11 @@ export interface GatewayDeps {
   readonly redis: Redis;
   /** The §4.3 check. Unreachable means deny, and is recorded as its own reason. */
   readonly policy: PolicyDecisions;
+  /**
+   * Step 8. Absent means the gateway decides but cannot carry anything out —
+   * an allow then says so rather than pretending it fetched something.
+   */
+  readonly execute?: Omit<ExecuteDeps, 'pool'> | null;
   /** Verifies gateway capability tokens. Required — there is no open configuration. */
   readonly capabilitySecret: string;
   /** This gateway's public origin. Only Veto-controlled URLs are ever returned. */
@@ -239,19 +245,39 @@ export function createGateway(deps: GatewayDeps): FastifyInstance {
     );
 
     if (decision.result === 'allow') {
-      return {
-        content: [
+      if (!deps.execute) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text:
+                `Authorized (${decision.decisionId}). Upstream execution is not configured, ` +
+                `so nothing was fetched.`,
+            },
+          ],
+          // Not an error: the decision succeeded. The absence of data is stated
+          // rather than dressed up as a result.
+          isError: false,
+        };
+      }
+
+      const executed = await executeAllowed({ pool: deps.pool, ...deps.execute }, input);
+
+      if (!executed.ok) {
+        // Authorized, but the credential or the upstream service would not
+        // carry it out. That is a refusal with its own reason, not a success.
+        throw denied(
           {
-            type: 'text',
-            text:
-              `Authorized (${decision.decisionId}). Upstream execution is not connected yet, ` +
-              `so nothing was fetched.`,
+            reasonCode: executed.reasonCode,
+            humanMessage: executed.message,
+            decisionId: decision.decisionId,
           },
-        ],
-        // Not an error: the decision succeeded. The absence of data is stated
-        // in the text rather than dressed up as a result.
-        isError: false,
-      };
+          session,
+          request,
+        );
+      }
+
+      return { content: executed.content, isError: false };
     }
 
     throw denied(

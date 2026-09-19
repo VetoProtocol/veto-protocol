@@ -84,12 +84,9 @@ describe('adversarial scenario registry', () => {
     }
   });
 
-  it('reports what stage 2 still owes', () => {
-    const pending = pendingScenarios().map((s) => s.id);
-    // Not an aspiration: this is the list stage 2 closes, and it shrinks as
-    // phases land.
-    // Only the prompt-injection scenario remains: it needs the full loop,
-    // including an upstream call that can return attacker-written content.
-    expect(pending).toEqual(['S1']);
+  it('reports what is still owed', () => {
+    // All twelve are implemented. Kept as an assertion rather than deleted:
+    // adding a scenario without a test should fail here, not pass quietly.
+    expect(pendingScenarios().map((s) => s.id)).toEqual([]);
   });
 });

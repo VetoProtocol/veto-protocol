@@ -10,6 +10,8 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Pool } from 'pg';
 import type Redis from 'ioredis';
+import { randomBytes } from 'node:crypto';
+import { createLocalKeyWrapper } from '@veto/vault';
 import { createFakePolicyDecisions, createFakePolicyFacts } from '@veto/permit';
 import { mintCapability, verifyCapability } from '@veto/tokens';
 import type { FastifyInstance } from 'fastify';
@@ -38,6 +40,7 @@ beforeAll(async () => {
     redis,
     policy: createFakePolicyFacts(),
     decisions: createFakePolicyDecisions(),
+    wrapper: createLocalKeyWrapper(randomBytes(32).toString('base64')),
     authenticate: headerAuthenticator(),
   });
   await app.ready();

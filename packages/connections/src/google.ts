@@ -24,6 +24,89 @@ export interface GoogleOAuthConfig {
   readonly redirectUri: string;
 }
 
+export interface CodeExchangeResult {
+  readonly refreshToken: string;
+  readonly scopes: readonly string[];
+  readonly accessTokenExpiresAt: Date;
+}
+
+/**
+ * Trade an authorization code for a refresh token.
+ *
+ * `redirect_uri` comes from configuration and never from the request. §12.1
+ * covers exact redirect URI validation, and the way to get it exactly right is
+ * to have nothing to validate: the value sent here is the one registered with
+ * Google, so a caller cannot propose a different one.
+ *
+ * A grant with no refresh token is refused rather than stored. Google omits it
+ * when the user has already consented and `prompt=consent` was not sent — the
+ * result is an access token that works for an hour and a connection that dies
+ * silently. Failing now is the honest outcome.
+ */
+export async function exchangeAuthorizationCode(
+  config: GoogleOAuthConfig,
+  code: string,
+  codeVerifier: string,
+): Promise<CodeExchangeResult> {
+  const response = await fetch(GOOGLE_TOKEN_URL, {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      client_id: config.clientId,
+      client_secret: config.clientSecret,
+      code,
+      code_verifier: codeVerifier,
+      grant_type: 'authorization_code',
+      redirect_uri: config.redirectUri,
+    }),
+  });
+
+  if (!response.ok) throw new Error(`code exchange failed: ${response.status}`);
+
+  const body = (await response.json()) as {
+    refresh_token?: string;
+    expires_in?: number;
+    scope?: string;
+  };
+
+  if (typeof body.refresh_token !== 'string' || body.refresh_token === '') {
+    throw new Error('code exchange returned no refresh token');
+  }
+
+  return {
+    refreshToken: body.refresh_token,
+    scopes: body.scope === undefined ? [] : body.scope.split(' ').filter(Boolean),
+    accessTokenExpiresAt: new Date(Date.now() * 1 + (body.expires_in ?? 300) * 1000),
+  };
+}
+
+/**
+ * The consent URL.
+ *
+ * `access_type=offline` and `prompt=consent` together are what make Google
+ * return a refresh token — without them a repeat authorization yields only an
+ * access token, and the connection stops working an hour later.
+ */
+export function buildConsentUrl(
+  config: GoogleOAuthConfig,
+  options: { state: string; codeChallenge: string; scopes: readonly string[] },
+): string {
+  const url = new URL(GOOGLE_AUTH_URL);
+  url.search = new URLSearchParams({
+    client_id: config.clientId,
+    redirect_uri: config.redirectUri,
+    response_type: 'code',
+    scope: options.scopes.join(' '),
+    state: options.state,
+    code_challenge: options.codeChallenge,
+    code_challenge_method: 'S256',
+    access_type: 'offline',
+    prompt: 'consent',
+    include_granted_scopes: 'false',
+  }).toString();
+  return url.href;
+}
+
 export function createGoogleExchange(config: GoogleOAuthConfig): UpstreamTokenExchange {
   return {
     async refresh(refreshToken: string): Promise<AccessGrant> {

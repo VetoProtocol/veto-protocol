@@ -145,6 +145,30 @@ export async function findConnection(
   return rows[0] ? toConnection(rows[0]) : null;
 }
 
+/**
+ * The live connection a call should use.
+ *
+ * Scoped to the workspace and the owning human: an agent acts for one person,
+ * and it must not reach a colleague's Google account because they happen to
+ * share a workspace.
+ */
+export async function findActiveConnection(
+  db: Db,
+  workspaceId: string,
+  userId: string,
+  provider: string,
+): Promise<Connection | null> {
+  const { rows } = await db.query<ConnectionRow>(
+    `select id, workspace_id, user_id, provider, scopes, status, expires_at, created_at
+       from connections
+      where workspace_id = $1 and user_id = $2 and provider = $3 and status = 'active'
+      order by created_at desc
+      limit 1`,
+    [workspaceId, userId, provider],
+  );
+  return rows[0] ? toConnection(rows[0]) : null;
+}
+
 export async function listConnections(db: Db, workspaceId: string): Promise<Connection[]> {
   const { rows } = await db.query<ConnectionRow>(
     `select id, workspace_id, user_id, provider, scopes, status, expires_at, created_at

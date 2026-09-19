@@ -18,7 +18,9 @@
     "ioredis": "5.4.2",
     "pg": "8.13.1",
     "@veto/decisions": "workspace:*",
-    "ajv": "8.17.1"
+    "ajv": "8.17.1",
+    "@veto/connections": "workspace:*",
+    "@veto/vault": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "22.10.2",

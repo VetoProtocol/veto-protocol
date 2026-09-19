@@ -12,6 +12,8 @@
  */
 
 import { createPool, loadRepoEnv } from '@veto/db';
+import { createLocalKeyWrapper } from '@veto/vault';
+import { createGoogleExchange, type GoogleOAuthConfig } from '@veto/connections';
 import { createPermitPolicyDecisions, createPermitPolicyFacts, permitConfigFromEnv } from '@veto/permit';
 import Redis from 'ioredis';
 import { createApp } from './app.ts';
@@ -31,12 +33,28 @@ const redis = new Redis(required('REDIS_URL'));
 const permitConfig = permitConfigFromEnv();
 const policy = createPermitPolicyFacts(permitConfig);
 const decisions = createPermitPolicyDecisions(permitConfig);
+const wrapper = createLocalKeyWrapper(required('VAULT_MASTER_KEY'));
+
+// Google is optional: the server runs without it and the connect route refuses,
+// rather than starting in a state where connecting half-works.
+const googleId = (process.env['GOOGLE_CLIENT_ID'] ?? '').trim();
+const google: GoogleOAuthConfig | null =
+  googleId === ''
+    ? null
+    : {
+        clientId: googleId,
+        clientSecret: required('GOOGLE_CLIENT_SECRET'),
+        redirectUri: required('GOOGLE_REDIRECT_URI'),
+      };
 
 const app = createApp({
   pool,
   redis,
   policy,
   decisions,
+  wrapper,
+  google,
+  exchange: google === null ? null : createGoogleExchange(google),
   authenticate: capabilityAuthenticator(required('VETO_CAPABILITY_SECRET')),
   logger: true,
 });

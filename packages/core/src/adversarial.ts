@@ -49,8 +49,8 @@ export const ADVERSARIAL_SCENARIOS: readonly AdversarialScenario[] = [
       'change the action digest, and a tool or resource the agent was never granted ' +
       'must deny regardless of how plausible declared_intent is. A test that asserts ' +
       '"the model was not fooled" is a test about the weather.',
-    status: 'pending',
-    test: null,
+    status: 'implemented',
+    test: 'apps/gateway/test/injection.test.ts',
   },
   {
     id: 'S2',

@@ -25,10 +25,13 @@ Section references (§3.3, §12.1) point there. An older version of this file ca
 **Stage 1 is done.** Identities can be modelled and revoked, over HTTP, behind OIDC
 sign-in, with tenant isolation enforced in three places.
 
-**Stage 2 is nearly done.** Phases 0-4 and 6 are built: threat model signed off, the
-MCP gateway, the nine-step pipeline, the approval state machine, and the credential
-vault. What remains is the Google OAuth route and phase 5, the upstream call. See
-`docs/stage-2-plan.md`.
+**Stage 2 is done.** Allow/deny works end to end: an MCP client asks for a Drive
+file, the nine-step pipeline decides, and either the file comes back or a reason
+code does. All twelve §12.1 adversarial scenarios are implemented
+(`packages/core/src/adversarial.ts`).
+
+What is **not** built: the passkey ceremony (stage 3), presence transitions beyond a
+stored state, Gmail and Calendar, and the browser half of the Google connect flow.
 
 ### Commands
 
@@ -98,8 +101,12 @@ inserted by hand until an invitation flow exists.
 - **The vault never returns a refresh token.** `Connection` has no field that could
   carry one; the broker hands back a short-lived access token instead. Keep it
   unrepresentable rather than remembering not to.
-- **The pipeline decides and never fetches.** An `allow` means "you may", not "it
-  happened". Step 8 is phase 5.
+- **The pipeline decides and never fetches.** Step 8 lives in
+  `apps/gateway/src/execute.ts`, downstream of the decision — the pipeline returns
+  `allow` and something else acts on it.
+- **Retrieved content never reaches the authorization path.** Whatever a model does
+  after reading a poisoned file arrives as a new tool call and gets a new decision.
+  Never feed a tool response back into normalization, policy, or the digest.
 - **Every route asserts its credential scope** (`requireScope`). A sign-in credential
   cannot reach the agent routes and vice versa.
 - New HTTP routes get a closed request schema (`additionalProperties: false`) and a

@@ -149,9 +149,13 @@ endpoint (§9.1).
 **Exit:** a connection is established, stored encrypted, and revocable; the
 credential never appears in a log, an audit event, or an API response.
 
-**Vault and broker done 2026-09-18**, 30 tests. The OAuth authorization-code
-route is the remaining piece — the token exchange and revocation adapters exist
-and are tested against a fake provider.
+**Done.** Vault and broker 2026-09-18; the connection routes 2026-09-19.
+`POST /v1/connections/google` exchanges the authorization code **in the API**,
+not the dashboard: the dashboard owns the browser round trip because it owns the
+session, but it posts the code across and never sees what comes back, so the
+refresh token exists in one process and one column. `redirect_uri` comes from
+configuration and never from the request, which is exact-redirect-URI validation
+achieved by having nothing to validate.
 
 D4 answered: no cloud KMS is available here, so `createLocalKeyWrapper` stands
 in behind a `KeyWrapper` port. It is honest about being weaker — the master key
@@ -167,6 +171,19 @@ call, so a widened request between decision and execution is a new decision.
 One correlation id spans request → decision → approval → upstream → audit.
 
 **Exit:** stage 2's exit condition. Ask for a file, get it or get a reason code.
+
+**Done 2026-09-19.** The gateway mints a per-call token scoped to
+`drive.readonly`, reads exactly the file the decision named, and returns the
+bytes to the caller and nowhere else. An authorized action that cannot be
+carried out — no connection, revoked credential, upstream refusal — is a
+refusal with its own reason code, never a success with no data.
+
+S1, indirect prompt injection, closes here, and the test asserts the property
+that actually holds rather than one about model behaviour: the poisoned file is
+read (the attack is delivered, not dodged), and the file its contents try to
+authorise is denied identically before and after — including when the agent
+repeats the attacker's justification as `declared_intent`. All twelve
+adversarial scenarios are implemented.
 
 ### Phase 6 — Challenge without the ceremony
 
