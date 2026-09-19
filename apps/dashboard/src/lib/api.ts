@@ -103,6 +103,109 @@ export const registerAgent = (
 ): Promise<Agent> =>
   request('/v1/agents', { method: 'POST', credential, body: JSON.stringify(input) });
 
+export interface PresenceView {
+  readonly state: 'active' | 'away' | 'locked' | 'automation';
+  readonly assurance: 'low' | 'medium' | 'high';
+  readonly source: string;
+  readonly changed_at: string;
+  readonly expires_at: string | null;
+}
+
+export interface AuditEventView {
+  readonly seq: number;
+  readonly id: string;
+  readonly actor: string;
+  readonly event_type: string;
+  readonly resource_ref: string | null;
+  readonly outcome: 'allow' | 'deny' | 'challenge' | 'lifecycle';
+  readonly correlation_id: string | null;
+  readonly prev_hash: string | null;
+  readonly hash: string;
+  readonly occurred_at: string;
+}
+
+export const getPresence = (credential: string): Promise<PresenceView> =>
+  request('/v1/presence', { method: 'GET', credential });
+
+export const setPresence = (
+  credential: string,
+  body: { state: string; source: string; assurance: string; ttl_ms?: number },
+): Promise<PresenceView> =>
+  request('/v1/presence', { method: 'PUT', credential, body: JSON.stringify(body) });
+
+export const getEmergencyLock = (
+  credential: string,
+): Promise<{ locked: boolean; locked_at: string | null }> =>
+  request('/v1/emergency-lock', { method: 'GET', credential });
+
+export const setEmergencyLock = (credential: string, locked: boolean): Promise<{ locked: boolean }> =>
+  request('/v1/emergency-lock', { method: 'POST', credential, body: JSON.stringify({ locked }) });
+
+export const listAuditEvents = (
+  credential: string,
+  query: { limit?: number; before?: number; outcome?: string } = {},
+): Promise<{ events: AuditEventView[]; next_cursor: number | null }> => {
+  const params = new URLSearchParams();
+  // Numbers become strings here because the API declares them as strings —
+  // coercion is off there on purpose, so it is off in the client too.
+  if (query.limit !== undefined) params.set('limit', String(query.limit));
+  if (query.before !== undefined) params.set('before', String(query.before));
+  if (query.outcome !== undefined) params.set('outcome', query.outcome);
+  const qs = params.toString();
+  return request(`/v1/audit-events${qs === '' ? '' : `?${qs}`}`, { method: 'GET', credential });
+};
+
+export const verifyAuditChain = (
+  credential: string,
+): Promise<{ verified: boolean; broken_at: number | null; event_id: string | null }> =>
+  request('/v1/audit-events/verify', { method: 'GET', credential });
+
+export const listPasskeys = (
+  credential: string,
+): Promise<{ passkeys: Array<{ id: string; label: string | null; created_at: string; last_used_at: string | null }> }> =>
+  request('/v1/passkeys', { method: 'GET', credential });
+
+export const passkeyRegistrationOptions = (credential: string): Promise<Record<string, unknown>> =>
+  request('/v1/passkeys/options', { method: 'POST', credential, body: '{}' });
+
+export const enrolPasskey = (
+  credential: string,
+  body: { response: unknown; label?: string },
+): Promise<{ id: string }> =>
+  request('/v1/passkeys', { method: 'POST', credential, body: JSON.stringify(body) });
+
+export interface PendingApproval {
+  readonly id: string;
+  readonly decision_id: string;
+  readonly action_digest: string;
+  readonly expires_at: string;
+  readonly created_at: string;
+  readonly tool: string | null;
+  readonly action: string | null;
+  readonly resource_ref: string | null;
+  readonly reason_code: string | null;
+}
+
+export const listApprovals = (credential: string): Promise<{ approvals: PendingApproval[] }> =>
+  request('/v1/approvals', { method: 'GET', credential });
+
+export const approvalChallenge = (
+  credential: string,
+  approvalId: string,
+): Promise<Record<string, unknown>> =>
+  request(`/v1/approvals/${encodeURIComponent(approvalId)}/challenge`, { method: 'GET', credential });
+
+export const resolveApproval = (
+  credential: string,
+  approvalId: string,
+  body: { decision: 'approved' | 'denied'; assertion: unknown },
+): Promise<{ approval_id: string; status: string }> =>
+  request(`/v1/approvals/${encodeURIComponent(approvalId)}/resolve`, {
+    method: 'POST',
+    credential,
+    body: JSON.stringify(body),
+  });
+
 export const revokeAgent = (
   credential: string,
   agentId: string,

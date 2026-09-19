@@ -83,6 +83,89 @@ export function registerApprovalRoutes(app: FastifyInstance, deps: ApprovalRoute
    * otherwise this endpoint would confirm to anyone holding a forwarded link
    * that the approval exists.
    */
+  /**
+   * The caller's own pending approvals.
+   *
+   * Scoped to the approver, not the workspace. An approval is addressed to one
+   * person (invariant 7), and listing a colleague's would be telling you what
+   * they are being asked to consent to.
+   */
+  app.get(
+    '/v1/approvals',
+    {
+      schema: {
+        response: {
+          200: {
+            type: 'object',
+            properties: {
+              approvals: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    id: { type: 'string' },
+                    decision_id: { type: 'string' },
+                    action_digest: { type: 'string' },
+                    expires_at: { type: 'string' },
+                    created_at: { type: 'string' },
+                    tool: { type: 'string', nullable: true },
+                    action: { type: 'string', nullable: true },
+                    resource_ref: { type: 'string', nullable: true },
+                    reason_code: { type: 'string', nullable: true },
+                  },
+                  required: ['id', 'decision_id', 'action_digest', 'expires_at'],
+                },
+              },
+            },
+            required: ['approvals'],
+          },
+          '4xx': ERROR_SCHEMA,
+          '5xx': ERROR_SCHEMA,
+        },
+      },
+    },
+    async (request) => {
+      requireScope(request, SCOPE_CONTROL_PLANE);
+      const { workspaceId, userId } = request.principal;
+
+      const { rows } = await withWorkspace(deps.pool, workspaceId, (db) =>
+        db.query<{
+          id: string; decision_id: string; action_digest: string;
+          expires_at: Date; created_at: Date;
+          tool: string | null; action: string | null;
+          resource_ref: string | null; reason_code: string | null;
+        }>(
+          `select a.id, a.decision_id, a.action_digest, a.expires_at, a.created_at,
+                  d.tool, d.action, d.resource_ref, d.reason_code
+             from approvals a
+             join decisions d
+               on d.workspace_id = a.workspace_id and d.id = a.decision_id
+            where a.workspace_id = $1 and a.approver_id = $2
+              and a.status = 'pending' and a.expires_at > now()
+            order by a.created_at desc
+            limit 50`,
+          [workspaceId, userId],
+        ),
+      );
+
+      // The decision's resource reference is included so a person can see what
+      // they are approving. It is a reference, never content (invariant 5).
+      return {
+        approvals: rows.map((r) => ({
+          id: r.id,
+          decision_id: r.decision_id,
+          action_digest: r.action_digest,
+          expires_at: r.expires_at.toISOString(),
+          created_at: r.created_at.toISOString(),
+          tool: r.tool,
+          action: r.action,
+          resource_ref: r.resource_ref,
+          reason_code: r.reason_code,
+        })),
+      };
+    },
+  );
+
   app.get(
     '/v1/approvals/:approvalId/challenge',
     { schema: { params: PARAMS_SCHEMA, response: { '4xx': ERROR_SCHEMA, '5xx': ERROR_SCHEMA } } },

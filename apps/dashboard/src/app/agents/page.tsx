@@ -1,4 +1,5 @@
 import { redirect } from 'next/navigation';
+import { Nav } from '@/components/nav';
 import { Panel } from '@/components/panel';
 import { Chip, type Tone } from '@/components/chip';
 import { ApiError, listAgents, type Agent } from '@/lib/api';
@@ -34,6 +35,7 @@ export default async function AgentsPage() {
 
   return (
     <>
+      <Nav active="agents" />
       <Panel title="AGENTS" meta="IDENTITY / 001">
         <div style={{ padding: '22px 18px 8px' }}>
           <p className="path" style={{ margin: '0 0 14px' }}>

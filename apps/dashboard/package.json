@@ -11,6 +11,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@simplewebauthn/browser": "13.2.2",
     "@veto/tokens": "workspace:*",
     "next": "15.1.6",
     "openid-client": "6.8.8",

@@ -30,9 +30,12 @@ file, the nine-step pipeline decides, and either the file comes back or a reason
 code does. All twelve §12.1 adversarial scenarios are implemented
 (`packages/core/src/adversarial.ts`).
 
-**Stage 3 is nearly done.** Presence is a real state machine, approvals require a
-WebAuthn assertion over the approval's own challenge, and the audit timeline is
-readable and independently verifiable. What remains is the dashboard screens.
+**Stage 3 is done.** Presence is a real state machine, approvals require a WebAuthn
+assertion over the approval's own challenge, the audit timeline is readable and
+independently verifiable, and all four are usable in the browser.
+
+What is **not** built: Gmail and Calendar (stage 4), the browser half of the Google
+connect flow, and alerts/webhooks.
 
 What is **not** built: Gmail and Calendar, and the browser halves of the Google
 connect and passkey flows.
@@ -77,7 +80,7 @@ outside a test env, and the app `.env` sets `NODE_ENV=development`.
 | `packages/passkeys` | WebAuthn enrolment and assertion. Public keys only. |
 | `apps/api` | Fastify control plane (§5). Manages objects; not an enforcement point. |
 | `apps/gateway` | **The** MCP enforcement point (§3.1). Calls the pipeline in process. |
-| `apps/dashboard` | Next.js dashboard. Theme matches vetoprotocol.live; dark only. |
+| `apps/dashboard` | Next.js dashboard: agents, presence, approvals, audit. Dark only. |
 
 Sign-in is OIDC against any conformant provider (`docs/auth-setup.md`). There is
 **no auto-provisioning**: an unknown subject is refused, and membership is

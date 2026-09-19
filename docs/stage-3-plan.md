@@ -102,6 +102,26 @@ already established. Keyboard-complete (§11).
 **Exit:** the §13 walkthrough is doable in a browser: go away, have an agent try
 something sensitive, approve it with a passkey, see it in the timeline.
 
+**Done 2026-09-19.** Four screens in the established theme — agents, presence,
+approvals, audit — behind a shared nav that marks the current page with
+`aria-current` rather than colour alone.
+
+Presence set from the dashboard is `medium` assurance and the UI says so: a
+person clicking a button is authenticated but not freshly verified, and the API
+refuses a `dashboard` source that claims `high`.
+
+The approval card shows the action digest, because that is what the grant is
+bound to — two approvals that read alike are different actions if those differ.
+
+The chain badge reports a break as readily as a pass. A badge that only ever
+says "verified" is decoration.
+
+Two endpoints were missing and were added: `GET /v1/emergency-lock` (a page that
+cannot read the lock state should not guess, and an unreadable workspace reads
+as locked) and `GET /v1/approvals`, scoped to the approver rather than the
+workspace — listing a colleague's would be telling you what they are being asked
+to consent to.
+
 ## Risks
 
 | Risk | Mitigation |

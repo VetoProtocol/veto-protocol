@@ -81,6 +81,9 @@ importers:
 
   apps/dashboard:
     dependencies:
+      '@simplewebauthn/browser':
+        specifier: 13.2.2
+        version: 13.2.2
       '@veto/tokens':
         specifier: workspace:*
         version: link:../../packages/tokens
@@ -992,6 +995,9 @@ packages:
     resolution: {integrity: sha512-+lIKX7O0+IGe7WuhATaAMMeT7B76vfhXH/l9wLQL+nvyhbw2ohYCKIdWL56JfDu75CWt5oKRP4QFH/jkMtBquA==}
     cpu: [x64]
     os: [win32]
+
+  '@simplewebauthn/browser@13.2.2':
+    resolution: {integrity: sha512-FNW1oLQpTJyqG5kkDg5ZsotvWgmBaC6jCHR7Ej0qUNep36Wl9tj2eZu7J5rP+uhXgHaLk+QQ3lqcw2vS5MX1IA==}
 
   '@simplewebauthn/server@14.0.2':
     resolution: {integrity: sha512-g+m/xv9/8FRWsDY22CwsTYRzt3WwS9fJrR3P7eY3Ti01FXH5FQ36Xn55v6D+5tb6VajlqOj4hywP/Vxsb6a3Sg==}
@@ -2763,6 +2769,8 @@ snapshots:
 
   '@rollup/rollup-win32-x64-msvc@4.63.3':
     optional: true
+
+  '@simplewebauthn/browser@13.2.2': {}
 
   '@simplewebauthn/server@14.0.2':
     dependencies:

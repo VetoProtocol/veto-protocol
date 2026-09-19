@@ -128,6 +128,44 @@ export function registerPresenceRoutes(app: FastifyInstance, deps: { pool: Pool 
     },
   );
 
+  app.get(
+    '/v1/emergency-lock',
+    {
+      schema: {
+        response: {
+          200: {
+            type: 'object',
+            properties: { locked: { type: 'boolean' }, locked_at: { type: 'string', nullable: true } },
+            required: ['locked'],
+          },
+          '4xx': ERROR_SCHEMA,
+          '5xx': ERROR_SCHEMA,
+        },
+      },
+    },
+    async (request) => {
+      requireScope(request, SCOPE_CONTROL_PLANE);
+      const { workspaceId } = request.principal;
+
+      const { rows } = await withWorkspace(deps.pool, workspaceId, (db) =>
+        db.query<{ emergency_lock: boolean; locked_at: Date | null }>(
+          `select emergency_lock, locked_at from workspaces where id = $1`,
+          [workspaceId],
+        ),
+      );
+
+      const row = rows[0];
+      // A workspace the caller cannot see reads as locked. Fail closed: the
+      // dashboard showing "unlocked" when it cannot tell is the wrong default.
+      if (!row) return { locked: true, locked_at: null };
+
+      return {
+        locked: row.emergency_lock,
+        locked_at: row.locked_at === null ? null : row.locked_at.toISOString(),
+      };
+    },
+  );
+
   app.post(
     '/v1/emergency-lock',
     {
