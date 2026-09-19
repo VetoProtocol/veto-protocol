@@ -21,6 +21,7 @@
  */
 
 import type { Db } from '@veto/db';
+import { enqueue } from '@veto/webhooks';
 
 export type ApprovalDecision = 'approved' | 'denied';
 
@@ -86,6 +87,22 @@ export async function resolveApproval(db: Db, input: ResolveInput): Promise<Reso
       where workspace_id = $1 and id = $2 and status = 'pending'`,
     [input.workspaceId, approval.id, input.decision],
   );
+
+  // §5.4. Same transaction as the resolution, so an alert cannot claim an
+  // approval was decided when the update rolled back.
+  await enqueue(db, {
+    workspaceId: input.workspaceId,
+    type: 'approval.resolved',
+    correlationId: null,
+    data: {
+      approval_id: approval.id,
+      decision_id: approval.decision_id,
+      human_id: approval.approver_id,
+      // Approved or refused — the interesting half, and the reason somebody
+      // watching would want the event at all.
+      outcome: input.decision === 'approved' ? 'allow' : 'deny',
+    },
+  });
 
   return { ok: true, status: input.decision };
 }

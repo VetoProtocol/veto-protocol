@@ -27,6 +27,7 @@
 import { randomBytes } from 'node:crypto';
 import { actionDigest, newId, describeReason, type DigestibleValue } from '@veto/core';
 import type { Db } from '@veto/db';
+import { enqueue } from '@veto/webhooks';
 import { withWorkspace } from '@veto/db';
 import { writeAuditEvent, findAgent } from '@veto/identity';
 import type { PolicyDecisions, PermitOutcome } from '@veto/permit';
@@ -374,8 +375,77 @@ async function persist(
       correlationId: input.requestId,
     });
 
+    await announce(db, input, args, approvalId);
+
     return approvalId;
   });
+}
+
+/**
+ * The §5.4 events this decision produced.
+ *
+ * Inside the same transaction as the decision row, so an alert cannot describe
+ * a decision that rolled back. Nothing is sent here: delivery is a worker, and
+ * a receiver that hangs must never be able to spend the §11 authorization
+ * budget (200 ms) on somebody else's downtime.
+ *
+ * An `allow` emits nothing. §5.4 lists denials and approvals, and a webhook per
+ * successful read would be a firehose that buries the events that matter — the
+ * audit trail is where the complete record lives.
+ */
+async function announce(
+  db: Db,
+  input: EvaluateInput,
+  args: PersistArgs,
+  approvalId: string | null,
+): Promise<void> {
+  const shared = {
+    workspaceId: input.workspaceId,
+    correlationId: input.requestId,
+  };
+
+  // A reference, never the content or the arguments (invariant 5).
+  const resourceRef = `${input.resource.type}:${input.resource.id}`;
+
+  if (args.outcome.result === 'deny') {
+    const data = {
+      agent_id: input.agentId,
+      human_id: input.humanId,
+      decision_id: args.decisionId,
+      resource_ref: resourceRef,
+      reason_code: args.outcome.reasonCode,
+      outcome: 'deny' as const,
+    };
+
+    await enqueue(db, { ...shared, type: 'decision.denied', data });
+
+    // A refusal from step 6 is a different kind of news from a refusal at step
+    // 4. "No rule allows this" is the system working as configured; "the
+    // arguments looked like a credential" or "the destination is a private
+    // address" is somebody trying something. §5.4 gives the second its own
+    // event so an operator can alert on it without drowning in the first.
+    if (describeReason(args.outcome.reasonCode).stage === 'risk') {
+      await enqueue(db, { ...shared, type: 'risk.anomaly_detected', data });
+    }
+    return;
+  }
+
+  if (args.outcome.result === 'challenge' && approvalId !== null) {
+    await enqueue(db, {
+      ...shared,
+      type: 'approval.requested',
+      data: {
+        agent_id: input.agentId,
+        // Who has to act. An alert about an approval nobody can route is noise.
+        human_id: input.humanId,
+        decision_id: args.decisionId,
+        approval_id: approvalId,
+        resource_ref: resourceRef,
+        reason_code: args.outcome.reasonCode,
+        outcome: 'challenge',
+      },
+    });
+  }
 }
 
 /**

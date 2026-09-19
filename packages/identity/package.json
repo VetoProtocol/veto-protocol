@@ -16,7 +16,8 @@
     "@veto/db": "workspace:*",
     "@veto/permit": "workspace:*",
     "ioredis": "5.4.2",
-    "pg": "8.13.1"
+    "pg": "8.13.1",
+    "@veto/webhooks": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "22.10.2",

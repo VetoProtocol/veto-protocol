@@ -21,7 +21,8 @@
     "@veto/connections": "workspace:*",
     "@veto/vault": "workspace:*",
     "@veto/presence": "workspace:*",
-    "@veto/passkeys": "workspace:*"
+    "@veto/passkeys": "workspace:*",
+    "@veto/webhooks": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "22.10.2",

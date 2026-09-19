@@ -21,6 +21,7 @@ import { newId } from '@veto/core';
 import type { Db } from '@veto/db';
 import { writeAuditEvent } from '@veto/identity';
 import { open, seal, type EncryptionContext, type KeyWrapper } from '@veto/vault';
+import { enqueue } from '@veto/webhooks';
 
 export const REFRESH_TOKEN_PURPOSE = 'connection.refresh_token';
 
@@ -260,6 +261,16 @@ export async function revokeConnection(
       resourceRef: `connection:${connectionId}`,
       outcome: 'lifecycle',
       correlationId: null,
+    });
+
+    // §5.4. In the same transaction as the destruction, and only when something
+    // was actually destroyed — re-revoking an already-dead credential is not
+    // news.
+    await enqueue(db, {
+      workspaceId,
+      type: 'credential.revoked',
+      correlationId: null,
+      data: { connection_id: connectionId, human_id: actorUserId },
     });
   }
 

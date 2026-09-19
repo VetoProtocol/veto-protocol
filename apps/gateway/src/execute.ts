@@ -31,6 +31,7 @@ import {
   type UpstreamTokenExchange,
 } from '@veto/connections';
 import { withWorkspace } from '@veto/db';
+import { enqueue } from '@veto/webhooks';
 import type { KeyWrapper } from '@veto/vault';
 import type { EvaluateInput } from '@veto/decisions';
 import type { Pool } from 'pg';
@@ -72,6 +73,26 @@ export async function executeAllowed(
     };
   }
 
+  // Everything below here is the credential failing at the moment of use, which
+  // is the §5.4 `connection.expired` case. It is announced once per failure
+  // rather than per retry: the pipeline already allowed this call, so a caller
+  // that sees it fail will try again, and an alert per attempt would be noise.
+  const announceExpiry = async (reasonCode: string): Promise<void> => {
+    await withWorkspace(deps.pool, input.workspaceId, (db) =>
+      enqueue(db, {
+        workspaceId: input.workspaceId,
+        type: reasonCode === 'CREDENTIAL_REVOKED' ? 'credential.revoked' : 'connection.expired',
+        correlationId: input.requestId,
+        data: {
+          connection_id: connection.id,
+          human_id: input.humanId,
+          agent_id: input.agentId,
+          reason_code: reasonCode,
+        },
+      }),
+    );
+  };
+
   let accessToken: string;
   try {
     const grant = await withWorkspace(deps.pool, input.workspaceId, (db) =>
@@ -86,9 +107,11 @@ export async function executeAllowed(
     accessToken = grant.accessToken;
   } catch (error) {
     const reason = error instanceof BrokerError ? error.reason : 'EXCHANGE_FAILED';
+    const reasonCode = reason === 'CREDENTIAL_REVOKED' ? 'CREDENTIAL_REVOKED' : 'CONNECTION_EXPIRED';
+    await announceExpiry(reasonCode);
     return {
       ok: false,
-      reasonCode: reason === 'CREDENTIAL_REVOKED' ? 'CREDENTIAL_REVOKED' : 'CONNECTION_EXPIRED',
+      reasonCode,
       message: 'The connected account could not be used for this action.',
     };
   }
@@ -118,9 +141,11 @@ export async function executeAllowed(
     };
   } catch (error) {
     const status = error instanceof DriveError ? error.status : 0;
+    const reasonCode = status === 403 || status === 401 ? 'CREDENTIAL_REVOKED' : 'CONNECTION_EXPIRED';
+    await announceExpiry(reasonCode);
     return {
       ok: false,
-      reasonCode: status === 403 || status === 401 ? 'CREDENTIAL_REVOKED' : 'CONNECTION_EXPIRED',
+      reasonCode,
       // Upstream error bodies can echo the request, which carried the token.
       message: 'The upstream service refused that request.',
     };

@@ -1,0 +1,23 @@
+{
+  "name": "@veto/webhooks",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@veto/core": "workspace:*",
+    "@veto/db": "workspace:*",
+    "@veto/vault": "workspace:*",
+    "pg": "8.13.1"
+  },
+  "devDependencies": {
+    "@types/node": "22.10.2",
+    "@types/pg": "8.11.10",
+    "typescript": "5.7.2",
+    "vitest": "2.1.8"
+  }
+}

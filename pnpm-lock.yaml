@@ -56,6 +56,9 @@ importers:
       '@veto/vault':
         specifier: workspace:*
         version: link:../../packages/vault
+      '@veto/webhooks':
+        specifier: workspace:*
+        version: link:../../packages/webhooks
       fastify:
         specifier: 5.2.1
         version: 5.2.1
@@ -148,6 +151,9 @@ importers:
       '@veto/vault':
         specifier: workspace:*
         version: link:../../packages/vault
+      '@veto/webhooks':
+        specifier: workspace:*
+        version: link:../../packages/webhooks
       ajv:
         specifier: 8.17.1
         version: 8.17.1
@@ -188,6 +194,9 @@ importers:
       '@veto/vault':
         specifier: workspace:*
         version: link:../vault
+      '@veto/webhooks':
+        specifier: workspace:*
+        version: link:../webhooks
       pg:
         specifier: 8.13.1
         version: 8.13.1
@@ -253,6 +262,9 @@ importers:
       '@veto/presence':
         specifier: workspace:*
         version: link:../presence
+      '@veto/webhooks':
+        specifier: workspace:*
+        version: link:../webhooks
       ioredis:
         specifier: 5.4.2
         version: 5.4.2
@@ -284,6 +296,9 @@ importers:
       '@veto/permit':
         specifier: workspace:*
         version: link:../permit
+      '@veto/webhooks':
+        specifier: workspace:*
+        version: link:../webhooks
       ioredis:
         specifier: 5.4.2
         version: 5.4.2
@@ -393,6 +408,34 @@ importers:
       '@types/node':
         specifier: 22.10.2
         version: 22.10.2
+      typescript:
+        specifier: 5.7.2
+        version: 5.7.2
+      vitest:
+        specifier: 2.1.8
+        version: 2.1.8(@types/node@22.10.2)
+
+  packages/webhooks:
+    dependencies:
+      '@veto/core':
+        specifier: workspace:*
+        version: link:../core
+      '@veto/db':
+        specifier: workspace:*
+        version: link:../db
+      '@veto/vault':
+        specifier: workspace:*
+        version: link:../vault
+      pg:
+        specifier: 8.13.1
+        version: 8.13.1
+    devDependencies:
+      '@types/node':
+        specifier: 22.10.2
+        version: 22.10.2
+      '@types/pg':
+        specifier: 8.11.10
+        version: 8.11.10
       typescript:
         specifier: 5.7.2
         version: 5.7.2

@@ -143,7 +143,9 @@ export const ADVERSARIAL_SCENARIOS: readonly AdversarialScenario[] = [
       'DESTINATION_NOT_PERMITTED for loopback, RFC1918, link-local (169.254.0.0/16, ' +
       'including the cloud metadata address), IPv6 equivalents, and any hostname that ' +
       'resolves into them. DNS rebinding means the check must bind to the resolved ' +
-      'address actually connected to, not the name.',
+      'address actually connected to, not the name. Two surfaces now, not one: a tool ' +
+      'argument, and a registered webhook URL — the second is re-checked before every ' +
+      'delivery, because an endpoint approved last week can resolve somewhere else today.',
     status: 'implemented',
     test: 'packages/decisions/test/risk.test.ts',
   },

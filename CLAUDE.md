@@ -38,8 +38,13 @@ The Google connect flow is complete in the browser: `/connections` runs PKCE and
 the state cookie, the API builds the consent URL and exchanges the code, and
 `docs/google-setup.md` covers the console side.
 
-What is **not** built: Gmail and Calendar (stage 4), alerts/webhooks, and the
-browser half of passkey *enrolment*.
+**Stage 4 is in progress.** Revocation now reaches everything it should — a lock
+or an agent revocation kills outstanding grants and live sessions, not only
+future requests (`packages/decisions/src/revocation.ts`). All eight §5.4 webhook
+events are emitted and delivered (`docs/webhooks.md`).
+
+What is **not** built: Gmail and Calendar, the alerts screen in the dashboard,
+and the browser half of passkey *enrolment*.
 
 ### Commands
 
@@ -54,6 +59,7 @@ pnpm --filter @veto/db migrate                     # apply pending migrations
 pnpm --filter @veto/api start                      # control plane on :4000
 pnpm --filter @veto/gateway start                  # MCP gateway on :4100
 pnpm --filter @veto/dashboard dev                  # dashboard on :3000
+curl -XPOST localhost:4000/v1/webhooks/drain -H "authorization: Bearer $TOK" -d '{}'  # deliver queued alerts
 pnpm --filter @veto/identity invite -- --subject "oidc|<from the auth log>" --workspace "Name"
 ```
 
@@ -78,6 +84,7 @@ outside a test env, and the app `.env` sets `NODE_ENV=development`.
 | `packages/vault` | Envelope encryption. The encryption context is a tenant boundary. |
 | `packages/connections` | Credential vault and broker. Never returns a refresh token. |
 | `packages/presence` | §7.2 state machine. A signal, never proof of intent. |
+| `packages/webhooks` | §5.4 alerts. Enqueue is transactional; delivery is a worker. |
 | `packages/passkeys` | WebAuthn enrolment and assertion. Public keys only. |
 | `apps/api` | Fastify control plane (§5). Manages objects; not an enforcement point. |
 | `apps/gateway` | **The** MCP enforcement point (§3.1). Calls the pipeline in process. |
@@ -127,6 +134,16 @@ inserted by hand until an invitation flow exists.
 - **An approval is resolved only by a passkey assertion over that approval's stored
   challenge.** Not a fresh challenge, not one the client chose. A user with no
   enrolled passkey cannot resolve anything — that is a refusal, not a fallback.
+- **A grant must not outlive the authority it was granted under.** A lock or an
+  agent revocation moves outstanding approvals to `revoked` — a distinct status
+  from `expired`, because "nobody acted in time" and "somebody pulled the plug"
+  are different facts and a revoked grant keeps its `resolved_at`. Unlocking is
+  not the inverse: killed grants stay killed.
+- **A webhook is enqueued in the caller's transaction and never sent from it.**
+  An event cannot exist for something that rolled back, and a receiver that
+  hangs cannot spend the §11 200 ms budget. `@veto/webhooks` sits below
+  `@veto/decisions` in the graph, so the SSRF check arrives as a port rather
+  than an import.
 - **A sensitivity label can only narrow an answer.** `public` is not permission: a
   resource no rule allows stays denied whatever it is labelled. Labels add a presence
   or intent requirement on top of a rule; they never grant. Most specific wins, and

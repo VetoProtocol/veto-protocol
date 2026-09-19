@@ -43,6 +43,7 @@ import {
   type RevokeAgentResult,
 } from '@veto/identity';
 import { setEmergencyLock } from '@veto/presence';
+import { enqueue } from '@veto/webhooks';
 import { revokeLiveApprovals } from './approvals.ts';
 
 export interface RevokeAgentEverywhereResult extends RevokeAgentResult {
@@ -66,9 +67,29 @@ export async function revokeAgentEverywhere(
 ): Promise<RevokeAgentEverywhereResult> {
   const result = await revokeAgent(pool, redis, policy, input);
 
-  const grantsRevoked = await withWorkspace(pool, input.workspaceId, (db) =>
-    revokeLiveApprovals(db, { workspaceId: input.workspaceId, agentId: input.agentId }),
-  );
+  const grantsRevoked = await withWorkspace(pool, input.workspaceId, async (db) => {
+    const revoked = await revokeLiveApprovals(db, {
+      workspaceId: input.workspaceId,
+      agentId: input.agentId,
+    });
+
+    // §5.4. Enqueued in the same transaction as the grants it describes, so an
+    // alert cannot exist for a rollback and cannot be missing after a commit.
+    // Nothing is sent from here — a receiver that hangs must not be able to
+    // hold up a revocation.
+    await enqueue(db, {
+      workspaceId: input.workspaceId,
+      type: 'agent.revoked',
+      correlationId: input.correlationId ?? null,
+      data: {
+        agent_id: input.agentId,
+        grants_revoked: revoked.length,
+        sessions_dropped: result.sessionsDropped,
+      },
+    });
+
+    return revoked;
+  });
 
   return { ...result, grantsRevoked };
 }
@@ -153,6 +174,17 @@ export async function lockWorkspace(
   // something down. "The switch was thrown" is already in the timeline; this is
   // the separate fact that work in flight was stopped, which is the question an
   // incident review asks. A lock over a quiet workspace writes nothing extra.
+  await withWorkspace(pool, input.workspaceId, (db) =>
+    // §5.4. A lock is the loudest thing that can happen to a workspace and the
+    // one somebody most needs to hear about from outside the dashboard.
+    enqueue(db, {
+      workspaceId: input.workspaceId,
+      type: 'workspace.locked',
+      correlationId: input.correlationId ?? null,
+      data: { human_id: input.actorUserId, grants_revoked: grantsRevoked.length, sessions_dropped: sessionsDropped },
+    }),
+  );
+
   if (grantsRevoked.length > 0 || sessionsDropped > 0) {
     await withWorkspace(pool, input.workspaceId, (db) =>
       writeAuditEvent(db, {

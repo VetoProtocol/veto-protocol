@@ -30,6 +30,9 @@ const JUSTIFIED_EXTRAS: Readonly<Record<string, string>> = {
   schema_migrations: 'the migration ledger itself',
   passkeys: 'WebAuthn credentials (§15, §7.1); §6 stores only passkey_enrolled on users',
   resource_labels: 'the §4.2 sensitivity attribute, attached to resources rather than repeated in every rule',
+  webhook_endpoints: 'where §5.4 alerts are sent, and the per-endpoint signing secret',
+  webhook_deliveries:
+    'the §5.4 delivery queue. A table rather than a fetch, so a receiver outage cannot become an authorization outage',
 };
 
 describe('migrations', () => {
