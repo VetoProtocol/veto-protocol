@@ -34,6 +34,13 @@ import type { Pool } from 'pg';
 import type Redis from 'ioredis';
 import type { DecisionResponse, EvaluateInput } from './types.ts';
 import { loadPolicies, matchPolicies } from './policy-store.ts';
+import {
+  DEFAULT_SENSITIVITY,
+  loadLabels,
+  matchLabel,
+  requirementFor,
+  type Sensitivity,
+} from './labels.ts';
 import { assessRisk } from './risk.ts';
 import { redeemApproval } from './approvals.ts';
 import { readPresence } from '@veto/presence';
@@ -83,6 +90,7 @@ export async function evaluate(deps: PipelineDeps, input: EvaluateInput): Promis
   let permitResult: PermitOutcome | 'not_evaluated' = 'not_evaluated';
   let held: Outcome | null = null;
   let policyVersion: string | null = null;
+  let sensitivity: Sensitivity = DEFAULT_SENSITIVITY;
 
   const outcome = await (async (): Promise<Outcome> => {
     // Step 3 — session, presence, expiry, emergency lock.
@@ -126,9 +134,30 @@ export async function evaluate(deps: PipelineDeps, input: EvaluateInput): Promis
     }
     if (verdict.effect === 'challenge') held = challenge('APPROVAL_REQUIRED');
 
-    // Presence gating, from the matched rule (§7.2).
-    const allowedStates = verdict.rule?.conditions.presence;
-    if (allowedStates !== undefined && !allowedStates.includes(presence)) {
+    // The resource's sensitivity label, if it has one.
+    //
+    // Applied *after* the rule and only ever as an extra requirement: a label
+    // never grants, so a resource nothing allows stays denied whatever it is
+    // labelled.
+    const labels = await withWorkspace(deps.pool, input.workspaceId, (db) =>
+      loadLabels(db, input.workspaceId),
+    );
+    const label = matchLabel(labels, input.resource.type, input.resource.id);
+    sensitivity = label?.sensitivity ?? DEFAULT_SENSITIVITY;
+    const labelled = requirementFor(sensitivity);
+
+    // Presence gating, from the rule and from the label. Either can demand it;
+    // the stricter of the two is what applies.
+    const ruleStates = verdict.rule?.conditions.presence;
+    const requiredStates =
+      labelled.presence.length === 0
+        ? ruleStates
+        : ruleStates === undefined
+          ? labelled.presence
+          : // Both named states: keep only the ones both accept.
+            ruleStates.filter((state) => labelled.presence.includes(state));
+
+    if (requiredStates !== undefined && !requiredStates.includes(presence)) {
       if (presence === 'automation') return deny('AUTOMATION_WINDOW_VIOLATION');
       held = challenge(
         input.action === 'read' ? 'USER_AWAY_SENSITIVE_RESOURCE' : 'USER_AWAY_WRITE_ACTION',
@@ -150,7 +179,9 @@ export async function evaluate(deps: PipelineDeps, input: EvaluateInput): Promis
       action: input.action,
       resourceType: input.resource.type,
       resourceKey: input.resource.id,
-      attributes: { user_presence: presence },
+      // Permit sees the label as an attribute (§4.3). It is a classification,
+      // never the content it classifies (invariant 5).
+      attributes: { user_presence: presence, sensitivity },
     });
 
     if (permitResult === 'unavailable') return deny('POLICY_UNAVAILABLE');
@@ -159,7 +190,8 @@ export async function evaluate(deps: PipelineDeps, input: EvaluateInput): Promis
     // Step 6 — the checks Permit cannot express. After the check, so a Permit
     // denial is never overridden, and these can only narrow (invariant 3).
     const risk = await assessRisk(input, {
-      requireIntent: verdict.rule?.conditions.requireIntent === true,
+      // Either the rule or the label can require a stated intent.
+      requireIntent: verdict.rule?.conditions.requireIntent === true || labelled.requireIntent,
     });
     if (risk?.result === 'deny') return deny(risk.reasonCode);
     if (risk?.result === 'challenge') held = challenge(risk.reasonCode);

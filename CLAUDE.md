@@ -73,7 +73,7 @@ outside a test env, and the app `.env` sets `NODE_ENV=development`.
 | `packages/permit` | `PolicyFacts` and `PolicyDecisions` ports, real adapters, and test fakes |
 | `packages/identity` | Agent registration, revocation, sessions, audit writer |
 | `packages/tokens` | Short-lived internal capability tokens. HMAC, no algorithm field. |
-| `packages/decisions` | The §3.3 pipeline. Decides; never executes. |
+| `packages/decisions` | The §3.3 pipeline and sensitivity labels. Decides; never executes. |
 | `packages/vault` | Envelope encryption. The encryption context is a tenant boundary. |
 | `packages/connections` | Credential vault and broker. Never returns a refresh token. |
 | `packages/presence` | §7.2 state machine. A signal, never proof of intent. |
@@ -116,6 +116,10 @@ inserted by hand until an invitation flow exists.
 - **An approval is resolved only by a passkey assertion over that approval's stored
   challenge.** Not a fresh challenge, not one the client chose. A user with no
   enrolled passkey cannot resolve anything — that is a refusal, not a fallback.
+- **A sensitivity label can only narrow an answer.** `public` is not permission: a
+  resource no rule allows stays denied whatever it is labelled. Labels add a presence
+  or intent requirement on top of a rule; they never grant. Most specific wins, and
+  specificity is longest match.
 - **Presence can only narrow an answer.** It never grants; a policy names which
   states allow, absence means `away`, and a source cannot assert more assurance than
   it can witness. There is no field anywhere for an IP address or a location.

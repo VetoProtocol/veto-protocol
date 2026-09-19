@@ -5,3 +5,4 @@ export * from './policy-store.ts';
 export * from './risk.ts';
 export * from './destination.ts';
 export * from './volume.ts';
+export * from './labels.ts';

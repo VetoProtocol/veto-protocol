@@ -130,3 +130,35 @@ to consent to.
 | A passkey is lost and the user is locked out | Out of scope for the MVP, but the *shape* matters: enrolment must allow more than one credential per user |
 | Presence becomes a way to grant access | It cannot grant: it only ever moves an answer toward more restrictive. A policy names which states allow, and absence is `away` |
 | The timeline leaks content | `AuditEventInput` has no field that can carry any; the response is built from the row, not from a join |
+
+## Follow-up — sensitivity labels
+
+Added 2026-09-19, after the question "what counts as sensitive?" turned out to
+have an unsatisfying answer: *whatever a rule happened to carry a presence
+condition for*. That scattered the decision — protecting a folder meant
+remembering the condition on every rule that could reach it, and a forgotten one
+left a gap with nothing to point at.
+
+A label attaches the protection to the resource instead. Mark `/Finance`
+confidential once, and every rule reaching it inherits the requirement.
+
+| Level | What it adds |
+| --- | --- |
+| `public`, `internal` | nothing |
+| `confidential` | must be `active` — §7.2's "challenge sensitive reads" |
+| `restricted` | must be `active` **and** state an intent |
+
+Two properties hold it together:
+
+* **A label only narrows.** It never grants. A resource no rule allows stays
+  denied whatever it is labelled, and there is a test for exactly that.
+* **Most specific wins**, and specificity is longest match, so
+  `/Finance/Public` can be less restricted than `/Finance` without the answer
+  depending on row order.
+
+The level-to-requirement mapping is fixed in code rather than configurable per
+label. A knob there would mean two places to look when asking "why was this
+challenged", and that answer needs to be short.
+
+Still open: the dashboard has no screen for labels — they are managed through
+`/v1/labels` only.
