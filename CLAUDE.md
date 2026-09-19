@@ -252,10 +252,17 @@ since migration 0001 and nothing created the first kind until stage 4.
 - **The local key wrapper is not a KMS.** `VAULT_MASTER_KEY` sits in the process
   environment, so anything that can read the environment can unwrap every data key.
   Production swaps the `KeyWrapper` implementation, not its callers.
-- **A local PDP is required in production.** The hosted PDP was measured at min 211 ms,
-  p50 ~225 ms, p95 293–739 ms per check — the fastest single check exceeds the whole
-  §11 200 ms P95 budget. There is no container runtime on this machine, so development
-  runs against hosted and accepts the latency. See `docs/permit-setup.md`.
+- **The PDP runs locally, and must.** Hosted was measured at min 211 ms, p50 ~225 ms,
+  p95 293–739 ms per check — the fastest single check exceeded the whole §11 200 ms
+  P95 budget, and roughly one call in four hit the 5 s ceiling and failed closed with
+  `POLICY_UNAVAILABLE`. Local (`podman`, `permitio/pdp-v2`, host port 7766) measures
+  p50 6.8 ms / p95 8.9 ms, and authorization overhead on a real gateway call went from
+  ~1967 ms average to ~11 ms. An earlier note here said there was no container runtime
+  on this machine; Podman was already installed and nobody had checked. See
+  `docs/permit-setup.md`.
+- **`latency_ms` on a `decisions` row is steps 1–7 only.** The pipeline decides and
+  never fetches, so the upstream call is not in that number. It is the §11 figure
+  directly, not an end-to-end one.
 - Permit principal keys are `agent|{id}` / `human|{id}`, not §4.2's `agent:{id}` —
   Permit rejects colons in user keys. `packages/permit/src/model.ts` explains.
 - `packages/db/migrations/0002` carries a stale comment about burning a revoked

@@ -120,18 +120,57 @@ Consequences to carry into stage 2:
 This measurement is from one machine on one network. It is decisive about
 hosted-being-too-slow *here*; it is not a benchmark of Permit.
 
-### Why hosted, not local
+### Local PDP — 2026-09-19
 
-Permit's recommended production topology is a PDP container beside the
-application, which removes the internet from the hot path. **There is no
-container runtime on this machine** — no Docker, no Podman — so the hosted PDP
-at `cloudpdp.api.permit.io` is the only option here, and it is the one being
-measured.
+An earlier version of this section said there was no container runtime on this
+machine, no Docker and no Podman, and treated hosted as the only option. That
+was wrong: **Podman 5.4.2 was already installed.** The claim had been carried
+forward without being rechecked, and it made a solvable problem look like a
+constraint for a day.
 
-That is a development constraint, not an architecture decision. If the hosted
-P95 does not fit, the fix is a local PDP in the deployment environment, not a
-change to the code: `PERMIT_PDP_URL=http://localhost:7766` is the whole
-difference.
+Development now runs against a local PDP.
+
+```bash
+podman run -d --name veto-pdp --restart=always \
+  -p 7766:7000 \
+  -e PDP_API_KEY="$PERMIT_API_KEY" \
+  -e PDP_DEBUG=false \
+  docker.io/permitio/pdp-v2:latest
+```
+
+It is enabled as a `systemd --user` unit with lingering on, so it survives a
+reboot. The container maps its port 7000 to 7766 on the host, matching the URL
+the code already expected.
+
+Same harness, same machine, 50 samples:
+
+| | Hosted | Local |
+| --- | --- | --- |
+| min | 210.75 ms | **2.60 ms** |
+| p50 | 227.29 ms | **6.78 ms** |
+| p95 | 738.59 ms | **8.93 ms** |
+| max | 1080.56 ms | **11.26 ms** |
+| Verdict | Exceeds the whole §11 budget | **Within budget** |
+
+End to end, the effect is larger than the PDP slice alone. `latency_ms` on a
+`decisions` row measures steps 1–7 — the pipeline decides and never fetches, so
+the upstream call is not in it. Across ten real gateway calls before and after:
+
+| Authorization overhead | Hosted | Local |
+| --- | --- | --- |
+| average | 1967 ms | **11 ms** |
+| max | 5018 ms | **22 ms** |
+
+The hosted figures also include denials that were not denials on the merits:
+roughly one call in four exceeded the 5 s ceiling and failed closed with
+`POLICY_UNAVAILABLE`. That is invariant 1 behaving correctly, and it is also
+unusable. Ten consecutive calls against the local PDP produced ten allows.
+
+A local PDP additionally restores the fact-sync guarantee described in
+`config.ts`, which the hosted PDP cannot provide at all — `proxyFactsViaPdp` is
+derived from the PDP URL, so pointing at localhost turns it on.
+
+`PERMIT_PDP_URL=http://localhost:7766` is the whole difference in the code.
 
 ## 6. Findings from the first live run
 
