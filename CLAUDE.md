@@ -115,9 +115,20 @@ outside a test env, and the app `.env` sets `NODE_ENV=development`.
 | `apps/gateway` | **The** MCP enforcement point (§3.1). Calls the pipeline in process. |
 | `apps/dashboard` | Next.js dashboard: agents, policies, connections, presence, labels, approvals, audit, alerts. Dark only. |
 
-Sign-in is OIDC against any conformant provider (`docs/auth-setup.md`). There is
-**no auto-provisioning**: an unknown subject is refused, and membership is
-inserted by hand until an invitation flow exists.
+Sign-in is OIDC against any conformant provider (`docs/auth-setup.md`).
+
+**Signing up and being let in are different things** (`docs/signup.md`). A
+verified subject nobody knows is offered a **personal** workspace of their own —
+§1.3's individual professional, whose first release is a "self-service dashboard
+and personal policies". Joining an *existing* workspace is never automatic:
+`provisionPersonalWorkspace` refuses any subject that already belongs anywhere,
+and the request has no field in which to name a tenant. Invitations stay an
+operator action (`inviteSubject`).
+
+An earlier version of this file said there was "no auto-provisioning" and
+justified it on security grounds. That was an implementation shortcut described
+as a principle — the schema has carried `type in ('personal','organization')`
+since migration 0001 and nothing created the first kind until stage 4.
 
 ### Conventions this repo already commits to
 

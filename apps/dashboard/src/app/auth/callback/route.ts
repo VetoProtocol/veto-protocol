@@ -9,10 +9,21 @@
  *  2. The library checks state, PKCE verifier and nonce, and validates the id
  *     token's signature, issuer, audience and expiry against the provider's
  *     JWKS.
- *  3. The subject is resolved to a user and workspace through the API. An
- *     unknown subject is refused: there is **no auto-provisioning**, because
- *     creating a workspace for anyone who can complete a sign-in would make the
- *     provider's entire user base members of this system.
+ *  3. The subject is resolved to a user and workspace through the API.
+ *
+ * Step 3 has three endings, and only one of them used to exist:
+ *
+ *   * **One workspace.** Sign in. The ordinary case.
+ *   * **None.** Nobody knows this subject, so they are offered a workspace of
+ *     their own (§1.3's individual professional). This is *not* a way into an
+ *     existing tenant — the API refuses to provision a subject that already
+ *     belongs anywhere, and nothing here can name a workspace to join.
+ *   * **Several.** They belong to more than one and have to choose. Reachable
+ *     the moment people can have a personal workspace *and* be invited to an
+ *     employer's, which is the day self-signup shipped.
+ *
+ * The last two hand off through a signed cookie rather than a query parameter:
+ * the subject is the one thing the next page must not let a visitor choose.
  *
  * The flow cookie is cleared on every path out, success or failure, so one
  * attempt cannot be replayed.
@@ -22,6 +33,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import * as client from 'openid-client';
 import { discover, oidcSettings } from '@/lib/oidc';
 import { FLOW_COOKIE, openFlow } from '@/lib/flow-cookie';
+import { PENDING_COOKIE, PENDING_TTL_MS, sealPending } from '@/lib/pending-cookie';
 import { cookieOptions } from '@/lib/cookie-options';
 import { resolveCredential, sessionCredential, SESSION_TTL_MS } from '@/lib/credential';
 import { resolveIdentity } from '@/lib/api';
@@ -58,15 +70,30 @@ export async function GET(request: NextRequest) {
   // subject cannot collide with another's if a second is added later.
   const identities = await resolveIdentity(resolveCredential(), `oidc|${subject}`);
 
-  if (identities.length === 0) {
-    // Logged because there is no admin UI yet: this is how an operator learns
-    // the subject to put in the invitation. A subject is an opaque identifier,
-    // not a secret or protected content, so invariant 5 is not in play — but it
-    // is the only identity detail that gets logged anywhere, deliberately.
-    console.warn(`[auth] no workspace for subject oidc|${subject}`);
-    return failed('unknown');
+  if (identities.length !== 1) {
+    // Nobody knows them, or several workspaces do. Either way the next page
+    // needs to know *which verified human* this is, and a query parameter would
+    // let a visitor answer that question themselves.
+    const response = NextResponse.redirect(
+      new URL(identities.length === 0 ? '/welcome' : '/choose', request.url),
+      { status: 303 },
+    );
+
+    response.cookies.set(
+      PENDING_COOKIE,
+      sealPending({
+        subject: `oidc|${subject}`,
+        candidates: identities.map((i) => ({
+          userId: i.user_id,
+          workspaceId: i.workspace_id,
+        })),
+        expiresAt: Date.now() + PENDING_TTL_MS,
+      }),
+      { ...cookieOptions(), maxAge: Math.floor(PENDING_TTL_MS / 1000) },
+    );
+    response.cookies.delete(FLOW_COOKIE);
+    return response;
   }
-  if (identities.length > 1) return failed('ambiguous');
 
   const identity = identities[0];
   if (!identity) return failed('unknown');
@@ -86,6 +113,9 @@ export async function GET(request: NextRequest) {
     { ...cookieOptions(), maxAge: Math.floor(SESSION_TTL_MS / 1000) },
   );
   response.cookies.delete(FLOW_COOKIE);
+  // A pending cookie left over from an abandoned signup must not outlive a
+  // successful sign-in as a second, stale identity.
+  response.cookies.delete(PENDING_COOKIE);
   return response;
 }
 
@@ -95,6 +125,7 @@ function failed(reason: 'expired' | 'rejected' | 'unknown' | 'ambiguous'): NextR
     { status: 303 },
   );
   response.cookies.delete(FLOW_COOKIE);
+  response.cookies.delete(PENDING_COOKIE);
   response.cookies.delete(SESSION_COOKIE);
   return response;
 }

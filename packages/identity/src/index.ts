@@ -5,3 +5,4 @@ export * from './identity-resolution.ts';
 export * from './invite.ts';
 export * from './revocation.ts';
 export * from './sessions.ts';
+export * from './provision.ts';

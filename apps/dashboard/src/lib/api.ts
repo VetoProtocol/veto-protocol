@@ -94,6 +94,19 @@ export const resolveIdentity = async (
   return identities;
 };
 
+/**
+ * Create a personal workspace for a verified subject who has none.
+ *
+ * Same scope as the lookup, because it is the same moment in the same flow.
+ * Note what the body cannot say: no workspace id, no user id, no type. Joining
+ * an existing tenant is not expressible here (spec §1.3, `docs/signup.md`).
+ */
+export const provisionWorkspace = (
+  credential: string,
+  body: { subject: string; workspace_name: string },
+): Promise<{ user_id: string; workspace_id: string }> =>
+  request('/v1/auth/provision', { method: 'POST', credential, body: JSON.stringify(body) });
+
 export const listAgents = (credential: string): Promise<{ agents: Agent[] }> =>
   request('/v1/agents', { method: 'GET', credential });
 

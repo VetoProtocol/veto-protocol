@@ -1,11 +1,14 @@
 /**
  * Workspace membership, created by hand.
  *
- * There is no invitation flow and no auto-provisioning: an OIDC subject that
- * nobody has invited cannot sign in, because a system that created a workspace
- * for anyone completing a sign-in would have the provider's entire user base as
- * members. Until there is an admin UI, membership is an operator action, and
- * this is that action.
+ * This is how somebody joins a workspace that already exists, and it stays an
+ * operator action: there is no invitation UI, and a subject cannot talk its way
+ * in. `provisionPersonalWorkspace` is the other door — a verified stranger
+ * creating a workspace *of their own*, which reaches nothing that existed
+ * before. The two are deliberately not the same function.
+ *
+ * Also used by signup, with `workspaceType: 'personal'`, because the insert is
+ * identical once the decision has been made.
  *
  * Idempotent on the subject. Running it twice returns the existing membership
  * rather than creating a second user for the same person, so a retry after a
