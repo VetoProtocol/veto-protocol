@@ -14,6 +14,7 @@ const ITEMS = [
   ['/labels', 'labels'],
   ['/approvals', 'approvals'],
   ['/audit', 'audit'],
+  ['/alerts', 'alerts'],
 ] as const;
 
 export function Nav({ active }: { active: string }) {

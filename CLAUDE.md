@@ -38,10 +38,13 @@ The Google connect flow is complete in the browser: `/connections` runs PKCE and
 the state cookie, the API builds the consent URL and exchanges the code, and
 `docs/google-setup.md` covers the console side.
 
-**Stage 4 is in progress.** Revocation now reaches everything it should — a lock
-or an agent revocation kills outstanding grants and live sessions, not only
-future requests (`packages/decisions/src/revocation.ts`). All eight §5.4 webhook
-events are emitted and delivered (`docs/webhooks.md`).
+**Stage 4 is done.** Revocation reaches everything it should — a lock or an
+agent revocation kills outstanding grants and live sessions, not only future
+requests (`packages/decisions/src/revocation.ts`). All eight §5.4 webhook events
+are emitted, delivered, retried and manageable from `/alerts`
+(`docs/webhooks.md`). Gmail and Calendar are read-only and live. The §13 exit
+condition — revocation across all sessions — is asserted in
+`apps/gateway/test/revocation.test.ts`.
 
 `/v1/policies` and its dashboard screen exist. Until stage 4 they did not, and
 the only way to write a rule was raw SQL — the engine was tested and the door
@@ -60,8 +63,9 @@ Gmail and Calendar are read-only and live. Four tools —
 create or update tool, and no scope for either. §12.1's first scenario is now
 tested with an actual poisoned email rather than a Drive file standing in.
 
-What is **not** built: the alerts screen in the dashboard, and the browser half
-of passkey *enrolment*. Two known gaps inside what is built:
+What is **not** built: the browser half of passkey *enrolment*, and a scheduler
+for webhook delivery — `/alerts` has a "deliver now" button instead, which is
+honest about there being no cron here rather than draining silently on render. Two known gaps inside what is built:
 nothing writes the `parent` tuple, so granting a folder does not yet reach the
 files inside it; and Permit resource-instance keys must match
 `^[A-Za-z0-9\-_]+$`, which real Drive ids do and the repo's path-shaped test
@@ -109,7 +113,7 @@ outside a test env, and the app `.env` sets `NODE_ENV=development`.
 | `packages/passkeys` | WebAuthn enrolment and assertion. Public keys only. |
 | `apps/api` | Fastify control plane (§5). Manages objects; not an enforcement point. |
 | `apps/gateway` | **The** MCP enforcement point (§3.1). Calls the pipeline in process. |
-| `apps/dashboard` | Next.js dashboard: agents, connections, presence, labels, approvals, audit. Dark only. |
+| `apps/dashboard` | Next.js dashboard: agents, policies, connections, presence, labels, approvals, audit, alerts. Dark only. |
 
 Sign-in is OIDC against any conformant provider (`docs/auth-setup.md`). There is
 **no auto-provisioning**: an unknown subject is refused, and membership is
@@ -194,6 +198,11 @@ inserted by hand until an invitation flow exists.
   check that two timestamps are timestamps; only `execute.ts` can check that
   they are not two years apart. `MAX_WINDOW_DAYS` is the calendar's version of
   a volume limit.
+- **A `'use server'` module may export only async functions.** Every export
+  becomes a callable endpoint, so a constant beside the actions is refused at
+  runtime — `next build` does not catch it, and the page fails on first render.
+  Shared state types live in their own file (`action-state.ts`, `alerts/state.ts`)
+  and `test/use-server.test.ts` is the guard.
 - **The gateway's AJV runs `strict: true` with no format vocabulary.** A
   `format` keyword throws at schema-compile time rather than validating
   anything, so tool schemas use `pattern` — see `RFC3339` in `tools.ts`.

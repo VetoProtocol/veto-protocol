@@ -103,6 +103,56 @@ export const registerAgent = (
 ): Promise<Agent> =>
   request('/v1/agents', { method: 'POST', credential, body: JSON.stringify(input) });
 
+export interface EndpointView {
+  readonly id: string;
+  readonly url: string;
+  readonly events: string[];
+  readonly status: string;
+  readonly created_at: string;
+  readonly disabled_at: string | null;
+}
+
+export interface DeliveryView {
+  readonly id: string;
+  readonly endpoint_id: string;
+  readonly event_id: string;
+  readonly event_type: string;
+  readonly status: 'pending' | 'delivered' | 'failed';
+  readonly attempts: number;
+  readonly next_attempt_at: string;
+  readonly last_status: number | null;
+  readonly last_error: string | null;
+  readonly delivered_at: string | null;
+  readonly occurred_at: string;
+}
+
+export const listEndpoints = (credential: string): Promise<{ endpoints: EndpointView[] }> =>
+  request('/v1/webhooks', { method: 'GET', credential });
+
+/** The only response in this API that carries a secret, and only this once. */
+export const createEndpoint = (
+  credential: string,
+  body: { url: string; events: string[] },
+): Promise<EndpointView & { secret: string }> =>
+  request('/v1/webhooks', { method: 'POST', credential, body: JSON.stringify(body) });
+
+export const disableEndpoint = (
+  credential: string,
+  endpointId: string,
+): Promise<{ endpoint_id: string; disabled: boolean }> =>
+  request(`/v1/webhooks/${encodeURIComponent(endpointId)}`, { method: 'DELETE', credential });
+
+export const listDeliveries = (
+  credential: string,
+  limit = 25,
+): Promise<{ deliveries: DeliveryView[] }> =>
+  request(`/v1/webhooks/deliveries?limit=${limit}`, { method: 'GET', credential });
+
+export const drainDeliveries = (
+  credential: string,
+): Promise<{ attempted: number; delivered: number; retrying: number; failed: number }> =>
+  request('/v1/webhooks/drain', { method: 'POST', credential, body: '{}' });
+
 export interface GrantView {
   readonly agent_id: string;
   readonly resource_type: string;
