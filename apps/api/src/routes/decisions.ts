@@ -20,6 +20,8 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { Pool } from 'pg';
 import type Redis from 'ioredis';
+import { describeReason } from '@veto/core';
+import { withWorkspace } from '@veto/db';
 import { evaluate, type EvaluateInput } from '@veto/decisions';
 import type { PolicyDecisions } from '@veto/permit';
 import { ERROR_SCHEMA, HttpError } from '../errors.ts';
@@ -148,4 +150,105 @@ export function registerDecisionRoutes(app: FastifyInstance, deps: DecisionRoute
       };
     },
   );
+
+  app.get(
+    '/v1/decisions/:decisionId',
+    {
+      schema: {
+        params: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['decisionId'],
+          properties: { decisionId: { type: 'string', pattern: '^dec_[A-Za-z0-9_-]{1,64}$' } },
+        },
+        response: {
+          200: {
+            type: 'object',
+            properties: {
+              id: { type: 'string' },
+              request_id: { type: 'string' },
+              human_id: { type: 'string' },
+              agent_id: { type: 'string' },
+              tool: { type: 'string' },
+              action: { type: 'string' },
+              resource_ref: { type: 'string', nullable: true },
+              policy_version: { type: 'string', nullable: true },
+              // Two columns, never one. Permit answers a question; the decision
+              // is Veto's, and collapsing them would hide the case where they
+              // disagree — which is exactly what stays auditable (invariant 3).
+              permit_result: { type: 'string' },
+              veto_result: { type: 'string' },
+              reason_code: { type: 'string' },
+              // The code's own meaning, resolved here because this service owns
+              // the vocabulary. A dashboard that mapped codes to prose itself
+              // would be a second copy of the list, free to drift from it.
+              reason_stage: { type: 'string' },
+              reason_message: { type: 'string' },
+              latency_ms: { type: 'integer', nullable: true },
+              created_at: { type: 'string' },
+            },
+            required: [
+              'id',
+              'request_id',
+              'human_id',
+              'agent_id',
+              'tool',
+              'action',
+              'permit_result',
+              'veto_result',
+              'reason_code',
+              'reason_stage',
+              'reason_message',
+              'created_at',
+            ],
+          },
+          '4xx': ERROR_SCHEMA,
+          '5xx': ERROR_SCHEMA,
+        },
+      },
+    },
+    async (request: FastifyRequest<{ Params: { decisionId: string } }>) => {
+      requireScope(request, SCOPE_CONTROL_PLANE);
+      const { workspaceId } = request.principal;
+
+      const { rows } = await withWorkspace(deps.pool, workspaceId, (db) =>
+        db.query<DecisionRow>(
+          `select id, request_id, human_id, agent_id, tool, action, resource_ref,
+                  policy_version, permit_result, veto_result, reason_code, latency_ms, created_at
+             from decisions where workspace_id = $1 and id = $2`,
+          [workspaceId, request.params.decisionId],
+        ),
+      );
+
+      const row = rows[0];
+      if (!row) {
+        throw new HttpError(404, 'RESOURCE_OUT_OF_SCOPE', 'No such decision in this workspace');
+      }
+
+      const spec = describeReason(row.reason_code);
+
+      return {
+        ...row,
+        reason_stage: spec.stage,
+        reason_message: spec.message,
+        created_at: row.created_at.toISOString(),
+      };
+    },
+  );
+}
+
+interface DecisionRow {
+  id: string;
+  request_id: string;
+  human_id: string;
+  agent_id: string;
+  tool: string;
+  action: string;
+  resource_ref: string | null;
+  policy_version: string | null;
+  permit_result: string;
+  veto_result: string;
+  reason_code: string;
+  latency_ms: number | null;
+  created_at: Date;
 }

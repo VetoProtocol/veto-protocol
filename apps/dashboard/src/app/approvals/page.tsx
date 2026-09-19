@@ -81,6 +81,15 @@ export default async function ApprovalsPage() {
                 </h2>
                 <p style={{ color: 'var(--text-dim)', fontSize: 12.5, margin: '10px 0 0' }}>
                   {approval.reason_code ?? 'APPROVAL_REQUIRED'}
+                  {' · '}
+                  {/* The decision that produced this challenge. Somebody
+                      deciding should be able to see which step held it. */}
+                  <a
+                    href={`/decisions/${approval.decision_id}`}
+                    style={{ color: 'var(--text-dim)', borderBottom: '1px dotted var(--border-strong)' }}
+                  >
+                    why
+                  </a>
                 </p>
 
                 <div style={{ border: '1px solid var(--border)', background: 'var(--bg)', marginTop: 18 }}>

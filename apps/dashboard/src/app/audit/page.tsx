@@ -48,28 +48,31 @@ export default async function AuditPage({
   return (
     <>
 
-      <Panel title="AUDIT" meta="APPEND-ONLY">
-        <div style={{ padding: '22px 18px 6px' }}>
-          <p className="path" style={{ margin: '0 0 12px' }}>
-            ~/{session.workspaceId}/audit
-          </p>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
-            <h1 className="headline" style={{ fontSize: 30 }}>
-              Timeline
-            </h1>
-            {/* The verification result is shown plainly, including when it
-                fails. A badge that only ever says "verified" is decoration. */}
-            {chain.verified ? (
-              <StatusDot tone="allow">hash chain verified</StatusDot>
-            ) : (
-              <StatusDot tone="deny">{`chain breaks at #${chain.broken_at ?? '?'}`}</StatusDot>
-            )}
-          </div>
-          <p style={{ color: 'var(--text-dim)', maxWidth: 660, marginTop: 12, fontSize: 12.5 }}>
-            Every event is hashed with its predecessor, so a removed or edited row breaks the chain.
-            References only — never document contents, tokens, or passkey challenges.
-          </p>
+      <div>
+        <p className="path" style={{ margin: '0 0 12px' }}>
+          ~/{session.workspaceId}/audit
+        </p>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+          <h1 className="headline" style={{ fontSize: 30, margin: 0 }}>
+            Audit timeline
+          </h1>
+          {/* The verification result is shown plainly, including when it fails.
+              A badge that only ever says "verified" is decoration. */}
+          {chain.verified ? (
+            <StatusDot tone="allow">
+              {`hash chain verified${page.events.length > 0 ? ` to seq ${page.events[0]?.seq.toLocaleString()}` : ''}`}
+            </StatusDot>
+          ) : (
+            <StatusDot tone="deny">{`chain breaks at #${chain.broken_at ?? '?'}`}</StatusDot>
+          )}
         </div>
+        <p style={{ color: 'var(--text-dim)', maxWidth: 660, marginTop: 12, fontSize: 12.5 }}>
+          Append-only. Each event is hashed with its predecessor, so a removed or edited row breaks
+          the chain and the check above turns red.
+        </p>
+      </div>
+
+      <Panel title="EVENTS" meta={`APPEND-ONLY · WORKSPACE ${session.workspaceId.replace(/^ws_/, '')}`}>
 
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
@@ -135,6 +138,17 @@ export default async function AuditPage({
           ) : null}
         </div>
       </Panel>
+
+      <div
+        style={{
+          border: '1px dashed var(--border-strong)',
+          padding: '14px 18px',
+          color: 'var(--text-dim)',
+          fontSize: 11.5,
+        }}
+      >
+        References only — never document contents, tokens or passkey challenges.
+      </div>
     </>
   );
 }

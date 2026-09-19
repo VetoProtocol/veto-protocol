@@ -116,6 +116,29 @@ export const registerAgent = (
 ): Promise<Agent> =>
   request('/v1/agents', { method: 'POST', credential, body: JSON.stringify(input) });
 
+export interface DecisionView {
+  readonly id: string;
+  readonly request_id: string;
+  readonly human_id: string;
+  readonly agent_id: string;
+  readonly tool: string;
+  readonly action: string;
+  readonly resource_ref: string | null;
+  readonly policy_version: string | null;
+  /** Recorded separately from the final result; never collapsed (invariant 3). */
+  readonly permit_result: string;
+  readonly veto_result: string;
+  readonly reason_code: string;
+  /** Resolved by the API, which owns the 25 codes. Never re-derived here. */
+  readonly reason_stage: string;
+  readonly reason_message: string;
+  readonly latency_ms: number | null;
+  readonly created_at: string;
+}
+
+export const getDecision = (credential: string, decisionId: string): Promise<DecisionView> =>
+  request(`/v1/decisions/${encodeURIComponent(decisionId)}`, { method: 'GET', credential });
+
 export interface EndpointView {
   readonly id: string;
   readonly url: string;
