@@ -103,6 +103,37 @@ export const registerAgent = (
 ): Promise<Agent> =>
   request('/v1/agents', { method: 'POST', credential, body: JSON.stringify(input) });
 
+export interface PolicyView {
+  readonly id: string;
+  readonly version: string;
+  readonly subject: string;
+  readonly action: string;
+  readonly effect: 'allow' | 'deny' | 'challenge';
+  readonly resource_filter: { type?: string; ids?: string[]; prefix?: string };
+  readonly conditions: { presence?: string[]; maxPerDay?: number; requireIntent?: boolean };
+}
+
+export const listPolicies = (credential: string): Promise<{ policies: PolicyView[] }> =>
+  request('/v1/policies', { method: 'GET', credential });
+
+export const createPolicy = (
+  credential: string,
+  body: {
+    subject: string;
+    action: string;
+    effect: string;
+    resource_filter: { type: string; ids?: string[]; prefix?: string };
+    conditions?: { presence?: string[]; maxPerDay?: number; requireIntent?: boolean };
+  },
+): Promise<PolicyView> =>
+  request('/v1/policies', { method: 'POST', credential, body: JSON.stringify(body) });
+
+export const deletePolicy = (
+  credential: string,
+  policyId: string,
+): Promise<{ policy_id: string; removed: boolean }> =>
+  request(`/v1/policies/${encodeURIComponent(policyId)}`, { method: 'DELETE', credential });
+
 export interface ConnectionView {
   readonly id: string;
   readonly provider: string;

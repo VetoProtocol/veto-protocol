@@ -13,7 +13,9 @@ import type Redis from 'ioredis';
 import type { FastifyInstance } from 'fastify';
 import { withWorkspace } from '@veto/db';
 import { createFakePolicyDecisions, type FakePolicyDecisions } from '@veto/permit';
+import { POLICY_ACTIONS } from '@veto/decisions';
 import { createGateway, PROTOCOL_VERSION } from '../src/app.ts';
+import { TOOLS } from '../src/tools.ts';
 import { RPC } from '../src/jsonrpc.ts';
 import { SECRET, gatewayToken, rpc, seedAgent, suffix, testPool, testRedis } from './helpers.ts';
 
@@ -243,6 +245,16 @@ describe('a client can connect and list', () => {
     const b = (await post(rpc('tools/list'), gatewayToken(WS_B, CAROL, OTHER_WS_AGENT))).json().result;
 
     expect(a).toEqual(b);
+  });
+
+  it('declares an action a policy rule is allowed to name', async () => {
+    // The drift guard. A tool whose action is not in POLICY_ACTIONS can never
+    // be allowed by any rule, because /v1/policies refuses to write one naming
+    // it — so the tool would be listed, called, and denied forever with nothing
+    // pointing at the cause.
+    for (const tool of TOOLS) {
+      expect(POLICY_ACTIONS as readonly string[], tool.name).toContain(tool.action);
+    }
   });
 
   it('declares strict, closed argument schemas', async () => {

@@ -43,8 +43,17 @@ or an agent revocation kills outstanding grants and live sessions, not only
 future requests (`packages/decisions/src/revocation.ts`). All eight §5.4 webhook
 events are emitted and delivered (`docs/webhooks.md`).
 
+`/v1/policies` and its dashboard screen exist. Until stage 4 they did not, and
+the only way to write a rule was raw SQL — the engine was tested and the door
+was missing. Deny-by-default hid it: a workspace with no rules refuses
+everything, which looks identical to working correctly.
+
 What is **not** built: Gmail and Calendar, the alerts screen in the dashboard,
-and the browser half of passkey *enrolment*.
+the browser half of passkey *enrolment*, and **any way to grant an agent a
+relationship in Permit**. That last one matters: `PolicyFacts` can create an
+agent principal and remove it, and nothing in between attaches a resource. So
+step 5 denies whatever step 4 allows, and a Veto rule cannot currently produce
+an allow against the real PDP on its own.
 
 ### Commands
 
@@ -134,6 +143,10 @@ inserted by hand until an invitation flow exists.
 - **An approval is resolved only by a passkey assertion over that approval's stored
   challenge.** Not a fresh challenge, not one the client chose. A user with no
   enrolled passkey cannot resolve anything — that is a refusal, not a fallback.
+- **Policy rules are created and deleted, never edited.** Every decision records
+  the `policy_version` that produced it, so editing a rule in place would leave
+  old decisions pointing at a version whose text has since changed. Each rule
+  gets its own version at creation.
 - **A grant must not outlive the authority it was granted under.** A lock or an
   agent revocation moves outstanding approvals to `revoked` — a distinct status
   from `expired`, because "nobody acted in time" and "somebody pulled the plug"
