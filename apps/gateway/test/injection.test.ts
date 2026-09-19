@@ -25,7 +25,7 @@ import type { FastifyInstance } from 'fastify';
 import { withWorkspace } from '@veto/db';
 import { createFakePolicyDecisions, type FakePolicyDecisions } from '@veto/permit';
 import { createLocalKeyWrapper } from '@veto/vault';
-import { createConnection, DRIVE_READONLY_SCOPE, type DriveFile, type DriveReader, type UpstreamTokenExchange } from '@veto/connections';
+import { createConnection, DRIVE_READONLY_SCOPE, type DriveEntry, type DriveFile, type DriveReader, type UpstreamTokenExchange } from '@veto/connections';
 import { createGateway } from '../src/app.ts';
 import { RPC } from '../src/jsonrpc.ts';
 import { SECRET, gatewayToken, rpc, seedAgent, suffix, testPool, testRedis } from './helpers.ts';
@@ -67,6 +67,10 @@ const exchange: UpstreamTokenExchange = {
 
 const reads: string[] = [];
 const drive: DriveReader = {
+  async listFolder(): Promise<readonly DriveEntry[]> {
+    // Not exercised by this file; present because the port requires it.
+    return [];
+  },
   async readFile(_token, fileId): Promise<DriveFile> {
     reads.push(fileId);
     return {

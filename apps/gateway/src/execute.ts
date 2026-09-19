@@ -64,6 +64,7 @@ export interface ExecuteDeps {
  */
 const SCOPE_FOR_TOOL: Readonly<Record<string, string>> = {
   'google_drive.read_file': DRIVE_READONLY_SCOPE,
+  'google_drive.list_folder': DRIVE_READONLY_SCOPE,
   'google_gmail.search_messages': GMAIL_READONLY_SCOPE,
   'google_gmail.read_message': GMAIL_READONLY_SCOPE,
   'google_calendar.list_events': CALENDAR_READONLY_SCOPE,
@@ -80,9 +81,8 @@ export async function executeAllowed(
 ): Promise<ExecuteOutcome> {
   const requiredScope = SCOPE_FOR_TOOL[input.tool];
   if (requiredScope === undefined) {
-    // `google_drive.list_folder` is listed and decidable but has no upstream
-    // implementation yet. An allowed action with no way to carry it out is
-    // refused plainly rather than reported as success.
+    // An allowed action with no way to carry it out is refused plainly rather
+    // than reported as success.
     return {
       ok: false,
       reasonCode: 'TOOL_NOT_ALLOWED',
@@ -204,6 +204,18 @@ async function carryOut(
   accessToken: string,
   fields: readonly string[],
 ): Promise<unknown> {
+  if (input.tool === 'google_drive.list_folder') {
+    const pageSize = input.arguments['page_size'];
+    const entries = await deps.drive.listFolder(
+      accessToken,
+      input.resource.id,
+      typeof pageSize === 'number' ? pageSize : 25,
+    );
+    // Names and ids. Reading any one of them is a separate call and a separate
+    // decision (invariant 9).
+    return { entries };
+  }
+
   if (input.tool === 'google_drive.read_file') {
     const file = await deps.drive.readFile(
       accessToken,

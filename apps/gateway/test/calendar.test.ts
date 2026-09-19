@@ -26,6 +26,7 @@ import {
   MAX_WINDOW_DAYS,
   type CalendarEvent,
   type CalendarReader,
+  type DriveEntry,
   type DriveFile,
   type DriveReader,
   type UpstreamTokenExchange,
@@ -86,6 +87,10 @@ const calendar: CalendarReader = {
 };
 
 const drive: DriveReader = {
+  async listFolder(): Promise<readonly DriveEntry[]> {
+    // Not exercised by this file; present because the port requires it.
+    return [];
+  },
   async readFile(_token, fileId): Promise<DriveFile> {
     return { id: fileId, name: fileId, mimeType: 'text/plain', modifiedTime: null, content: 'x' };
   },

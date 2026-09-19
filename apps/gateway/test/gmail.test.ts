@@ -24,6 +24,7 @@ import {
   createConnection,
   GMAIL_READONLY_SCOPE,
   DRIVE_READONLY_SCOPE,
+  type DriveEntry,
   type DriveFile,
   type DriveReader,
   type GmailMessage,
@@ -101,6 +102,10 @@ const gmail: GmailReader = {
 
 const driveReads: string[] = [];
 const drive: DriveReader = {
+  async listFolder(): Promise<readonly DriveEntry[]> {
+    // Not exercised by this file; present because the port requires it.
+    return [];
+  },
   async readFile(_token, fileId): Promise<DriveFile> {
     driveReads.push(fileId);
     return {

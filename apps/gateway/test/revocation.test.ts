@@ -30,6 +30,7 @@ import {
   createConnection,
   DRIVE_READONLY_SCOPE,
   revokeConnection,
+  type DriveEntry,
   type DriveFile,
   type DriveReader,
   type UpstreamTokenExchange,
@@ -69,6 +70,10 @@ const exchange: UpstreamTokenExchange = {
 /** Every upstream read is recorded, so "nothing reached Drive" is checkable. */
 const reads: string[] = [];
 const drive: DriveReader = {
+  async listFolder(): Promise<readonly DriveEntry[]> {
+    // Not exercised by this file; present because the port requires it.
+    return [];
+  },
   async readFile(_token, fileId): Promise<DriveFile> {
     reads.push(fileId);
     return { id: fileId, name: fileId, mimeType: 'text/plain', modifiedTime: null, content: 'ok' };

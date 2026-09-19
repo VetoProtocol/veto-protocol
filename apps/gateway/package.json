@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node --experimental-strip-types src/server.ts",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "bridge": "node --experimental-strip-types src/desktop-bridge.ts"
   },
   "dependencies": {
     "@veto/core": "workspace:*",

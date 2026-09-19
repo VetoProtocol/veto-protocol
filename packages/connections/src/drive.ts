@@ -21,8 +21,29 @@ export interface DriveFile {
   readonly content: string | null;
 }
 
+/** One entry in a folder. Names and types, never contents. */
+export interface DriveEntry {
+  readonly id: string;
+  readonly name: string | null;
+  readonly mimeType: string | null;
+  readonly modifiedTime: string | null;
+}
+
 export interface DriveReader {
   readFile(accessToken: string, fileId: string, fields: readonly string[]): Promise<DriveFile>;
+
+  /**
+   * What is in one folder.
+   *
+   * Listing is a separate permission from reading, so this returns names and
+   * ids and never content — the §12.1 scenario where an agent authorized for
+   * one file asks for the whole folder is exactly this distinction.
+   */
+  listFolder(
+    accessToken: string,
+    folderId: string,
+    pageSize: number,
+  ): Promise<readonly DriveEntry[]>;
 }
 
 const DRIVE_BASE = 'https://www.googleapis.com/drive/v3/files';
@@ -42,6 +63,35 @@ export class DriveError extends Error {
 
 export function createDriveReader(): DriveReader {
   return {
+    async listFolder(accessToken, folderId, pageSize): Promise<readonly DriveEntry[]> {
+      // Clamped here as well as in the tool schema: the decision authorised a
+      // bounded read and step 8 must not widen it.
+      const bounded = Math.max(1, Math.min(pageSize, 100));
+
+      // The query names the parent, so a caller cannot turn one folder into a
+      // whole-Drive search by supplying a cleverer id.
+      const response = await fetch(
+        `${DRIVE_BASE}?${new URLSearchParams({
+          q: `'${folderId.replace(/'/g, "\\'")}' in parents and trashed = false`,
+          pageSize: String(bounded),
+          fields: 'files(id,name,mimeType,modifiedTime)',
+        }).toString()}`,
+        { headers: { authorization: `Bearer ${accessToken}` } },
+      );
+      if (!response.ok) throw new DriveError(response.status);
+
+      const body = (await response.json()) as {
+        files?: Array<Record<string, unknown>>;
+      };
+
+      return (body.files ?? []).slice(0, bounded).map((f) => ({
+        id: typeof f['id'] === 'string' ? f['id'] : '',
+        name: typeof f['name'] === 'string' ? f['name'] : null,
+        mimeType: typeof f['mimeType'] === 'string' ? f['mimeType'] : null,
+        modifiedTime: typeof f['modifiedTime'] === 'string' ? f['modifiedTime'] : null,
+      }));
+    },
+
     async readFile(accessToken, fileId, fields): Promise<DriveFile> {
       const wantsContent = fields.includes('content');
       const metadata = fields.filter((f) => METADATA_FIELDS.has(f));
