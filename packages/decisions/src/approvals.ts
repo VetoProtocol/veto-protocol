@@ -29,7 +29,7 @@ export interface ApprovalRow {
   readonly decision_id: string;
   readonly approver_id: string;
   readonly action_digest: string;
-  readonly status: 'pending' | 'approved' | 'denied' | 'expired' | 'consumed';
+  readonly status: 'pending' | 'approved' | 'denied' | 'expired' | 'consumed' | 'revoked';
   readonly expires_at: Date;
 }
 
@@ -147,6 +147,11 @@ export async function redeemApproval(
 
   if (approval.status === 'consumed') return { ok: false, reasonCode: 'APPROVAL_REPLAYED' };
   if (approval.status === 'denied') return { ok: false, reasonCode: 'POLICY_DENIED' };
+  // A grant killed by a lock or a revoke. Stated explicitly rather than left to
+  // fall through the check below, because it is the case a reader will look
+  // for. `APPROVAL_REQUIRED` is the honest answer: the authority this grant was
+  // issued under is gone, so what is needed now is a new grant, not this one.
+  if (approval.status === 'revoked') return { ok: false, reasonCode: 'APPROVAL_REQUIRED' };
   if (approval.status !== 'approved') return { ok: false, reasonCode: 'APPROVAL_REQUIRED' };
 
   const spent = await db.query<{ id: string }>(
@@ -161,4 +166,52 @@ export async function redeemApproval(
   if (spent.rows.length === 0) return { ok: false, reasonCode: 'APPROVAL_REPLAYED' };
 
   return { ok: true, approvalId: approval.id };
+}
+
+/**
+ * Kill the grants an authority change has invalidated (spec §7.1, §12.1).
+ *
+ * An approval is permission to perform one action *later*. A workspace lock or
+ * an agent revocation says nothing more should happen — so "later" must not
+ * outlive the authority the grant was issued under. Without this, a challenge
+ * approved a minute before the lock stays redeemable after it, which is a small
+ * window and exactly the one §12.1's "emergency lock during an active session"
+ * scenario aims at.
+ *
+ * Revoked, not deleted, and not folded into 'expired'. The row keeps its
+ * approver, its digest and its resolution time, so a lock incident is
+ * reconstructable afterwards — and an auditor can tell "nobody acted in time"
+ * apart from "somebody pulled the plug", which a timestamp comparison cannot.
+ *
+ * Idempotent: a second call finds nothing live and returns an empty list, so a
+ * retry after a partial failure converges.
+ */
+export interface RevokeGrantsInput {
+  readonly workspaceId: string;
+  /**
+   * Narrow to the grants arising from one agent's decisions. Null means every
+   * live grant in the workspace, which is what a lock does.
+   */
+  readonly agentId?: string | null;
+}
+
+export async function revokeLiveApprovals(
+  db: Db,
+  input: RevokeGrantsInput,
+): Promise<readonly string[]> {
+  const { rows } = await db.query<{ id: string }>(
+    `update approvals a
+        set status = 'revoked'
+      where a.workspace_id = $1
+        and a.status in ('pending', 'approved')
+        and ($2::text is null or exists (
+              select 1 from decisions d
+               where d.workspace_id = a.workspace_id
+                 and d.id = a.decision_id
+                 and d.agent_id = $2))
+      returning a.id`,
+    [input.workspaceId, input.agentId ?? null],
+  );
+
+  return rows.map((row) => row.id);
 }

@@ -204,7 +204,14 @@ export const getEmergencyLock = (
 ): Promise<{ locked: boolean; locked_at: string | null }> =>
   request('/v1/emergency-lock', { method: 'GET', credential });
 
-export const setEmergencyLock = (credential: string, locked: boolean): Promise<{ locked: boolean }> =>
+export interface LockResult {
+  readonly locked: boolean;
+  /** Approved challenges that were still redeemable and are not any more. */
+  readonly grants_revoked: number;
+  readonly sessions_dropped: number;
+}
+
+export const setEmergencyLock = (credential: string, locked: boolean): Promise<LockResult> =>
   request('/v1/emergency-lock', { method: 'POST', credential, body: JSON.stringify({ locked }) });
 
 export const listAuditEvents = (

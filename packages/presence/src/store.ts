@@ -128,17 +128,27 @@ export async function setEmergencyLock(
   locked: boolean,
   actorUserId: string,
 ): Promise<EmergencyLockResult> {
-  const { rows } = await db.query<{ emergency_lock: boolean }>(
+  // Read and lock the row first, so `changed` is a fact rather than an
+  // assumption. Throwing the switch twice is a normal thing for a worried
+  // person to do, and the second one should not read as a second incident in
+  // the timeline.
+  const current = await db.query<{ emergency_lock: boolean }>(
+    `select emergency_lock from workspaces where id = $1 for update`,
+    [workspaceId],
+  );
+
+  const before = current.rows[0];
+  if (!before) throw new Error('workspace not found');
+
+  if (before.emergency_lock === locked) return { locked, changed: false };
+
+  await db.query(
     `update workspaces
         set emergency_lock = $2,
             locked_at = case when $2 then now() else null end
-      where id = $1
-      returning emergency_lock`,
+      where id = $1`,
     [workspaceId, locked],
   );
-
-  const row = rows[0];
-  if (!row) throw new Error('workspace not found');
 
   await writeAuditEvent(db, {
     workspaceId,
@@ -149,5 +159,5 @@ export async function setEmergencyLock(
     correlationId: null,
   });
 
-  return { locked: row.emergency_lock, changed: true };
+  return { locked, changed: true };
 }

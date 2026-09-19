@@ -132,7 +132,15 @@ describe('locks', () => {
         method: 'POST', url: '/v1/emergency-lock', headers: as(WS, ALICE), payload: { locked },
       });
 
-    expect((await lock(true)).json()).toEqual({ locked: true });
+    // The counts are part of the answer, not decoration: locking is supposed to
+    // stop work already in flight, and a caller who sees zero where they
+    // expected more knows to look further. This workspace is quiet, so zero is
+    // the correct report rather than an absence of one.
+    expect((await lock(true)).json()).toEqual({
+      locked: true,
+      grants_revoked: 0,
+      sessions_dropped: 0,
+    });
 
     const { rows } = await withWorkspace(pool, WS, (db) =>
       db.query<{ emergency_lock: boolean; locked_at: Date | null }>(
@@ -142,7 +150,13 @@ describe('locks', () => {
     expect(rows[0]?.emergency_lock).toBe(true);
     expect(rows[0]?.locked_at).not.toBeNull();
 
-    expect((await lock(false)).json()).toEqual({ locked: false });
+    // Releasing tears nothing down and restores nothing, so both counts are
+    // zero by construction rather than by coincidence.
+    expect((await lock(false)).json()).toEqual({
+      locked: false,
+      grants_revoked: 0,
+      sessions_dropped: 0,
+    });
   });
 
   it('records every presence change in the audit trail, without a location', async () => {

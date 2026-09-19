@@ -44,13 +44,32 @@ export async function emergencyLockAction(
   const locked = form.get('locked') === 'true';
 
   try {
-    await setEmergencyLock(session.credential, locked);
+    const result = await setEmergencyLock(session.credential, locked);
     revalidatePath('/presence');
+
+    if (!locked) {
+      // Said plainly, because it is the part people assume wrong. Unlocking
+      // restores the ability to ask; it does not restore what the lock took.
+      return {
+        error: null,
+        notice: 'Workspace unlocked. Anything the lock stopped has to be re-authorized.',
+      };
+    }
+
+    // What it actually stopped, not just what it will stop. Somebody throwing
+    // this switch believes something is going wrong right now, and "locked"
+    // alone does not tell them whether work in flight was caught.
+    const stopped = [
+      result.grants_revoked > 0 ? `${result.grants_revoked} approved request${plural(result.grants_revoked)}` : null,
+      result.sessions_dropped > 0 ? `${result.sessions_dropped} live session${plural(result.sessions_dropped)}` : null,
+    ].filter((part): part is string => part !== null);
+
     return {
       error: null,
-      notice: locked
-        ? 'Workspace locked. Every protected action is denied until you unlock it.'
-        : 'Workspace unlocked.',
+      notice:
+        stopped.length === 0
+          ? 'Workspace locked. Every protected action is denied until you unlock it. Nothing was in flight.'
+          : `Workspace locked. Stopped ${stopped.join(' and ')}.`,
     };
   } catch (error) {
     return { error: describe(error), notice: null };
@@ -64,3 +83,5 @@ function describe(error: unknown): string {
   }
   return 'Something went wrong talking to the control plane.';
 }
+
+const plural = (n: number): string => (n === 1 ? '' : 's');

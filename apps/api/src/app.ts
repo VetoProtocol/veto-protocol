@@ -113,7 +113,7 @@ export function createApp(deps: AppDeps): FastifyInstance {
   registerDecisionRoutes(app, { pool: deps.pool, redis: deps.redis, decisions: deps.decisions });
   registerApprovalRoutes(app, { pool: deps.pool, webauthn: deps.webauthn ?? null });
   registerPasskeyRoutes(app, { pool: deps.pool, redis: deps.redis, webauthn: deps.webauthn ?? null });
-  registerPresenceRoutes(app, { pool: deps.pool });
+  registerPresenceRoutes(app, { pool: deps.pool, redis: deps.redis });
   registerAuditRoutes(app, { pool: deps.pool });
   registerLabelRoutes(app, { pool: deps.pool });
   registerConnectionRoutes(app, {

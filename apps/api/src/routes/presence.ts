@@ -19,14 +19,15 @@
 
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { Pool } from 'pg';
+import type Redis from 'ioredis';
 import { withWorkspace } from '@veto/db';
+import { lockWorkspace } from '@veto/decisions';
 import {
   ASSURANCE_LEVELS,
   PRESENCE_SOURCES,
   PRESENCE_STATES,
   PresenceTransitionError,
   readPresence,
-  setEmergencyLock,
   setPresence,
 } from '@veto/presence';
 import { ERROR_SCHEMA, HttpError } from '../errors.ts';
@@ -68,7 +69,10 @@ interface LockBody {
   locked: boolean;
 }
 
-export function registerPresenceRoutes(app: FastifyInstance, deps: { pool: Pool }): void {
+export function registerPresenceRoutes(
+  app: FastifyInstance,
+  deps: { pool: Pool; redis: Redis },
+): void {
   app.get(
     '/v1/presence',
     { schema: { response: { 200: PRESENCE_RESPONSE, '4xx': ERROR_SCHEMA, '5xx': ERROR_SCHEMA } } },
@@ -179,8 +183,14 @@ export function registerPresenceRoutes(app: FastifyInstance, deps: { pool: Pool 
         response: {
           200: {
             type: 'object',
-            properties: { locked: { type: 'boolean' } },
-            required: ['locked'],
+            properties: {
+              locked: { type: 'boolean' },
+              // What the lock stopped, not just what it will stop. A caller who
+              // sees zero and expected more knows to look further.
+              grants_revoked: { type: 'integer' },
+              sessions_dropped: { type: 'integer' },
+            },
+            required: ['locked', 'grants_revoked', 'sessions_dropped'],
           },
           '4xx': ERROR_SCHEMA,
           '5xx': ERROR_SCHEMA,
@@ -191,11 +201,22 @@ export function registerPresenceRoutes(app: FastifyInstance, deps: { pool: Pool 
       requireScope(request, SCOPE_CONTROL_PLANE);
       const { workspaceId, userId } = request.principal;
 
-      const result = await withWorkspace(deps.pool, workspaceId, (db) =>
-        setEmergencyLock(db, workspaceId, request.body.locked, userId),
-      );
+      // Not `setEmergencyLock` directly. Setting the column denies future
+      // requests; it does nothing about the grants already approved and the
+      // sessions already open, which is what somebody reaching for this switch
+      // is actually worried about. `lockWorkspace` does all of it.
+      const result = await lockWorkspace(deps.pool, deps.redis, {
+        workspaceId,
+        locked: request.body.locked,
+        actorUserId: userId,
+        correlationId: String(request.id),
+      });
 
-      return { locked: result.locked };
+      return {
+        locked: result.locked,
+        grants_revoked: result.grantsRevoked.length,
+        sessions_dropped: result.sessionsDropped,
+      };
     },
   );
 }

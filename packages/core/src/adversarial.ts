@@ -113,9 +113,13 @@ export const ADVERSARIAL_SCENARIOS: readonly AdversarialScenario[] = [
     stage: 'session',
     asserts:
       'An in-flight session denies on its next request with WORKSPACE_LOCKED, checked ' +
-      'at step 3 before any policy evaluation. Permit must not be consulted at all.',
+      'at step 3 before any policy evaluation. Permit must not be consulted at all, and ' +
+      'nothing reaches upstream — a lock is a refusal to go and fetch the answer, not ' +
+      'merely a refusal to return it. Grants approved before the lock must not survive ' +
+      'it: a test that only covers future requests misses the minute-old approved ' +
+      'challenge, which is the fastest way past a lock.',
     status: 'implemented',
-    test: 'packages/decisions/test/pipeline.test.ts',
+    test: 'apps/gateway/test/revocation.test.ts',
   },
   {
     id: 'S7',

@@ -28,9 +28,9 @@ import {
   findAgent,
   listAgents,
   registerAgent,
-  revokeAgent,
   type Agent,
 } from '@veto/identity';
+import { revokeAgentEverywhere } from '@veto/decisions';
 import { ERROR_SCHEMA, HttpError } from '../errors.ts';
 import { requireScope, SCOPE_CONTROL_PLANE } from '../scope.ts';
 import { assertWorkspaceUnlocked } from '../workspace.ts';
@@ -219,8 +219,18 @@ export function registerAgentRoutes(app: FastifyInstance, deps: AgentRoutesDeps)
               revoked: { type: 'boolean' },
               already_revoked: { type: 'boolean' },
               sessions_dropped: { type: 'integer' },
+              // Grants this agent's decisions had produced and that were still
+              // redeemable. Reported because a revocation that leaves live
+              // approvals behind is not a revocation.
+              grants_revoked: { type: 'integer' },
             },
-            required: ['agent_id', 'revoked', 'already_revoked', 'sessions_dropped'],
+            required: [
+              'agent_id',
+              'revoked',
+              'already_revoked',
+              'sessions_dropped',
+              'grants_revoked',
+            ],
           },
           '4xx': ERROR_SCHEMA,
           '5xx': ERROR_SCHEMA,
@@ -233,7 +243,12 @@ export function registerAgentRoutes(app: FastifyInstance, deps: AgentRoutesDeps)
       const { agentId } = request.params;
 
       try {
-        const result = await revokeAgent(pool, redis, policy, {
+        // Not `revokeAgent` directly. That flips the status and drops the
+        // sessions, which denies the next request — but an approval this
+        // agent's decisions produced names a human and an action, not an agent,
+        // so nothing about revoking the agent invalidated it. The composition
+        // in @veto/decisions closes that.
+        const result = await revokeAgentEverywhere(pool, redis, policy, {
           workspaceId,
           agentId,
           actorUserId: userId,
@@ -245,6 +260,7 @@ export function registerAgentRoutes(app: FastifyInstance, deps: AgentRoutesDeps)
           revoked: result.revoked,
           already_revoked: result.alreadyRevoked,
           sessions_dropped: result.sessionsDropped,
+          grants_revoked: result.grantsRevoked.length,
         };
       } catch (error) {
         if (error instanceof AgentNotFoundError) {
