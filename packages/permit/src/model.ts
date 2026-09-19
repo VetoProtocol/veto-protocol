@@ -87,11 +87,16 @@ export const MAILBOX_RESOURCE = 'gmail_mailbox';
 export const CALENDAR_RESOURCE = 'google_calendar';
 
 /**
- * Folder-to-file containment.
+ * Containment.
  *
- * Declared on the file, naming the folder as subject, so a grant on a folder
- * can reach the files inside it. The reverse never holds: being granted a file
- * says nothing about its folder.
+ * Declared on the file *and* on the folder, both naming a folder as subject, so
+ * a grant on a folder reaches the files inside it and every folder beneath it,
+ * to any depth. One relation key, because it is one fact: "this thing sits in
+ * that folder".
+ *
+ * The reverse never holds. Being granted a file says nothing about its folder,
+ * which is what keeps §12.1's "authorized for one file, asks for the whole
+ * folder" a denial.
  */
 export const RELATION_PARENT = 'parent';
 
@@ -154,3 +159,12 @@ export const delegatorFact = (agentId: string, ownerUserId: string): string =>
   `agent:${agentId}#owner=${ownerUserId}`;
 
 export const roleFact = (userKey: string, role: string): string => `role:${role}@${userKey}`;
+
+/**
+ * Canonical string form of a containment tuple.
+ *
+ * Local, like `grantFact` and `delegatorFact` — never sent to Permit. Reads
+ * child-in-parent, the direction access flows.
+ */
+export const parentFact = (childType: string, childKey: string, parentKey: string): string =>
+  `${childType}:${childKey}#${RELATION_PARENT}@${FOLDER_RESOURCE}:${parentKey}`;

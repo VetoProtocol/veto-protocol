@@ -30,7 +30,17 @@ import {
   MAILBOX_RESOURCE,
   type PolicyFacts,
 } from '@veto/permit';
+import type { KeyWrapper } from '@veto/vault';
+import {
+  BrokerError,
+  DRIVE_READONLY_SCOPE,
+  listConnections,
+  mintUpstreamToken,
+  type DriveReader,
+  type UpstreamTokenExchange,
+} from '@veto/connections';
 import { ERROR_SCHEMA, HttpError } from '../errors.ts';
+import { syncFolderHierarchy, MAX_SYNC_DEPTH } from '../hierarchy.ts';
 import { requireScope, SCOPE_CONTROL_PLANE } from '../scope.ts';
 
 /** Only what the tool catalogue can actually ask about. */
@@ -76,6 +86,26 @@ interface Body {
 export interface GrantRoutesDeps {
   readonly pool: Pool;
   readonly policy: PolicyFacts;
+  /** Unwraps the stored Google credential so the folder can be walked. */
+  readonly wrapper: KeyWrapper;
+  /** Null when Google is not configured. The sync route then refuses. */
+  readonly exchange: UpstreamTokenExchange | null;
+  readonly drive: DriveReader;
+}
+
+const SYNC_BODY = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['folder_id'],
+  properties: {
+    // Same grammar as a grant's resource_key, because it names the same thing.
+    // `root` is Drive's own alias for the top of a My Drive.
+    folder_id: { type: 'string', minLength: 1, maxLength: 512, pattern: '^[A-Za-z0-9_-]+$' },
+  },
+} as const;
+
+interface SyncBody {
+  folder_id: string;
 }
 
 export function registerGrantRoutes(app: FastifyInstance, deps: GrantRoutesDeps): void {
@@ -160,6 +190,107 @@ export function registerGrantRoutes(app: FastifyInstance, deps: GrantRoutesDeps)
         resource_type: body.resource_type,
         resource_key: body.resource_key,
       });
+    },
+  );
+
+  /**
+   * Record where the files under a folder actually live.
+   *
+   * Separate from `POST /v1/grants` on purpose. A grant is a decision somebody
+   * made and needs nothing but Permit; this needs Drive to be reachable and a
+   * live Google connection. Folding them together would mean a Drive outage
+   * blocks a grant that has nothing to do with Drive — and would leave a
+   * half-finished walk behind whenever the credential expired mid-sync.
+   *
+   * It grants nothing. Every edge it writes says where a file is, not who may
+   * read it, so running it against a folder nobody was granted changes nobody's
+   * access. That is what makes it safe to expose as its own operation.
+   */
+  app.post(
+    '/v1/grants/sync',
+    {
+      schema: {
+        body: SYNC_BODY,
+        response: {
+          200: {
+            type: 'object',
+            required: ['folders', 'links', 'truncated', 'depth'],
+            properties: {
+              folders: { type: 'integer' },
+              links: { type: 'integer' },
+              truncated: { type: 'boolean' },
+              depth: { type: 'integer' },
+            },
+          },
+          '4xx': ERROR_SCHEMA,
+          '5xx': ERROR_SCHEMA,
+        },
+      },
+    },
+    async (request: FastifyRequest<{ Body: SyncBody }>) => {
+      requireScope(request, SCOPE_CONTROL_PLANE);
+      const { workspaceId, userId } = request.principal;
+      const { folder_id: folderId } = request.body;
+
+      if (deps.exchange === null) {
+        throw new HttpError(
+          503,
+          'GOOGLE_NOT_CONFIGURED',
+          'Google is not configured on this control plane',
+        );
+      }
+
+      // The connection is found inside the workspace, so one tenant cannot walk
+      // another tenant's Drive by naming a folder id (invariant 4). Drive ids
+      // are globally unique and unguessable, which is not the same as being a
+      // boundary.
+      const connections = await withWorkspace(deps.pool, workspaceId, (db) =>
+        listConnections(db, workspaceId),
+      );
+      const connection = connections.find(
+        (c) => c.provider === 'google' && c.status === 'active',
+      );
+      if (!connection) {
+        throw new HttpError(409, 'CONNECTION_UNKNOWN', 'No active Google connection');
+      }
+
+      let accessToken: string;
+      try {
+        const grant = await withWorkspace(deps.pool, workspaceId, (db) =>
+          mintUpstreamToken(db, deps.wrapper, deps.exchange as UpstreamTokenExchange, {
+            workspaceId,
+            connectionId: connection.id,
+            // Read-only, and Drive only. Walking a folder is a read even though
+            // what it produces is a policy fact.
+            requiredScopes: [DRIVE_READONLY_SCOPE],
+          }),
+        );
+        accessToken = grant.accessToken;
+      } catch (error) {
+        const reason = error instanceof BrokerError ? error.reason : 'EXCHANGE_FAILED';
+        throw new HttpError(409, reason, 'The connected Google account could not be used');
+      }
+
+      const report = await syncFolderHierarchy(
+        { drive: deps.drive, facts: deps.policy },
+        { workspaceId, accessToken, folderId },
+      );
+
+      // Counts only. What was found is a map of somebody's Drive, and file
+      // names are protected content — invariant 5 keeps them out of the trail
+      // as firmly as it keeps out document bodies.
+      await withWorkspace(deps.pool, workspaceId, (db) =>
+        writeAuditEvent(db, {
+          workspaceId,
+          actor: userId,
+          eventType: 'grant.hierarchy_synced',
+          resourceRef: `${FOLDER_RESOURCE}:${folderId}#links=${report.links}`,
+          outcome: 'lifecycle',
+          correlationId: String(request.id),
+        }),
+      );
+
+      return { ...report, depth: MAX_SYNC_DEPTH };
     },
   );
 

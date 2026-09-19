@@ -23,6 +23,7 @@ describe('the Permit fake is a fixture, not an engine', () => {
       'factsFor',
       'grantResource',
       'listGrants',
+      'recordParent',
       'removeAgent',
       'revokeResource',
       'syncAgent',

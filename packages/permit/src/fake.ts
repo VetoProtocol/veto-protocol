@@ -12,7 +12,7 @@
  *     is Permit's job and is not simulated here.
  */
 
-import { delegatorFact, grantFact } from './model.ts';
+import { delegatorFact, grantFact, parentFact } from './model.ts';
 import {
   PolicyUnavailableError,
   type AgentFact,
@@ -81,6 +81,15 @@ export function createFakePolicyFacts(): FakePolicyFacts {
       failIfBroken('revokeResource');
       keyFor(grant.workspaceId).delete(
         grantFact(grant.agentId, grant.resourceType, grant.resourceKey),
+      );
+    },
+
+    async recordParent(link): Promise<void> {
+      // Deliberately not behind `failIfBroken`. The break switch exists to test
+      // that a *grant* failure denies; a containment edge grants nothing, so
+      // there is no denial to assert.
+      keyFor(link.workspaceId).add(
+        parentFact(link.childType, link.childKey, link.parentKey),
       );
     },
 

@@ -65,11 +65,16 @@ tested with an actual poisoned email rather than a Drive file standing in.
 
 What is **not** built: the browser half of passkey *enrolment*, and a scheduler
 for webhook delivery — `/alerts` has a "deliver now" button instead, which is
-honest about there being no cron here rather than draining silently on render. Two known gaps inside what is built:
-nothing writes the `parent` tuple, so granting a folder does not yet reach the
-files inside it; and Permit resource-instance keys must match
-`^[A-Za-z0-9\-_]+$`, which real Drive ids do and the repo's path-shaped test
-fixtures do not.
+honest about there being no cron here rather than draining silently on render.
+
+**Folder grants inherit.** `POST /v1/grants/sync` walks a folder with the
+workspace's own Google credential and writes a `parent` tuple per child, so one
+grant on a folder reaches every file and subfolder beneath it — verified against
+the hosted PDP, two levels deep, on a real Drive. Bounded by depth, entry count
+and a cycle guard (`apps/api/src/hierarchy.ts`), and it reports `truncated`
+rather than quietly stopping. One known gap remains inside what is built: Permit
+resource-instance keys must match `^[A-Za-z0-9\-_]+$`, which real Drive ids do
+and the repo's path-shaped test fixtures do not.
 
 ### Commands
 
@@ -85,6 +90,7 @@ pnpm --filter @veto/api start                      # control plane on :4000
 pnpm --filter @veto/gateway start                  # MCP gateway on :4100
 pnpm --filter @veto/dashboard dev                  # dashboard on :3000
 curl -XPOST localhost:4000/v1/webhooks/drain -H "authorization: Bearer $TOK" -d '{}'  # deliver queued alerts
+curl -XPOST localhost:4000/v1/grants/sync -H "authorization: Bearer $TOK" -d '{"folder_id":"root"}'  # teach Permit where files live
 pnpm --filter @veto/identity invite -- --subject "oidc|<from the auth log>" --workspace "Name"
 ```
 
@@ -175,6 +181,13 @@ since migration 0001 and nothing created the first kind until stage 4.
   its answer inherits; Veto says under what conditions, and its answer can only
   narrow. If a rule wrote its own grant, Permit would agree with Veto by
   construction and invariant 3's second opinion would be a mirror.
+- **A file's parent comes from Drive, never from a caller.** `POST /v1/grants/sync`
+  walks the folder over the workspace's own credential and writes the `parent`
+  tuples Permit derives from. An agent able to assert "this file's parent is the
+  folder you granted me" could read any file in Drive by saying so — privilege
+  escalation by argument, the same shape invariant 10 refuses for credentials.
+  The walk is bounded and off the decision path: it writes where things are, not
+  who may read them, so an edge under a folder nobody was granted reaches nobody.
 - **Permit resource-instance keys are `^[A-Za-z0-9\-_]+$`.** Real Drive ids fit;
   paths do not. `/v1/grants` enforces it so the failure is a 400 that explains
   itself rather than an upstream 422. Same shape of surprise as `agent|` in

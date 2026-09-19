@@ -136,6 +136,22 @@ export async function bootstrapPermitEnvironment(config: PermitConfig): Promise<
     }),
   );
 
+  // A folder inside a folder, so containment is transitive.
+  //
+  // Declared on the folder and naming a folder as subject — the same relation
+  // key as the file's, because it is the same fact: "this thing sits in that
+  // folder". Without it, inheritance stops at the first level and a grant on
+  // the Drive root reaches loose files but nothing in any subfolder, which
+  // looks like a working grant right up until somebody opens a folder.
+  await step(`relation:${FOLDER_RESOURCE}.${RELATION_PARENT}`, () =>
+    permit.api.resourceRelations.create(FOLDER_RESOURCE, {
+      key: RELATION_PARENT,
+      name: 'Parent folder',
+      description: 'The folder containing this folder. Access flows downward only.',
+      subject_resource: FOLDER_RESOURCE,
+    }),
+  );
+
   // The one role an agent can hold, and the reason Permit is in the design.
   //
   // Without a role there is nothing to assign, which is the gap this closes:
@@ -146,14 +162,45 @@ export async function bootstrapPermitEnvironment(config: PermitConfig): Promise<
   // Read-only, because §9.1 keeps writes out of the MVP. An action Permit does
   // not know cannot be granted by accident, and a role that cannot write cannot
   // be talked into writing.
-  await step(`role:${FOLDER_RESOURCE}.${ROLE_READER}`, () =>
-    permit.api.resourceRoles.create(FOLDER_RESOURCE, {
-      key: ROLE_READER,
-      name: 'Folder reader',
-      description: 'May list this folder and read the files inside it.',
-      permissions: ['read', 'search'],
-    }),
-  );
+  //
+  // It inherits from itself through `parent`: a reader of a folder is a reader
+  // of every folder inside it, to any depth. Combined with the file rule below,
+  // one grant on a folder reaches the whole tree under it.
+  const folderReader = {
+    key: ROLE_READER,
+    name: 'Folder reader',
+    description: 'May list this folder and read the files and folders inside it.',
+    permissions: ['read', 'search'],
+    granted_to: {
+      users_with_role: [
+        {
+          linked_by_relation: RELATION_PARENT,
+          on_resource: FOLDER_RESOURCE,
+          role: ROLE_READER,
+        },
+      ],
+    },
+  };
+
+  // Upsert rather than create. An environment bootstrapped before folder
+  // nesting existed already has this role *without* `granted_to`, and a plain
+  // create would 409, be recorded as "existing", and leave the derivation
+  // silently absent — the exact failure this step is here to fix.
+  await step(`role:${FOLDER_RESOURCE}.${ROLE_READER}`, async () => {
+    try {
+      await permit.api.resourceRoles.create(FOLDER_RESOURCE, folderReader);
+    } catch (error) {
+      if (status(error) !== 409) throw error;
+      await permit.api.resourceRoles.update(FOLDER_RESOURCE, ROLE_READER, {
+        description: folderReader.description,
+        permissions: folderReader.permissions,
+        granted_to: folderReader.granted_to,
+      });
+      // Re-thrown so `step` files it under "existing": the role was already
+      // there, it has just been brought up to date.
+      throw error;
+    }
+  });
 
   // The inheritance. A reader of the folder is a reader of every file whose
   // `parent` is that folder — the thing a flat list of rules cannot express

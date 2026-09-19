@@ -85,6 +85,57 @@ Or the **connected resources** panel on the policies screen.
 | A resource type no tool asks about | 400 |
 | A key that is not a Drive id | 400, naming the reason |
 
+## Inheritance, and the walk that makes it real
+
+A grant on a folder reaches everything under it. Permit derives that through the
+`parent` relation, and the derivation has been declared since the folder role
+existed — but a derivation needs edges, and nothing wrote any. Granting a folder
+therefore allowed the folder and denied every file in it: a grant that looks
+correct until somebody opens a file.
+
+`POST /v1/grants/sync` writes those edges.
+
+```
+POST /v1/grants/sync   { "folder_id": "root" }
+  → { "folders": 24, "links": 198, "truncated": true, "depth": 3 }
+```
+
+### Where the parent comes from
+
+Drive, over the workspace's own credential. Never a tool argument, never a tool
+response. An agent that could state *"this file's parent is the folder you
+granted me"* could read any file in Drive by saying so — privilege escalation by
+argument, the same shape invariant 10 refuses for credentials and the injection
+rule refuses for retrieved content.
+
+### Why it is a separate call
+
+A grant is a decision somebody made and needs only Permit. A walk needs Drive to
+be up and a live Google connection. Folding them together would mean a Drive
+outage blocks a grant that has nothing to do with Drive, and would leave a
+half-finished walk behind whenever a credential expired mid-sync.
+
+### It grants nothing
+
+Every edge says where a file *is*, not who may read it. Running the walk against
+a folder nobody was granted changes nobody's access, which is what makes it safe
+as an operation of its own — and is asserted directly in
+`apps/api/test/grants-sync.test.ts`.
+
+### Bounds
+
+| Bound | Value | Why |
+| --- | --- | --- |
+| Depth | 3 levels | Covers real Drives without turning one request into a crawl |
+| Entries | 500 | A Drive is arbitrarily large |
+| Page | 100 per folder | `listFolder` takes no page token |
+| Cycles | visited set | A shortcut can point at an ancestor |
+
+Every one of them sets `truncated`. A walk that stopped early and reported
+success would leave an operator believing a grant reaches files it does not —
+the exact failure this feature exists to remove. Re-run it after Drive changes;
+it is idempotent, so a re-run costs nothing but time.
+
 ## Revocation
 
 Revoking an agent removes **every** role assignment it holds, which includes
@@ -98,6 +149,11 @@ to drift out of step during the incident where it matters.
 ## Setup
 
 `pnpm --filter @veto/permit bootstrap` creates the `reader` role on
-`google_folder` and `google_file` and the folder-to-file derivation. It is
-idempotent — run it once per environment (§16), and again after any change to
-the resource model.
+`google_folder` and `google_file`, the folder-to-file derivation, and the
+folder-to-folder one that makes containment transitive. It is idempotent — run
+it once per environment (§16), and again after any change to the resource model.
+
+The folder role is **upserted**, not created. An environment bootstrapped before
+folder nesting existed already holds that role without its `granted_to`, and a
+plain create would 409, be filed as "existing", and leave the derivation
+silently absent — which is the failure the step is there to fix.

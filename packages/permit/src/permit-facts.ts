@@ -40,8 +40,10 @@ import { Permit } from 'permitio';
 import type { PermitConfig } from './config.ts';
 import {
   AGENT_RESOURCE,
+  FOLDER_RESOURCE,
   HUMAN_RESOURCE,
   RELATION_DELEGATOR,
+  RELATION_PARENT,
   agentInstanceKey,
   agentUserKey,
   delegatorFact,
@@ -252,6 +254,39 @@ export function createPermitPolicyFacts(config: PermitConfig): PermitPolicyFacts
         // The instance stays. It is the noun the grant was about, not the
         // grant, and deleting it would take any `parent` edges with it —
         // silently changing grants nobody touched.
+      });
+    },
+
+    async recordParent(link): Promise<void> {
+      await guarded('recordParent', async () => {
+        const tenant = tenantKey(link.workspaceId);
+
+        await ensureTenant(link.workspaceId);
+
+        // Both ends, because either may be the first time Permit has heard of
+        // it. A tuple whose endpoint does not exist is a 404, not an edge.
+        for (const instance of [
+          { resource: link.childType, key: link.childKey },
+          { resource: FOLDER_RESOURCE, key: link.parentKey },
+        ]) {
+          await permit.api.resourceInstances
+            .create({ ...instance, tenant })
+            .catch(swallowConflict);
+        }
+
+        // Subject is the container, object is the thing contained — the same
+        // direction as the delegator edge, and the direction Permit's own
+        // "Folder is parent of File" example uses. Backwards here would make
+        // every file a parent of its folder, and a grant on one file would
+        // reach the whole folder.
+        await permit.api.relationshipTuples
+          .create({
+            subject: resourceInstanceKey(FOLDER_RESOURCE, link.parentKey),
+            relation: RELATION_PARENT,
+            object: resourceInstanceKey(link.childType, link.childKey),
+            tenant,
+          })
+          .catch(swallowConflict);
       });
     },
 

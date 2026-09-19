@@ -42,6 +42,7 @@ describe('createPermitPolicyFacts', () => {
       'factsFor',
       'grantResource',
       'listGrants',
+      'recordParent',
       'removeAgent',
       'revokeResource',
       'syncAgent',

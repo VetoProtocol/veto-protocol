@@ -14,7 +14,8 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import type { Pool } from 'pg';
 import type Redis from 'ioredis';
 import { PolicyUnavailableError, type PolicyDecisions, type PolicyFacts } from '@veto/permit';
-import type { GoogleOAuthConfig, UpstreamTokenExchange } from '@veto/connections';
+import { createDriveReader } from '@veto/connections';
+import type { DriveReader, GoogleOAuthConfig, UpstreamTokenExchange } from '@veto/connections';
 import type { KeyWrapper } from '@veto/vault';
 import type { WebAuthnConfig } from '@veto/passkeys';
 import { DuplicateLiveAgentError } from '@veto/identity';
@@ -46,6 +47,8 @@ export interface AppDeps {
   /** Null disables the passkey routes; approvals then cannot be resolved at all. */
   readonly webauthn?: WebAuthnConfig | null;
   readonly exchange?: UpstreamTokenExchange | null;
+  /** Overridable so a test can walk a folder without a live Drive. */
+  readonly drive?: DriveReader | null;
   /** Required. See principal.ts — there is no unauthenticated configuration. */
   readonly authenticate: Authenticator;
   readonly logger?: boolean;
@@ -120,7 +123,16 @@ export function createApp(deps: AppDeps): FastifyInstance {
   registerAuditRoutes(app, { pool: deps.pool });
   registerLabelRoutes(app, { pool: deps.pool });
   registerPolicyRoutes(app, { pool: deps.pool });
-  registerGrantRoutes(app, { pool: deps.pool, policy: deps.policy });
+  registerGrantRoutes(app, {
+    pool: deps.pool,
+    policy: deps.policy,
+    wrapper: deps.wrapper,
+    exchange: deps.exchange ?? null,
+    // The real reader unless a test supplies one. Constructing it here keeps
+    // the default honest: nothing else in the API talks to Drive, so there is
+    // no shared instance to reach for.
+    drive: deps.drive ?? createDriveReader(),
+  });
   registerWebhookRoutes(app, { pool: deps.pool, wrapper: deps.wrapper });
   registerConnectionRoutes(app, {
     pool: deps.pool,

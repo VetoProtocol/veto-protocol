@@ -52,6 +52,34 @@ export interface ResourceGrant {
   readonly resourceKey: string;
 }
 
+/**
+ * One containment edge: this file or folder sits inside that folder.
+ *
+ * ## Why this is a separate operation from granting
+ *
+ * A grant is a decision somebody made. A containment edge is a fact about
+ * Drive that Veto did not choose and cannot invent — so the two fail for
+ * different reasons and are recorded separately. Folding the walk into
+ * `grantResource` would mean an unreachable Drive blocks a grant that has
+ * nothing to do with Drive being reachable.
+ *
+ * ## Where the parent comes from
+ *
+ * Always from Drive, over a credential the workspace already holds. Never from
+ * a tool argument or a tool response. An agent that could assert "this file's
+ * parent is the folder you granted me" could read any file in Drive by saying
+ * so, which is privilege escalation by argument — the same shape invariant 10
+ * refuses for credentials and the injection rule refuses for retrieved content.
+ */
+export interface ParentLink {
+  readonly workspaceId: string;
+  /** `google_file` or `google_folder` — the thing inside. */
+  readonly childType: string;
+  readonly childKey: string;
+  /** The containing folder's id. A parent is always a folder. */
+  readonly parentKey: string;
+}
+
 export interface PolicyFacts {
   /** Create or update the agent principal and its owner relationship (§4.4). */
   syncAgent(fact: AgentFact): Promise<void>;
@@ -90,6 +118,20 @@ export interface PolicyFacts {
 
   /** Every resource grant in a workspace. The dashboard's read. */
   listGrants(workspaceId: string): Promise<readonly ResourceGrant[]>;
+
+  /**
+   * Record that a file or folder sits inside a folder.
+   *
+   * Idempotent, and it grants nothing by itself: an edge under a folder nobody
+   * was granted reaches nobody. It only says where things are, which is why
+   * writing one is safe even though writing a grant is not.
+   *
+   * Creates both instances if Permit has not seen them, for the same reason
+   * `grantResource` does — Drive is not enumerated anywhere, so the first time
+   * something is named is the moment it becomes a thing Permit can hold an
+   * opinion about.
+   */
+  recordParent(link: ParentLink): Promise<void>;
 }
 
 export class PolicyUnavailableError extends Error {
