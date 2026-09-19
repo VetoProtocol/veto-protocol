@@ -42,6 +42,15 @@ export async function GET() {
     code_challenge_method: 'S256',
     state,
     nonce,
+    // Always ask which account. Without this the provider silently reuses
+    // whichever session the browser already has, which is wrong in both
+    // directions: somebody with a work and a personal account cannot choose,
+    // and somebody signing out on a shared machine is handed straight back in.
+    //
+    // `select_account` and not `login`: it asks who, not for the password
+    // again. Re-authentication is a step-up decision and belongs to the
+    // approval ceremony, not to opening the dashboard.
+    prompt: 'select_account',
   });
 
   const response = NextResponse.redirect(authorizationUrl.href, { status: 302 });
