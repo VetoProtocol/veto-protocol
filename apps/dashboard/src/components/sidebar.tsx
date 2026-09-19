@@ -281,10 +281,28 @@ export function Sidebar({ workspaceId, userId }: { workspaceId: string; userId: 
       </div>
 
       <div style={{ marginTop: 'auto', borderTop: '1px solid var(--border)' }}>
-        <a href="/logout" style={{ ...row, padding: '9px 16px', color: 'var(--text-dim)' }}>
-          {icons['settings']}
-          <span>Sign out</span>
-        </a>
+        {/* A form, not a link. /logout is POST-only so that no third-party page
+            can sign somebody out by making their browser issue a GET, and an
+            anchor here would simply 405. Styled as a row so it reads as one. */}
+        <form action="/logout" method="post">
+          <button
+            type="submit"
+            style={{
+              ...row,
+              padding: '9px 16px',
+              color: 'var(--text-dim)',
+              width: '100%',
+              background: 'none',
+              border: 'none',
+              font: 'inherit',
+              textAlign: 'left',
+              cursor: 'pointer',
+            }}
+          >
+            {icons['settings']}
+            <span>Sign out</span>
+          </button>
+        </form>
         <a
           href="https://vetoprotocol.live"
           style={{ ...row, padding: '9px 16px', color: 'var(--text-dim)' }}
