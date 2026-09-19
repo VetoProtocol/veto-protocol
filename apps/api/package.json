@@ -19,7 +19,8 @@
     "@veto/tokens": "workspace:*",
     "@veto/decisions": "workspace:*",
     "@veto/connections": "workspace:*",
-    "@veto/vault": "workspace:*"
+    "@veto/vault": "workspace:*",
+    "@veto/presence": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "22.10.2",
@@ -27,6 +28,7 @@
     "typescript": "5.7.2",
     "vitest": "2.1.8",
     "@veto/tokens": "workspace:*",
-    "@veto/vault": "workspace:*"
+    "@veto/vault": "workspace:*",
+    "@veto/presence": "workspace:*"
   }
 }

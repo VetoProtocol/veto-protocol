@@ -36,6 +36,7 @@ import type { DecisionResponse, EvaluateInput } from './types.ts';
 import { loadPolicies, matchPolicies } from './policy-store.ts';
 import { assessRisk } from './risk.ts';
 import { redeemApproval } from './approvals.ts';
+import { readPresence } from '@veto/presence';
 import { currentUsage, reserve } from './volume.ts';
 
 export interface PipelineDeps {
@@ -108,7 +109,7 @@ export async function evaluate(deps: PipelineDeps, input: EvaluateInput): Promis
     });
     if (gate) return gate;
 
-    const presence = await readPresence(deps.pool, input.workspaceId, input.humanId);
+    const presence = await readPresenceState(deps.pool, input.workspaceId, input.humanId);
     // §7.2: locked denies everything, whatever any policy says.
     if (presence === 'locked') return deny('WORKSPACE_LOCKED');
 
@@ -232,19 +233,18 @@ export async function evaluate(deps: PipelineDeps, input: EvaluateInput): Promis
   };
 }
 
-async function readPresence(pool: Pool, workspaceId: string, userId: string): Promise<string> {
-  return withWorkspace(pool, workspaceId, async (db) => {
-    const { rows } = await db.query<{ state: string; expires_at: Date | null }>(
-      `select state, expires_at from presence where workspace_id = $1 and user_id = $2`,
-      [workspaceId, userId],
-    );
-    const row = rows[0];
-    // No record, or an expired one, is treated as 'away' rather than 'active'.
-    // Presence is a signal and its absence is not evidence of presence (§7.2).
-    if (!row) return 'away';
-    if (row.expires_at !== null && row.expires_at.getTime() <= Date.now()) return 'away';
-    return row.state;
-  });
+/**
+ * Presence as the state machine interprets it.
+ *
+ * Delegated rather than queried here, so expiry and the "absence means away"
+ * rule have one implementation. A second reading of the same row is a second
+ * chance to get it wrong.
+ */
+async function readPresenceState(pool: Pool, workspaceId: string, userId: string): Promise<string> {
+  const presence = await withWorkspace(pool, workspaceId, (db) =>
+    readPresence(db, workspaceId, userId),
+  );
+  return presence.state;
 }
 
 interface PersistArgs {

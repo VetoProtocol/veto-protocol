@@ -30,8 +30,12 @@ file, the nine-step pipeline decides, and either the file comes back or a reason
 code does. All twelve §12.1 adversarial scenarios are implemented
 (`packages/core/src/adversarial.ts`).
 
-What is **not** built: the passkey ceremony (stage 3), presence transitions beyond a
-stored state, Gmail and Calendar, and the browser half of the Google connect flow.
+**Stage 3 has started.** Presence is a real state machine with legal transitions,
+assurance levels and downward decay. Still to come: the passkey ceremony, the audit
+timeline API, and the dashboard screens.
+
+What is **not** built: WebAuthn, Gmail and Calendar, and the browser half of the
+Google connect flow.
 
 ### Commands
 
@@ -69,6 +73,7 @@ outside a test env, and the app `.env` sets `NODE_ENV=development`.
 | `packages/decisions` | The §3.3 pipeline. Decides; never executes. |
 | `packages/vault` | Envelope encryption. The encryption context is a tenant boundary. |
 | `packages/connections` | Credential vault and broker. Never returns a refresh token. |
+| `packages/presence` | §7.2 state machine. A signal, never proof of intent. |
 | `apps/api` | Fastify control plane (§5). Manages objects; not an enforcement point. |
 | `apps/gateway` | **The** MCP enforcement point (§3.1). Calls the pipeline in process. |
 | `apps/dashboard` | Next.js dashboard. Theme matches vetoprotocol.live; dark only. |
@@ -104,6 +109,9 @@ inserted by hand until an invitation flow exists.
 - **The pipeline decides and never fetches.** Step 8 lives in
   `apps/gateway/src/execute.ts`, downstream of the decision — the pipeline returns
   `allow` and something else acts on it.
+- **Presence can only narrow an answer.** It never grants; a policy names which
+  states allow, absence means `away`, and a source cannot assert more assurance than
+  it can witness. There is no field anywhere for an IP address or a location.
 - **Retrieved content never reaches the authorization path.** Whatever a model does
   after reading a poisoned file arrives as a new tool call and gets a new decision.
   Never feed a tool response back into normalization, policy, or the digest.

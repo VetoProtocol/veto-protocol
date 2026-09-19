@@ -3,15 +3,21 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "exports": { ".": "./src/index.ts" },
-  "scripts": { "typecheck": "tsc --noEmit", "test": "vitest run" },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
   "dependencies": {
     "@veto/core": "workspace:*",
     "@veto/db": "workspace:*",
     "@veto/identity": "workspace:*",
     "@veto/permit": "workspace:*",
     "ioredis": "5.4.2",
-    "pg": "8.13.1"
+    "pg": "8.13.1",
+    "@veto/presence": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "22.10.2",
