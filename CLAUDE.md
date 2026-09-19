@@ -2,6 +2,19 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## How to talk to this user
+
+**Plain words. Short lines. No long paragraphs.**
+
+- Explain things the way you would to a smart person who does not work on this
+  codebase. Skip the jargon, or define it in the same breath.
+- Break answers into short bullets, tables, or two-line paragraphs. Never a wall
+  of text.
+- Lead with the answer, then the detail. Not the other way round.
+- Say what broke and what it means, not how clever the fix was.
+- This is about the *chat*, not the code: comments, commit messages and docs
+  keep their normal depth.
+
 ## Repository state — read this first
 
 `veto-protocol-spec.md` is the authoritative v1.0 developer specification. Everything
@@ -9,8 +22,13 @@ below is derived from it; when this file and the spec disagree, **the spec wins*
 Section references (§3.3, §12.1) point there. An older version of this file called it
 `SPEC.md` — that filename does not exist.
 
-**Stage 1 is built.** Identities can be modelled and revoked, over HTTP, with tenant
-isolation enforced in three places. Stage 2 (MCP gateway) has not started.
+**Stage 1 is done.** Identities can be modelled and revoked, over HTTP, behind OIDC
+sign-in, with tenant isolation enforced in three places.
+
+**Stage 2 is nearly done.** Phases 0-4 and 6 are built: threat model signed off, the
+MCP gateway, the nine-step pipeline, the approval state machine, and the credential
+vault. What remains is the Google OAuth route and phase 5, the upstream call. See
+`docs/stage-2-plan.md`.
 
 ### Commands
 
@@ -28,11 +46,8 @@ pnpm --filter @veto/dashboard dev                  # dashboard on :3000
 pnpm --filter @veto/identity invite -- --subject "oidc|<from the auth log>" --workspace "Name"
 ```
 
-Both entry points load the repo-root `.env`, with anything already set in the
+Every entry point loads the repo-root `.env`, with anything already set in the
 environment winning over the file.
-
-```bash
-```
 
 `db`, `identity` and `api` tests need a live Postgres and Redis and read `DATABASE_URL`
 and `REDIS_URL` from `.env` (gitignored; see `.env.example`). They run with
@@ -45,14 +60,14 @@ outside a test env, and the app `.env` sets `NODE_ENV=development`.
 | --- | --- |
 | `packages/core` | Branded ids, the 25 reason codes, action digest. No I/O. |
 | `packages/db` | Pool, `withWorkspace`, migration runner, `migrations/*.sql` |
-| `packages/permit` | `PolicyFacts` port + test-only fake. **No real adapter yet.** |
+| `packages/permit` | `PolicyFacts` and `PolicyDecisions` ports, real adapters, and test fakes |
 | `packages/identity` | Agent registration, revocation, sessions, audit writer |
 | `packages/tokens` | Short-lived internal capability tokens. HMAC, no algorithm field. |
 | `packages/decisions` | The §3.3 pipeline. Decides; never executes. |
 | `packages/vault` | Envelope encryption. The encryption context is a tenant boundary. |
 | `packages/connections` | Credential vault and broker. Never returns a refresh token. |
 | `apps/api` | Fastify control plane (§5). Manages objects; not an enforcement point. |
-| `apps/gateway` | **The** MCP enforcement point (§3.1). Every tools/call denies until phase 3. |
+| `apps/gateway` | **The** MCP enforcement point (§3.1). Calls the pipeline in process. |
 | `apps/dashboard` | Next.js dashboard. Theme matches vetoprotocol.live; dark only. |
 
 Sign-in is OIDC against any conformant provider (`docs/auth-setup.md`). There is
@@ -93,8 +108,13 @@ inserted by hand until an invitation flow exists.
 
 ### Open items
 
-- `docs/threat-model.md` §8 sign-off is **unticked**. §16 gates storing production
-  credentials on that review, so stage 2's vault work is blocked until it happens.
+- `docs/threat-model.md` §8 was signed off and the owner accepted the four residual
+  risks on 2026-09-18, which lifted the §16 gate on storing credentials. Acceptance
+  covers those four as written; a new trust boundary or a second cross-tenant read
+  brings the document back for review.
+- **The local key wrapper is not a KMS.** `VAULT_MASTER_KEY` sits in the process
+  environment, so anything that can read the environment can unwrap every data key.
+  Production swaps the `KeyWrapper` implementation, not its callers.
 - **A local PDP is required in production.** The hosted PDP was measured at min 211 ms,
   p50 ~225 ms, p95 293–739 ms per check — the fastest single check exceeds the whole
   §11 200 ms P95 budget. There is no container runtime on this machine, so development
