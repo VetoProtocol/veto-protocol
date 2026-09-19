@@ -62,6 +62,20 @@ export const FILE_RESOURCE = 'google_file';
 export const FOLDER_RESOURCE = 'google_folder';
 
 /**
+ * The mailbox, §4.2's `mailbox` resource type.
+ *
+ * One instance per *human*, keyed by the Veto user id — not `me`, which Gmail
+ * uses for "the authenticated account". Two users in one workspace would share
+ * a `me`, and a grant meant for one would silently cover the other.
+ *
+ * Individual messages are deliberately not Permit resources. Their ids are not
+ * knowable before a search runs, so per-message grants could never be written
+ * in advance; Permit answers "may this agent reach that person's mail at all",
+ * and which messages, how many and when is the Veto rule's job at step 4.
+ */
+export const MAILBOX_RESOURCE = 'gmail_mailbox';
+
+/**
  * Folder-to-file containment.
  *
  * Declared on the file, naming the folder as subject, so a grant on a folder

@@ -23,8 +23,9 @@ import { withWorkspace } from '@veto/db';
 import {
   buildConsentUrl,
   createConnection,
-  DRIVE_READONLY_SCOPE,
   exchangeAuthorizationCode,
+  GOOGLE_SERVICES,
+  GOOGLE_SERVICE_NAMES,
   listConnections,
   revealRefreshTokenForBroker,
   revokeConnection,
@@ -91,12 +92,16 @@ const AUTHORIZE_QUERY = {
       maxLength: 128,
       pattern: '^[A-Za-z0-9._~-]+$',
     },
+    // One service per consent screen (§9.1). A closed set, so a caller cannot
+    // name a scope — only a feature this product actually enforces rules on.
+    service: { type: 'string', enum: [...GOOGLE_SERVICE_NAMES] },
   },
 } as const;
 
 interface AuthorizeQuery {
   state: string;
   code_challenge: string;
+  service?: string;
 }
 
 interface ConnectBody {
@@ -178,10 +183,11 @@ export function registerConnectionRoutes(app: FastifyInstance, deps: ConnectionR
         throw new HttpError(503, 'CONNECTION_EXPIRED', 'Google is not configured on this server');
       }
 
-      // Drive read-only and nothing else. Gmail and Calendar are not requested
-      // until those integrations exist (§9.1) — asking early would collect a
+      // Exactly one service's scopes. Calendar is absent from GOOGLE_SERVICES
+      // until that integration exists (§9.1) — asking early would collect a
       // grant the product has no way to enforce against yet.
-      const scopes = [DRIVE_READONLY_SCOPE];
+      const service = request.query.service ?? 'drive';
+      const scopes = [...(GOOGLE_SERVICES[service as keyof typeof GOOGLE_SERVICES] ?? [])];
 
       return {
         url: buildConsentUrl(deps.google, {

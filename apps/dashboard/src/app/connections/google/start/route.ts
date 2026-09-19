@@ -33,11 +33,18 @@ export async function GET(request: NextRequest) {
   const challenge = await client.calculatePKCECodeChallenge(verifier);
   const state = client.randomState();
 
+  // One service per consent screen (§9.1). Read from the query because the
+  // button names it, and checked against a closed set here — an unknown value
+  // falls back to Drive rather than being forwarded to Google.
+  const asked = request.nextUrl.searchParams.get('service') ?? 'drive';
+  const service = asked === 'gmail' ? 'gmail' : 'drive';
+
   let url: string;
   try {
     ({ url } = await googleAuthorizeUrl(session.credential, {
       state,
       code_challenge: challenge,
+      service,
     }));
   } catch (error) {
     // 503 from this route means one thing: Google is not configured on the

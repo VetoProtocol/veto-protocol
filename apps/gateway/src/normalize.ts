@@ -34,6 +34,20 @@ const RESOURCE_ARGUMENT: Readonly<Record<string, string>> = {
   'google_drive.list_folder': 'folder_id',
 };
 
+/**
+ * Tools whose resource is the caller's own mailbox.
+ *
+ * Gmail is not like Drive. A Drive call names the thing it wants; a mail call
+ * names a query or a message id, and the thing being reached is the *mailbox*
+ * — which belongs to the delegating human and is never chosen by the agent.
+ *
+ * Taking it from the session rather than from an argument is what stops an
+ * agent asking for somebody else's mail: there is no argument to put another
+ * person's id in. The message id still travels in `arguments`, so it is covered
+ * by the digest and an approval stays bound to one exact message.
+ */
+const MAILBOX_TOOLS = new Set(['google_gmail.search_messages', 'google_gmail.read_message']);
+
 const invalid = (): RpcError =>
   // The validation detail is not echoed. It is derived from attacker-supplied
   // input and would land in a response that may be logged downstream.
@@ -52,8 +66,9 @@ export function normalize(
   if (!validate) throw new RpcError(RPC.INVALID_PARAMS, 'Unknown tool');
   if (!validate(rawArguments)) throw invalid();
 
-  const argName = RESOURCE_ARGUMENT[tool.name];
-  const resourceId = argName === undefined ? undefined : rawArguments[argName];
+  const resourceId = MAILBOX_TOOLS.has(tool.name)
+    ? session.humanId
+    : resourceFromArgument(tool.name, rawArguments);
   if (typeof resourceId !== 'string' || resourceId === '') throw invalid();
 
   const intent = rawArguments['declared_intent'];
@@ -78,4 +93,12 @@ export function normalize(
     // retry and the grant would never match the action it was granted for.
     approvalId: approvalId ?? null,
   };
+}
+
+function resourceFromArgument(
+  toolName: string,
+  rawArguments: Readonly<Record<string, unknown>>,
+): unknown {
+  const argName = RESOURCE_ARGUMENT[toolName];
+  return argName === undefined ? undefined : rawArguments[argName];
 }

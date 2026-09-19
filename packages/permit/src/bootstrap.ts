@@ -9,10 +9,11 @@
  * carry the delegator relation; stage 2 adds Drive, because the pipeline now
  * asks Permit about files and folders.
  *
- * `mailbox`, `calendar`, `wallet` and `contract` are still absent. §4.2 lists
- * them, but modelling a resource before anything enforces it puts policy in
- * Permit that nothing reads, and an unread policy is one nobody notices is
- * wrong. They arrive with the integrations that need them (§9.1).
+ * `calendar`, `wallet` and `contract` are still absent. §4.2 lists them, but
+ * modelling a resource before anything enforces it puts policy in Permit that
+ * nothing reads, and an unread policy is one nobody notices is wrong. They
+ * arrive with the integrations that need them (§9.1). `mailbox` arrived with
+ * Gmail, on exactly that rule.
  */
 
 import { Permit } from 'permitio';
@@ -22,6 +23,7 @@ import {
   FILE_RESOURCE,
   FOLDER_RESOURCE,
   HUMAN_RESOURCE,
+  MAILBOX_RESOURCE,
   RELATION_DELEGATOR,
   RELATION_PARENT,
   ROLE_READER,
@@ -174,6 +176,31 @@ export async function bootstrapPermitEnvironment(config: PermitConfig): Promise<
           },
         ],
       },
+    }),
+  );
+
+  // Gmail, read only (§9.1). `send` is not declared, so sending is not an
+  // action Permit knows — it cannot be granted, mistyped into a rule, or
+  // reached by a role that drifts.
+  await step(`resource:${MAILBOX_RESOURCE}`, () =>
+    permit.api.resources.create({
+      key: MAILBOX_RESOURCE,
+      name: 'Gmail mailbox',
+      description:
+        "One person's mail. Messages are not modelled: their ids cannot be known before a search runs, so which messages is a Veto rule's job.",
+      actions: { read: {}, search: {} },
+      attributes: {
+        sensitivity: { type: 'string', description: 'Classification label, never the content itself.' },
+      },
+    }),
+  );
+
+  await step(`role:${MAILBOX_RESOURCE}.${ROLE_READER}`, () =>
+    permit.api.resourceRoles.create(MAILBOX_RESOURCE, {
+      key: ROLE_READER,
+      name: 'Mailbox reader',
+      description: 'May search and read this mailbox. Cannot send: no send action exists.',
+      permissions: ['read', 'search'],
     }),
   );
 

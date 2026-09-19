@@ -37,7 +37,25 @@ const STATUS_TONE: Record<string, Tone> = {
 /** Scope URLs are unreadable at a glance. This is what each one actually permits. */
 const SCOPE_MEANING: Record<string, string> = {
   'https://www.googleapis.com/auth/drive.readonly': 'read Drive files — no writing, no deleting',
+  'https://www.googleapis.com/auth/gmail.readonly': 'read and search mail — no sending, no deleting',
 };
+
+/**
+ * One button per service (§9.1).
+ *
+ * Activated separately, never together. Google merges grants on the same OAuth
+ * client, so connecting Gmail after Drive leaves the account holding both —
+ * which is the user's decision made twice, and the point. What must not happen
+ * is one screen asking for everything before either feature exists.
+ */
+const SERVICES = [
+  { key: 'drive', label: 'Connect Google Drive', detail: 'Read-only. Files and folders.' },
+  {
+    key: 'gmail',
+    label: 'Connect Gmail',
+    detail: 'Read-only. Searching and reading; there is no send permission to grant.',
+  },
+] as const;
 
 export default async function ConnectionsPage({
   searchParams,
@@ -119,23 +137,32 @@ export default async function ConnectionsPage({
             </p>
           ) : null}
 
-          <a
-            href="/connections/google/start"
-            style={{
-              display: 'inline-block',
-              marginTop: 18,
-              padding: '9px 18px',
-              fontSize: 12,
-              background: 'var(--text)',
-              color: 'var(--bg)',
-              border: '1px solid var(--text)',
-            }}
-          >
-            Connect Google Drive
-          </a>
-          <p style={{ color: 'var(--text-faint)', fontSize: 11.5, margin: '10px 0 0' }}>
-            Read-only. Gmail and Calendar are not requested — there is nothing built yet that would
-            enforce rules on them.
+          <div style={{ display: 'grid', gap: 12, marginTop: 18 }}>
+            {SERVICES.map((service, index) => (
+              <div key={service.key} style={{ display: 'grid', gap: 5, justifyItems: 'start' }}>
+                <a
+                  href={`/connections/google/start?service=${service.key}`}
+                  style={{
+                    display: 'inline-block',
+                    padding: '9px 18px',
+                    fontSize: 12,
+                    // Only the first is the filled button. Two equally loud
+                    // calls to action would suggest connecting both is the
+                    // expected thing to do, and §9.1 says the opposite.
+                    background: index === 0 ? 'var(--text)' : 'transparent',
+                    color: index === 0 ? 'var(--bg)' : 'var(--text)',
+                    border: `1px solid ${index === 0 ? 'var(--text)' : 'var(--border-strong)'}`,
+                  }}
+                >
+                  {service.label}
+                </a>
+                <span style={{ color: 'var(--text-faint)', fontSize: 11.5 }}>{service.detail}</span>
+              </div>
+            ))}
+          </div>
+          <p style={{ color: 'var(--text-faint)', fontSize: 11.5, margin: '14px 0 0' }}>
+            Connect them one at a time, and only the ones you need. Calendar is not offered yet —
+            there is nothing built that would enforce rules on it.
           </p>
         </div>
       </Panel>

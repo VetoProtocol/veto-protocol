@@ -234,9 +234,13 @@ describe('a client can connect and list', () => {
   it('lists tools', async () => {
     const tools = (await post(rpc('tools/list'), live())).json().result.tools;
 
+    // The whole catalogue, asserted exactly. A tool appearing here without
+    // anybody noticing is a new thing an agent can ask for.
     expect(tools.map((t: { name: string }) => t.name)).toEqual([
       'google_drive.read_file',
       'google_drive.list_folder',
+      'google_gmail.search_messages',
+      'google_gmail.read_message',
     ]);
   });
 

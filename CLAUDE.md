@@ -53,10 +53,15 @@ an agent a folder or file flips a real `permit.check` from deny to allow —
 verified against the hosted PDP, not only the fake. See `docs/grants.md` for why
 a grant and a rule are deliberately not derived from each other.
 
-What is **not** built: Gmail and Calendar, the alerts screen in the dashboard,
-and the browser half of passkey *enrolment*. Two known gaps inside what is
-built: nothing writes the `parent` tuple, so granting a folder does not yet
-reach the files inside it; and Permit resource-instance keys must match
+Gmail is read-only and live: `google_gmail.search_messages` and
+`google_gmail.read_message`, one `gmail_mailbox` resource per human, and no send
+tool or send scope anywhere. §12.1's first scenario is now tested with an actual
+poisoned email rather than a Drive file standing in for one.
+
+What is **not** built: Calendar, the alerts screen in the dashboard, and the
+browser half of passkey *enrolment*. Two known gaps inside what is built:
+nothing writes the `parent` tuple, so granting a folder does not yet reach the
+files inside it; and Permit resource-instance keys must match
 `^[A-Za-z0-9\-_]+$`, which real Drive ids do and the repo's path-shaped test
 fixtures do not.
 
@@ -178,6 +183,13 @@ inserted by hand until an invitation flow exists.
 - **Presence can only narrow an answer.** It never grants; a policy names which
   states allow, absence means `away`, and a source cannot assert more assurance than
   it can witness. There is no field anywhere for an IP address or a location.
+- **A mail tool's resource is the session's human, never an argument.** The
+  mailbox belongs to the delegating user and is read from `GatewaySession`, so
+  there is no field an agent could put somebody else's id in. The message id
+  stays in `arguments`, where the digest covers it.
+- **Step 8 mints per *tool*, not per connection.** An account that has activated
+  both Drive and Gmail still gets a Drive-only token for a Drive read
+  (`SCOPE_FOR_TOOL` in `apps/gateway/src/execute.ts`).
 - **Retrieved content never reaches the authorization path.** Whatever a model does
   after reading a poisoned file arrives as a new tool call and gets a new decision.
   Never feed a tool response back into normalization, policy, or the digest.

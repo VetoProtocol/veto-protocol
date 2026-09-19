@@ -18,6 +18,40 @@ export const GOOGLE_AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
 /** Drive, read only. The narrowest scope that supports reading a named file. */
 export const DRIVE_READONLY_SCOPE = 'https://www.googleapis.com/auth/drive.readonly';
 
+/**
+ * Gmail, read only. Searching and reading; there is no send scope here.
+ *
+ * `gmail.readonly` is a *restricted* scope in Google's classification, heavier
+ * than Drive's *sensitive*. That is a verification cost, not a code one — see
+ * `docs/google-setup.md`.
+ */
+export const GMAIL_READONLY_SCOPE = 'https://www.googleapis.com/auth/gmail.readonly';
+
+/**
+ * Which scopes each service needs, and nothing more.
+ *
+ * §9.1: "Do not request Gmail, Drive, and Calendar access together before the
+ * user activates those integrations." So consent is per service and the caller
+ * names one — a connect flow cannot ask for everything by passing a list,
+ * because it does not take a list.
+ *
+ * Google merges grants on the same OAuth client, so activating Gmail after
+ * Drive leaves the account holding both. That is the user's decision made
+ * twice, which is the point; what must not happen is one screen asking for both
+ * before either feature exists.
+ */
+export const GOOGLE_SERVICES = {
+  drive: [DRIVE_READONLY_SCOPE],
+  gmail: [GMAIL_READONLY_SCOPE],
+} as const satisfies Record<string, readonly string[]>;
+
+export type GoogleService = keyof typeof GOOGLE_SERVICES;
+
+export const GOOGLE_SERVICE_NAMES = Object.keys(GOOGLE_SERVICES) as readonly GoogleService[];
+
+export const isGoogleService = (value: string): value is GoogleService =>
+  Object.hasOwn(GOOGLE_SERVICES, value);
+
 export interface GoogleOAuthConfig {
   readonly clientId: string;
   readonly clientSecret: string;

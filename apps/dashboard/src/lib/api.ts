@@ -171,7 +171,7 @@ export const listConnections = (credential: string): Promise<{ connections: Conn
  */
 export const googleAuthorizeUrl = (
   credential: string,
-  query: { state: string; code_challenge: string },
+  query: { state: string; code_challenge: string; service?: string },
 ): Promise<{ url: string; scopes: string[] }> =>
   request(
     `/v1/connections/google/authorize-url?${new URLSearchParams(query).toString()}`,

@@ -13,8 +13,9 @@
  * that is not bound to an exact argument set is not single-use in any
  * meaningful way (invariants 6 and 9).
  *
- * Read-only by design for stage 2. §9.1 starts with the narrowest read scopes
- * and keeps writes out of the MVP.
+ * Read-only by design. §9.1 starts with the narrowest read scopes and keeps
+ * writes out of the MVP — there is no tool here that changes anything, and no
+ * send tool at all, so "do not send mail" is not a rule anybody has to write.
  */
 
 export interface ToolDefinition {
@@ -68,6 +69,52 @@ export const TOOLS: readonly ToolDefinition[] = [
       properties: {
         folder_id: { type: 'string', minLength: 1, maxLength: 200 },
         page_size: { type: 'integer', minimum: 1, maximum: 100 },
+        declared_intent: { type: 'string', maxLength: 500 },
+      },
+    },
+  },
+  {
+    name: 'google_gmail.search_messages',
+    title: 'Search mail',
+    description:
+      'Find messages in the connected mailbox. Returns ids, senders, subjects and dates — ' +
+      'never message bodies. Reading a message is a separate, separately authorized call.',
+    action: 'search',
+    resourceType: 'gmail_mailbox',
+    inputSchema: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['query'],
+      properties: {
+        // Gmail's own search syntax. Passed through as one opaque string: it is
+        // a query, not a destination, and nothing here interprets it.
+        query: { type: 'string', minLength: 1, maxLength: 500 },
+        page_size: { type: 'integer', minimum: 1, maximum: 50 },
+        declared_intent: { type: 'string', maxLength: 500 },
+      },
+    },
+  },
+  {
+    name: 'google_gmail.read_message',
+    title: 'Read one message',
+    description:
+      'Read one message from the connected mailbox by id. Ask for the body only when you need ' +
+      'it. Every call is authorized individually.',
+    action: 'read',
+    resourceType: 'gmail_mailbox',
+    inputSchema: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['message_id'],
+      properties: {
+        // Gmail ids are hex. Constrained so a caller cannot smuggle a path
+        // segment or a query string into the URL step 8 builds.
+        message_id: { type: 'string', minLength: 1, maxLength: 128, pattern: '^[A-Za-z0-9_-]+$' },
+        fields: {
+          type: 'array',
+          maxItems: 5,
+          items: { type: 'string', enum: ['from', 'subject', 'date', 'snippet', 'body'] },
+        },
         declared_intent: { type: 'string', maxLength: 500 },
       },
     },

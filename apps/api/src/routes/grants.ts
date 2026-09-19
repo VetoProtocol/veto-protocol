@@ -23,12 +23,17 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { Pool } from 'pg';
 import { withWorkspace } from '@veto/db';
 import { findAgent, writeAuditEvent } from '@veto/identity';
-import { FILE_RESOURCE, FOLDER_RESOURCE, type PolicyFacts } from '@veto/permit';
+import {
+  FILE_RESOURCE,
+  FOLDER_RESOURCE,
+  MAILBOX_RESOURCE,
+  type PolicyFacts,
+} from '@veto/permit';
 import { ERROR_SCHEMA, HttpError } from '../errors.ts';
 import { requireScope, SCOPE_CONTROL_PLANE } from '../scope.ts';
 
 /** Only what the tool catalogue can actually ask about. */
-const GRANTABLE = [FOLDER_RESOURCE, FILE_RESOURCE] as const;
+const GRANTABLE = [FOLDER_RESOURCE, FILE_RESOURCE, MAILBOX_RESOURCE] as const;
 
 const GRANT_SCHEMA = {
   type: 'object',
@@ -54,9 +59,9 @@ const BODY = {
     // user keys (see model.ts). Enforcing it here turns a confusing upstream
     // 422 into a 400 that says which character is the problem.
     //
-    // Real Google Drive ids are exactly this alphabet, so nothing legitimate is
-    // excluded. A *path* like `/Work/plan.txt` is not a Drive id and is refused
-    // — see `docs/grants.md` for why paths and ids are not interchangeable.
+    // Real Google Drive ids are exactly this alphabet, and so is a Veto user id
+    // — which is what a `gmail_mailbox` key is. A *path* like `/Work/plan.txt`
+    // is not a Drive id and is refused; see `docs/grants.md`.
     resource_key: { type: 'string', minLength: 1, maxLength: 512, pattern: '^[A-Za-z0-9_-]+$' },
   },
 } as const;

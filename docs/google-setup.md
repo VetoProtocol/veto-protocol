@@ -1,4 +1,4 @@
-# Connecting Google Drive (stage 2, browser half)
+# Connecting Google (Drive and Gmail)
 
 Signing in with Google and *connecting* Google are two different things, and the
 difference is worth stating before the setup steps:
@@ -21,19 +21,27 @@ deployment that signs users in without storing any credential is a valid one.
 Drive API* → **Enable**. The consent flow succeeds without this and every
 subsequent call returns 403, which is a confusing place to discover it.
 
-## 2. Add the scope to the consent screen
+## 2. Add the scopes to the consent screen
 
-**OAuth consent screen → Data access → Add or remove scopes** →
-`https://www.googleapis.com/auth/drive.readonly`.
+**OAuth consent screen → Data access → Add or remove scopes**:
 
-Google classifies this as a *sensitive* scope. On an **Internal** consent screen
-that costs nothing. On an **External** one, an app in *Testing* works for the
-users listed as testers, and publishing it needs Google's verification review.
-For a pilot, Internal or Testing is the right answer.
+| Scope | For | Google's class |
+| --- | --- | --- |
+| `.../auth/drive.readonly` | Drive | sensitive |
+| `.../auth/gmail.readonly` | Gmail | **restricted** |
 
-Do not add Gmail or Calendar scopes. §9.1 is explicit that scopes are requested
-when a feature activates, and nothing here enforces rules on either yet — a
-grant Veto cannot police is worse than no grant.
+On an **Internal** consent screen both cost nothing. On an **External** one, an
+app in *Testing* works for the users listed as testers; publishing needs
+verification, and `gmail.readonly` is *restricted*, which is the heavier review
+— Google may ask for a security assessment. For a pilot, Internal or Testing is
+the right answer.
+
+Add only the scopes for the services you will actually use. §9.1 is explicit
+that scopes are requested when a feature activates, and a grant Veto cannot
+police is worse than no grant. Calendar is not offered yet.
+
+**Enable the Gmail API too** (APIs & Services → Library → Gmail API) if you want
+mail, for the same reason as step 1.
 
 ## 3. Register the redirect URI
 
@@ -64,7 +72,12 @@ Restart the API — it reads this at boot, and an unconfigured server answers
 
 ## 5. Connect
 
-Dashboard → **connections** → *Connect Google Drive*.
+Dashboard → **connections**. One button per service, and they are separate on
+purpose: connect only what you need, when you need it.
+
+Google merges grants on the same OAuth client, so activating Gmail after Drive
+leaves the account holding both. That is your decision made twice, which is the
+point — what must not happen is one screen asking for everything up front.
 
 What happens, in order:
 
@@ -79,6 +92,21 @@ What happens, in order:
 The connections table then lists **what Google actually granted**, which is not
 always what was asked for — a partial grant shows as a short scope list rather
 than being recorded as a full one.
+
+Each upstream call still mints its own narrow token: a Drive read from an
+account holding both scopes produces a Drive-only token, never a combined one.
+
+## What Gmail can and cannot do
+
+Two tools: **search** returns ids, senders, subjects and dates — never bodies —
+and **read** returns one message, with its body only when the call asks for it.
+
+There is **no send tool and no send scope**. Sending is not something the
+product declines to do; it is something it has no way to do (§9.1).
+
+An agent can only ever reach the mailbox of the person who delegated to it. The
+mailbox is taken from the session, not from a tool argument, so "read someone
+else's mail" is not a request that can be expressed.
 
 ## Things that go wrong
 
