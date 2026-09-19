@@ -48,12 +48,17 @@ the only way to write a rule was raw SQL — the engine was tested and the door
 was missing. Deny-by-default hid it: a workspace with no rules refuses
 everything, which looks identical to working correctly.
 
+`/v1/grants` closes the other half. Permit now has a `reader` role, and granting
+an agent a folder or file flips a real `permit.check` from deny to allow —
+verified against the hosted PDP, not only the fake. See `docs/grants.md` for why
+a grant and a rule are deliberately not derived from each other.
+
 What is **not** built: Gmail and Calendar, the alerts screen in the dashboard,
-the browser half of passkey *enrolment*, and **any way to grant an agent a
-relationship in Permit**. That last one matters: `PolicyFacts` can create an
-agent principal and remove it, and nothing in between attaches a resource. So
-step 5 denies whatever step 4 allows, and a Veto rule cannot currently produce
-an allow against the real PDP on its own.
+and the browser half of passkey *enrolment*. Two known gaps inside what is
+built: nothing writes the `parent` tuple, so granting a folder does not yet
+reach the files inside it; and Permit resource-instance keys must match
+`^[A-Za-z0-9\-_]+$`, which real Drive ids do and the repo's path-shaped test
+fixtures do not.
 
 ### Commands
 
@@ -143,6 +148,15 @@ inserted by hand until an invitation flow exists.
 - **An approval is resolved only by a passkey assertion over that approval's stored
   challenge.** Not a fresh challenge, not one the client chose. A user with no
   enrolled passkey cannot resolve anything — that is a refusal, not a fallback.
+- **A grant and a rule answer different questions, and neither derives the
+  other.** Permit says whether the agent is connected to the resource at all and
+  its answer inherits; Veto says under what conditions, and its answer can only
+  narrow. If a rule wrote its own grant, Permit would agree with Veto by
+  construction and invariant 3's second opinion would be a mirror.
+- **Permit resource-instance keys are `^[A-Za-z0-9\-_]+$`.** Real Drive ids fit;
+  paths do not. `/v1/grants` enforces it so the failure is a 400 that explains
+  itself rather than an upstream 422. Same shape of surprise as `agent|` in
+  `model.ts` — the API's grammar is narrower than §4.2's examples.
 - **Policy rules are created and deleted, never edited.** Every decision records
   the `policy_version` that produced it, so editing a rule in place would leave
   old decisions pointing at a version whose text has since changed. Each rule

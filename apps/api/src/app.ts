@@ -28,6 +28,7 @@ import { registerConnectionRoutes } from './routes/connections.ts';
 import { registerPresenceRoutes } from './routes/presence.ts';
 import { registerPasskeyRoutes } from './routes/passkeys.ts';
 import { registerAuditRoutes } from './routes/audit.ts';
+import { registerGrantRoutes } from './routes/grants.ts';
 import { registerLabelRoutes } from './routes/labels.ts';
 import { registerPolicyRoutes } from './routes/policies.ts';
 import { registerWebhookRoutes } from './routes/webhooks.ts';
@@ -119,6 +120,7 @@ export function createApp(deps: AppDeps): FastifyInstance {
   registerAuditRoutes(app, { pool: deps.pool });
   registerLabelRoutes(app, { pool: deps.pool });
   registerPolicyRoutes(app, { pool: deps.pool });
+  registerGrantRoutes(app, { pool: deps.pool, policy: deps.policy });
   registerWebhookRoutes(app, { pool: deps.pool, wrapper: deps.wrapper });
   registerConnectionRoutes(app, {
     pool: deps.pool,

@@ -75,6 +75,39 @@ export const agentInstanceKey = (agentId: string): string => `${AGENT_RESOURCE}:
 export const humanInstanceKey = (userId: string): string => `${HUMAN_RESOURCE}:${userId}`;
 
 /**
+ * A Drive resource as a relation endpoint: `google_folder:/Work`.
+ *
+ * The colon is Permit's own `type:key` grammar for instances, not our `|`
+ * separator for principals. See the note at the top of this file — the two key
+ * spaces are not interchangeable and this is the one that keeps the colon.
+ */
+export const resourceInstanceKey = (resourceType: string, key: string): string =>
+  `${resourceType}:${key}`;
+
+/**
+ * The only role this product grants.
+ *
+ * One role, read-only, because §9.1 keeps writes out of the MVP and a role that
+ * can be granted is a role that will be. `reader` covers `read` and `search` on
+ * files and folders, and there is deliberately no writer, owner or admin role
+ * for an agent to be assigned to by accident.
+ *
+ * Granted on a *folder* it reaches the files inside, through the `parent`
+ * relation. That inheritance is the whole reason Permit is in the design: a
+ * flat list of rules cannot express "and everything under it" without
+ * enumerating a Drive nobody has enumerated.
+ */
+export const ROLE_READER = 'reader';
+
+/**
+ * Canonical string form of a resource grant, for assertions and diffing.
+ *
+ * Local, like `delegatorFact` — never sent to Permit.
+ */
+export const grantFact = (agentId: string, resourceType: string, key: string): string =>
+  `agent:${agentId}#${ROLE_READER}@${resourceType}:${key}`;
+
+/**
  * The relation binding an agent to the human who delegated to it.
  *
  * `delegator` is taken verbatim from §4.2's relation list rather than invented.

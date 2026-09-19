@@ -18,7 +18,15 @@ describe('the Permit fake is a fixture, not an engine', () => {
     const fake = createFakePolicyFacts();
     // If a `check`-shaped method ever appears here, the fake has started
     // becoming a shadow policy engine (CLAUDE.md invariant 3).
-    expect(Object.keys(fake).sort()).toEqual(['breakNext', 'factsFor', 'removeAgent', 'syncAgent']);
+    expect(Object.keys(fake).sort()).toEqual([
+      'breakNext',
+      'factsFor',
+      'grantResource',
+      'listGrants',
+      'removeAgent',
+      'revokeResource',
+      'syncAgent',
+    ]);
   });
 
   it('records and removes agent facts', async () => {

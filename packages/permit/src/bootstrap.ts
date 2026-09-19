@@ -24,6 +24,7 @@ import {
   HUMAN_RESOURCE,
   RELATION_DELEGATOR,
   RELATION_PARENT,
+  ROLE_READER,
 } from './model.ts';
 
 export interface BootstrapReport {
@@ -129,6 +130,50 @@ export async function bootstrapPermitEnvironment(config: PermitConfig): Promise<
       name: 'Parent folder',
       description: 'The folder containing this file. Access flows from folder to file, never upward.',
       subject_resource: FOLDER_RESOURCE,
+    }),
+  );
+
+  // The one role an agent can hold, and the reason Permit is in the design.
+  //
+  // Without a role there is nothing to assign, which is the gap this closes:
+  // `syncAgent` could create an agent principal and `removeAgent` could delete
+  // it, and nothing in between could ever connect it to a resource. Every check
+  // therefore denied, whatever a Veto rule said.
+  //
+  // Read-only, because §9.1 keeps writes out of the MVP. An action Permit does
+  // not know cannot be granted by accident, and a role that cannot write cannot
+  // be talked into writing.
+  await step(`role:${FOLDER_RESOURCE}.${ROLE_READER}`, () =>
+    permit.api.resourceRoles.create(FOLDER_RESOURCE, {
+      key: ROLE_READER,
+      name: 'Folder reader',
+      description: 'May list this folder and read the files inside it.',
+      permissions: ['read', 'search'],
+    }),
+  );
+
+  // The inheritance. A reader of the folder is a reader of every file whose
+  // `parent` is that folder — the thing a flat list of rules cannot express
+  // without enumerating a Drive nobody has enumerated.
+  //
+  // One direction only. Being granted a file says nothing about the folder it
+  // sits in, so §12.1's "authorized for one file, asks for the whole folder"
+  // stays a denial.
+  await step(`role:${FILE_RESOURCE}.${ROLE_READER}`, () =>
+    permit.api.resourceRoles.create(FILE_RESOURCE, {
+      key: ROLE_READER,
+      name: 'File reader',
+      description: 'May read this file. Also held by anyone who reads its parent folder.',
+      permissions: ['read', 'search'],
+      granted_to: {
+        users_with_role: [
+          {
+            linked_by_relation: RELATION_PARENT,
+            on_resource: FOLDER_RESOURCE,
+            role: ROLE_READER,
+          },
+        ],
+      },
     }),
   );
 

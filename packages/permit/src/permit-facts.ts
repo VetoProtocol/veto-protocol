@@ -47,10 +47,21 @@ import {
   delegatorFact,
   humanInstanceKey,
   humanUserKey,
+  resourceInstanceKey,
   roleFact,
+  ROLE_READER,
   tenantKey,
 } from './model.ts';
-import { PolicyUnavailableError, type AgentFact, type PolicyFacts } from './port.ts';
+import {
+  PolicyUnavailableError,
+  type AgentFact,
+  type PolicyFacts,
+  type ResourceGrant,
+} from './port.ts';
+
+/** `agent|agt_x` back to `agt_x`, or null when the key is some other principal. */
+const agentIdOf = (userKey: string): string | null =>
+  userKey.startsWith('agent|') ? userKey.slice('agent|'.length) : null;
 
 export interface PermitPolicyFacts extends PolicyFacts {
   /** Release the underlying HTTP agent. */
@@ -195,6 +206,84 @@ export function createPermitPolicyFacts(config: PermitConfig): PermitPolicyFacts
         // a check at all, which is the strongest statement of FR-08 available
         // through this API.
         await permit.api.users.delete(user).catch(swallowNotFound);
+      });
+    },
+
+    async grantResource(grant): Promise<void> {
+      await guarded('grantResource', async () => {
+        const tenant = tenantKey(grant.workspaceId);
+
+        await ensureTenant(grant.workspaceId);
+
+        // Drive is not enumerated anywhere, so the first time somebody names a
+        // folder is the moment it becomes a thing Permit can hold an opinion
+        // about. Creating it here rather than requiring a separate call keeps
+        // "grant" a single operation that either happened or did not.
+        await permit.api.resourceInstances
+          .create({
+            resource: grant.resourceType,
+            key: grant.resourceKey,
+            tenant,
+          })
+          .catch(swallowConflict);
+
+        await permit.api.roleAssignments
+          .assign({
+            user: agentUserKey(grant.agentId),
+            role: ROLE_READER,
+            tenant,
+            resource_instance: resourceInstanceKey(grant.resourceType, grant.resourceKey),
+          })
+          .catch(swallowConflict);
+      });
+    },
+
+    async revokeResource(grant): Promise<void> {
+      await guarded('revokeResource', async () => {
+        await permit.api.roleAssignments
+          .unassign({
+            user: agentUserKey(grant.agentId),
+            role: ROLE_READER,
+            tenant: tenantKey(grant.workspaceId),
+            resource_instance: resourceInstanceKey(grant.resourceType, grant.resourceKey),
+          })
+          .catch(swallowNotFound);
+
+        // The instance stays. It is the noun the grant was about, not the
+        // grant, and deleting it would take any `parent` edges with it —
+        // silently changing grants nobody touched.
+      });
+    },
+
+    async listGrants(workspaceId: string): Promise<readonly ResourceGrant[]> {
+      return guarded('listGrants', async () => {
+        const tenant = tenantKey(workspaceId);
+        const assignments = await permit.api.roleAssignments.list({
+          tenant,
+          role: ROLE_READER,
+          perPage: 100,
+        });
+
+        const grants: ResourceGrant[] = [];
+        for (const assignment of assignments) {
+          const instance = assignment.resource_instance;
+          const agentId = agentIdOf(assignment.user);
+          if (instance === undefined || agentId === null) continue;
+
+          // `type:key`, and a Drive id can itself contain a colon, so split
+          // once from the left rather than on every colon.
+          const at = instance.indexOf(':');
+          if (at <= 0) continue;
+
+          grants.push({
+            workspaceId,
+            agentId,
+            resourceType: instance.slice(0, at),
+            resourceKey: instance.slice(at + 1),
+          });
+        }
+
+        return grants;
       });
     },
 

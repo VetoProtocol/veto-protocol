@@ -12,12 +12,17 @@
  *     is Permit's job and is not simulated here.
  */
 
-import { delegatorFact } from './model.ts';
-import { PolicyUnavailableError, type AgentFact, type PolicyFacts } from './port.ts';
+import { delegatorFact, grantFact } from './model.ts';
+import {
+  PolicyUnavailableError,
+  type AgentFact,
+  type PolicyFacts,
+  type ResourceGrant,
+} from './port.ts';
 
 export interface FakePolicyFacts extends PolicyFacts {
   /** Make the next call fail, to exercise the fail-closed path. */
-  breakNext(operation: 'syncAgent' | 'removeAgent'): void;
+  breakNext(operation: 'syncAgent' | 'removeAgent' | 'grantResource' | 'revokeResource'): void;
 }
 
 export function createFakePolicyFacts(): FakePolicyFacts {
@@ -60,6 +65,35 @@ export function createFakePolicyFacts(): FakePolicyFacts {
       for (const fact of set) {
         if (fact.startsWith(`agent:${agentId}#`)) set.delete(fact);
       }
+    },
+
+    async grantResource(grant): Promise<void> {
+      failIfBroken('grantResource');
+      // Recorded as a fact string, like the delegator edge, so `factsFor`
+      // returns one comparable list. Still no decision is modelled: nothing in
+      // this file ever answers whether a grant permits anything.
+      keyFor(grant.workspaceId).add(
+        grantFact(grant.agentId, grant.resourceType, grant.resourceKey),
+      );
+    },
+
+    async revokeResource(grant): Promise<void> {
+      failIfBroken('revokeResource');
+      keyFor(grant.workspaceId).delete(
+        grantFact(grant.agentId, grant.resourceType, grant.resourceKey),
+      );
+    },
+
+    async listGrants(workspaceId: string): Promise<readonly ResourceGrant[]> {
+      const grants: ResourceGrant[] = [];
+      for (const fact of keyFor(workspaceId)) {
+        const parsed = /^agent:(.+)#reader@([^:]+):(.+)$/.exec(fact);
+        if (!parsed) continue;
+        const [, agentId, resourceType, resourceKey] = parsed;
+        if (!agentId || !resourceType || !resourceKey) continue;
+        grants.push({ workspaceId, agentId, resourceType, resourceKey });
+      }
+      return grants;
     },
 
     async factsFor(workspaceId: string): Promise<readonly string[]> {

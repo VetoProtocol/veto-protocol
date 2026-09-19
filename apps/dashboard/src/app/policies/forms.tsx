@@ -3,7 +3,12 @@
 import { useActionState, useState } from 'react';
 import { Button } from '@/components/button';
 import { EMPTY, type ActionState } from '../agents/action-state';
-import { createPolicyAction, deletePolicyAction } from './actions';
+import {
+  createGrantAction,
+  createPolicyAction,
+  deletePolicyAction,
+  revokeGrantAction,
+} from './actions';
 
 const field: React.CSSProperties = {
   font: 'inherit',
@@ -236,6 +241,109 @@ export function CreatePolicyForm({ agents }: { agents: readonly AgentChoice[] })
         <p role="status" style={{ margin: 0, color: 'var(--allow)', fontSize: 12 }}>
           {state.notice}
         </p>
+      ) : null}
+    </form>
+  );
+}
+
+export function CreateGrantForm({ agents }: { agents: readonly AgentChoice[] }) {
+  const [state, action, pending] = useActionState<ActionState, FormData>(createGrantAction, EMPTY);
+
+  return (
+    <form action={action} style={{ padding: 18, display: 'grid', gap: 14 }}>
+      <div
+        style={{
+          display: 'grid',
+          gap: 14,
+          gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))',
+        }}
+      >
+        <label style={label}>
+          <span className="label">agent</span>
+          <select name="agent_id" defaultValue={agents[0]?.id ?? ''} style={field}>
+            {agents.map((agent) => (
+              <option key={agent.id} value={agent.id}>
+                {agent.clientId} — {agent.id.slice(0, 12)}…
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label style={label}>
+          <span className="label">kind</span>
+          <select name="resource_type" defaultValue="google_folder" style={field}>
+            <option value="google_folder">folder — and the files inside it</option>
+            <option value="google_file">file — just this one</option>
+          </select>
+        </label>
+
+        <label style={label}>
+          <span className="label">
+            drive id <span style={{ color: 'var(--text-faint)' }}>not a path</span>
+          </span>
+          <input
+            name="resource_key"
+            required
+            maxLength={512}
+            placeholder="1a2B3c-_9zYx"
+            style={field}
+          />
+        </label>
+      </div>
+
+      <p style={{ color: 'var(--text-faint)', fontSize: 11.5, margin: 0, maxWidth: 560 }}>
+        The id is the long string in a Drive URL, after <code>/folders/</code> or <code>/d/</code>.
+        A path like <code>/Work</code> is not an id and will be refused.
+      </p>
+
+      <div>
+        <Button type="submit" variant="outline" disabled={pending}>
+          {pending ? 'connecting…' : 'connect'}
+        </Button>
+      </div>
+
+      {state.error ? (
+        <p role="alert" style={{ margin: 0, color: 'var(--deny)', fontSize: 12 }}>
+          {state.error}
+        </p>
+      ) : null}
+      {state.notice ? (
+        <p role="status" style={{ margin: 0, color: 'var(--allow)', fontSize: 12 }}>
+          {state.notice}
+        </p>
+      ) : null}
+    </form>
+  );
+}
+
+export function RevokeGrant({
+  agentId,
+  resourceType,
+  resourceKey,
+}: {
+  agentId: string;
+  resourceType: string;
+  resourceKey: string;
+}) {
+  const [state, action, pending] = useActionState<ActionState, FormData>(revokeGrantAction, EMPTY);
+
+  return (
+    <form action={action} style={{ display: 'grid', gap: 6, justifyItems: 'start' }}>
+      <input type="hidden" name="agent_id" value={agentId} />
+      <input type="hidden" name="resource_type" value={resourceType} />
+      <input type="hidden" name="resource_key" value={resourceKey} />
+      <Button type="submit" variant="danger" disabled={pending} style={{ padding: '5px 11px' }}>
+        {pending ? 'disconnecting…' : 'disconnect'}
+      </Button>
+      {state.error ? (
+        <span role="alert" style={{ color: 'var(--deny)', fontSize: 11 }}>
+          {state.error}
+        </span>
+      ) : null}
+      {state.notice ? (
+        <span role="status" style={{ color: 'var(--text-dim)', fontSize: 11 }}>
+          {state.notice}
+        </span>
       ) : null}
     </form>
   );

@@ -34,10 +34,16 @@ describe('createPermitPolicyFacts', () => {
 
     // Same guard as the fake: a `check`-shaped method appearing here would mean
     // the runtime decision had migrated out of the gateway (invariant 3, 8).
+    // Writing facts, and nothing that answers a question. `grantResource` is a
+    // write — it states that a relationship exists — and the decision that
+    // reads it lives behind PolicyDecisions, in the gateway.
     expect(Object.keys(adapter).sort()).toEqual([
       'close',
       'factsFor',
+      'grantResource',
+      'listGrants',
       'removeAgent',
+      'revokeResource',
       'syncAgent',
     ]);
   });

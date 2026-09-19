@@ -2,9 +2,16 @@ import { redirect } from 'next/navigation';
 import { Nav } from '@/components/nav';
 import { Panel } from '@/components/panel';
 import { Chip, type Tone } from '@/components/chip';
-import { ApiError, listAgents, listPolicies, type PolicyView } from '@/lib/api';
+import {
+  ApiError,
+  listAgents,
+  listGrants,
+  listPolicies,
+  type GrantView,
+  type PolicyView,
+} from '@/lib/api';
 import { currentSession } from '@/lib/session';
-import { CreatePolicyForm, DeletePolicy } from './forms';
+import { CreateGrantForm, CreatePolicyForm, DeletePolicy, RevokeGrant } from './forms';
 
 export const dynamic = 'force-dynamic';
 
@@ -44,10 +51,14 @@ export default async function PoliciesPage() {
 
   let policies: PolicyView[];
   let agents: Array<{ id: string; client_id: string; status: string }>;
+  let grants: GrantView[];
   try {
-    [policies, agents] = await Promise.all([
+    [policies, agents, grants] = await Promise.all([
       listPolicies(session.credential).then((r) => r.policies),
       listAgents(session.credential).then((r) => r.agents),
+      // A Permit call, not a database read, so there is no local mirror to
+      // drift. Slower than the other two and fine on a control-plane page.
+      listGrants(session.credential).then((r) => r.grants),
     ]);
   } catch (error) {
     return (
@@ -210,6 +221,84 @@ export default async function PoliciesPage() {
         ) : (
           <CreatePolicyForm agents={live.map((a) => ({ id: a.id, clientId: a.client_id }))} />
         )}
+      </Panel>
+
+      <Panel title="CONNECTED RESOURCES" meta="THE OTHER HALF OF AN ALLOW">
+        <div style={{ padding: '18px 18px 0', color: 'var(--text-dim)', fontSize: 12.5, maxWidth: 660 }}>
+          A rule says <em>under what conditions</em>. This says whether the agent is connected to
+          the thing at all. Both have to say yes, and a rule pointing at something nothing here
+          connects will be refused — correctly, and confusingly if you do not know to look here.
+        </div>
+
+        {grants.length === 0 ? (
+          <div
+            style={{
+              margin: 18,
+              padding: '20px 18px',
+              border: '1px dashed var(--border-strong)',
+              color: 'var(--text-faint)',
+              fontSize: 12.5,
+            }}
+          >
+            Nothing connected. Every rule above will be overruled at the relationship check until
+            something is.
+          </div>
+        ) : (
+          <div style={{ overflowX: 'auto', marginTop: 14 }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+              <thead>
+                <tr style={{ borderTop: '1px solid var(--border)' }}>
+                  {['agent', 'kind', 'drive id', ''].map((h) => (
+                    <th
+                      key={h}
+                      scope="col"
+                      className="label"
+                      style={{ textAlign: 'left', padding: '10px 14px', fontWeight: 400 }}
+                    >
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {grants.map((g) => (
+                  <tr
+                    key={`${g.agent_id}:${g.resource_type}:${g.resource_key}`}
+                    style={{ borderTop: '1px solid var(--border)' }}
+                  >
+                    <th
+                      scope="row"
+                      style={{ padding: '12px 14px', textAlign: 'left', fontWeight: 400 }}
+                    >
+                      {g.agent_id}
+                    </th>
+                    <td style={{ padding: '12px 14px', color: 'var(--text-dim)' }}>
+                      {g.resource_type === 'google_folder' ? 'folder' : 'file'}
+                    </td>
+                    <td
+                      style={{
+                        padding: '12px 14px',
+                        color: 'var(--text-dim)',
+                        wordBreak: 'break-all',
+                      }}
+                    >
+                      {g.resource_key}
+                    </td>
+                    <td style={{ padding: '12px 14px' }}>
+                      <RevokeGrant
+                        agentId={g.agent_id}
+                        resourceType={g.resource_type}
+                        resourceKey={g.resource_key}
+                      />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {live.length > 0 ? <CreateGrantForm agents={live.map((a) => ({ id: a.id, clientId: a.client_id }))} /> : null}
       </Panel>
 
       <Panel title="WHY A RULE MIGHT NOT BE ENOUGH" meta="THREE LAYERS, ALL MUST AGREE">

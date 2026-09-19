@@ -1,7 +1,7 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import { ApiError, createPolicy, deletePolicy } from '@/lib/api';
+import { ApiError, createGrant, createPolicy, deletePolicy, revokeGrant } from '@/lib/api';
 import { currentSession } from '@/lib/session';
 import type { ActionState } from '../agents/action-state';
 
@@ -109,6 +109,77 @@ export async function deletePolicyAction(
           ? 'Deny rule removed. Anything it was blocking is now decided by the other rules.'
           : 'Rule removed. Anything it allowed is denied again unless another rule covers it.',
     };
+  } catch (error) {
+    return { error: describe(error), notice: null };
+  }
+}
+
+/**
+ * Connect an agent to a folder or file.
+ *
+ * Different from a rule, and the difference is the one that costs an afternoon:
+ * a rule says under what conditions, a grant says whether the connection exists
+ * at all. Both must say yes.
+ */
+export async function createGrantAction(
+  _previous: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  const session = await currentSession();
+  if (!session) return { error: 'Your session has expired. Sign in again.', notice: null };
+
+  const agentId = String(form.get('agent_id') ?? '').trim();
+  const resourceType = String(form.get('resource_type') ?? '').trim();
+  const resourceKey = String(form.get('resource_key') ?? '').trim();
+
+  if (agentId === '' || resourceType === '' || resourceKey === '') {
+    return { error: 'Agent, kind and id are all required.', notice: null };
+  }
+
+  if (!/^[A-Za-z0-9_-]+$/.test(resourceKey)) {
+    // Caught here so the message can say what is wrong. The API refuses it too,
+    // but a 400 from a schema cannot explain that a path is not a Drive id.
+    return {
+      error:
+        'That is not a Google Drive id. Ids are letters, digits, - and _ — a path like /Work will not work.',
+      notice: null,
+    };
+  }
+
+  try {
+    await createGrant(session.credential, {
+      agent_id: agentId,
+      resource_type: resourceType,
+      resource_key: resourceKey,
+    });
+    revalidatePath('/policies');
+    return {
+      error: null,
+      notice:
+        resourceType === 'google_folder'
+          ? 'Connected. The agent can reach that folder — a rule still decides when.'
+          : 'Connected. The agent can reach that file — a rule still decides when.',
+    };
+  } catch (error) {
+    return { error: describe(error), notice: null };
+  }
+}
+
+export async function revokeGrantAction(
+  _previous: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  const session = await currentSession();
+  if (!session) return { error: 'Your session has expired. Sign in again.', notice: null };
+
+  try {
+    await revokeGrant(session.credential, {
+      agent_id: String(form.get('agent_id') ?? ''),
+      resource_type: String(form.get('resource_type') ?? ''),
+      resource_key: String(form.get('resource_key') ?? ''),
+    });
+    revalidatePath('/policies');
+    return { error: null, notice: 'Disconnected. That agent can no longer reach it.' };
   } catch (error) {
     return { error: describe(error), notice: null };
   }

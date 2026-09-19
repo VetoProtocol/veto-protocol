@@ -103,6 +103,21 @@ export const registerAgent = (
 ): Promise<Agent> =>
   request('/v1/agents', { method: 'POST', credential, body: JSON.stringify(input) });
 
+export interface GrantView {
+  readonly agent_id: string;
+  readonly resource_type: string;
+  readonly resource_key: string;
+}
+
+export const listGrants = (credential: string): Promise<{ grants: GrantView[] }> =>
+  request('/v1/grants', { method: 'GET', credential });
+
+export const createGrant = (credential: string, body: GrantView): Promise<GrantView> =>
+  request('/v1/grants', { method: 'POST', credential, body: JSON.stringify(body) });
+
+export const revokeGrant = (credential: string, body: GrantView): Promise<{ revoked: boolean }> =>
+  request('/v1/grants', { method: 'DELETE', credential, body: JSON.stringify(body) });
+
 export interface PolicyView {
   readonly id: string;
   readonly version: string;
