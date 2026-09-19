@@ -1,0 +1,10 @@
+{
+  "name": "@veto/demo-tools",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "dependencies": {
+    "@veto/db": "workspace:*",
+    "@veto/tokens": "workspace:*"
+  }
+}
