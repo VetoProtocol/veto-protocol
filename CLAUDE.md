@@ -400,7 +400,11 @@ Security tests are first-class, not optional.
 
 - Utility/transferable token, staking, decentralized operators
 - General-purpose AI model hosting
-- Broad write or destructive actions at launch (reads first)
+- Broad write or destructive actions at launch (reads first). `docs/writes-plan.md`
+  is a **plan, not a licence**: §13's twelve weeks are read-only end to end, so
+  building it needs the spec amended or the deferral made explicit, and the
+  threat model re-opened — a write path is a new trust boundary and the §8
+  sign-off covered a system that only reads.
 - Public onchain storage of private access logs
 - Continuous biometric surveillance
 - The Robinhood Chain / ERC-4337 PoC is **design-ready but must not delay the MVP** —
