@@ -63,16 +63,13 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             </main>
           </div>
         ) : (
-          // Signed out. No rail — every link on it would refuse, and offering a
-          // list of places somebody cannot go is worse than offering none.
-          <main
-            id="main"
-            className="grid-ground"
-            style={{ minHeight: 'calc(100vh - 44px)', padding: 22 }}
-          >
-            <div style={{ maxWidth: 620, margin: '0 auto', display: 'grid', gap: 22 }}>
-              {children}
-            </div>
+          // No rail — every link on it would refuse, and offering a list of
+          // places somebody cannot go is worse than offering none.
+          // Signed out. The page owns the whole viewport: sign-in, signup and
+          // the workspace picker each centre one card, and a wrapper with its
+          // own padding would fight them for it.
+          <main id="main" style={{ minHeight: 'calc(100vh - 44px)' }}>
+            {children}
           </main>
         )}
       </body>
