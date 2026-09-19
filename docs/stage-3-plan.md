@@ -85,6 +85,15 @@ the verification so a break is visible rather than theoretical.
 **Exit:** a workspace's timeline is readable, a tampered chain reports the
 break, and nothing in the response carries content or a credential.
 
+**Done 2026-09-19**, 10 tests. Paging is on `seq`, not `occurred_at`: two events
+can share a timestamp, and paging on a non-unique column either skips rows or
+repeats them. An audit trail that quietly drops an event is worse than none,
+because it is believed.
+
+The chain links go out with every event. A hash chain only the server can check
+is a promise, not a proof — returning them lets a customer export the timeline
+and verify it independently (§11 portability).
+
 ### Phase 4 — Dashboard
 
 Presence control, the approval screen, and the timeline — in the design language

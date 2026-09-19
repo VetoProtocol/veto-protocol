@@ -27,6 +27,7 @@ import { registerApprovalRoutes } from './routes/approvals.ts';
 import { registerConnectionRoutes } from './routes/connections.ts';
 import { registerPresenceRoutes } from './routes/presence.ts';
 import { registerPasskeyRoutes } from './routes/passkeys.ts';
+import { registerAuditRoutes } from './routes/audit.ts';
 
 export interface AppDeps {
   readonly pool: Pool;
@@ -112,6 +113,7 @@ export function createApp(deps: AppDeps): FastifyInstance {
   registerApprovalRoutes(app, { pool: deps.pool, webauthn: deps.webauthn ?? null });
   registerPasskeyRoutes(app, { pool: deps.pool, redis: deps.redis, webauthn: deps.webauthn ?? null });
   registerPresenceRoutes(app, { pool: deps.pool });
+  registerAuditRoutes(app, { pool: deps.pool });
   registerConnectionRoutes(app, {
     pool: deps.pool,
     wrapper: deps.wrapper,

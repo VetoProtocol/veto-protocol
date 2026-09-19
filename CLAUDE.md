@@ -30,9 +30,9 @@ file, the nine-step pipeline decides, and either the file comes back or a reason
 code does. All twelve §12.1 adversarial scenarios are implemented
 (`packages/core/src/adversarial.ts`).
 
-**Stage 3 is half built.** Presence is a real state machine, and approvals now
-require a WebAuthn assertion over the approval's own challenge. Still to come: the
-audit timeline API and the dashboard screens.
+**Stage 3 is nearly done.** Presence is a real state machine, approvals require a
+WebAuthn assertion over the approval's own challenge, and the audit timeline is
+readable and independently verifiable. What remains is the dashboard screens.
 
 What is **not** built: Gmail and Calendar, and the browser halves of the Google
 connect and passkey flows.
@@ -123,7 +123,8 @@ inserted by hand until an invitation flow exists.
   cannot reach the agent routes and vice versa.
 - New HTTP routes get a closed request schema (`additionalProperties: false`) and a
   response schema. Fastify's AJV defaults (`removeAdditional`, `coerceTypes`) are
-  disabled in `createApp` — do not re-enable them.
+  disabled in `createApp` — do not re-enable them. Query parameters are therefore
+  declared as strings and converted in the handler; see `routes/audit.ts`.
 
 ### Open items
 
