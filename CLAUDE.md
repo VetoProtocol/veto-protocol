@@ -53,13 +53,15 @@ an agent a folder or file flips a real `permit.check` from deny to allow —
 verified against the hosted PDP, not only the fake. See `docs/grants.md` for why
 a grant and a rule are deliberately not derived from each other.
 
-Gmail is read-only and live: `google_gmail.search_messages` and
-`google_gmail.read_message`, one `gmail_mailbox` resource per human, and no send
-tool or send scope anywhere. §12.1's first scenario is now tested with an actual
-poisoned email rather than a Drive file standing in for one.
+Gmail and Calendar are read-only and live. Four tools —
+`google_gmail.search_messages`, `google_gmail.read_message`,
+`google_calendar.list_events`, `google_calendar.read_event` — with one
+`gmail_mailbox` and one `google_calendar` resource per human. No send tool, no
+create or update tool, and no scope for either. §12.1's first scenario is now
+tested with an actual poisoned email rather than a Drive file standing in.
 
-What is **not** built: Calendar, the alerts screen in the dashboard, and the
-browser half of passkey *enrolment*. Two known gaps inside what is built:
+What is **not** built: the alerts screen in the dashboard, and the browser half
+of passkey *enrolment*. Two known gaps inside what is built:
 nothing writes the `parent` tuple, so granting a folder does not yet reach the
 files inside it; and Permit resource-instance keys must match
 `^[A-Za-z0-9\-_]+$`, which real Drive ids do and the repo's path-shaped test
@@ -183,10 +185,18 @@ inserted by hand until an invitation flow exists.
 - **Presence can only narrow an answer.** It never grants; a policy names which
   states allow, absence means `away`, and a source cannot assert more assurance than
   it can witness. There is no field anywhere for an IP address or a location.
-- **A mail tool's resource is the session's human, never an argument.** The
-  mailbox belongs to the delegating user and is read from `GatewaySession`, so
-  there is no field an agent could put somebody else's id in. The message id
-  stays in `arguments`, where the digest covers it.
+- **A mail or calendar tool's resource is the session's human, never an
+  argument.** The mailbox and the calendar belong to the delegating user and are
+  read from `GatewaySession`, so there is no field an agent could put somebody
+  else's id in. The message or event id stays in `arguments`, where the digest
+  covers it.
+- **A bounded read is bounded in step 8, not only in the schema.** A schema can
+  check that two timestamps are timestamps; only `execute.ts` can check that
+  they are not two years apart. `MAX_WINDOW_DAYS` is the calendar's version of
+  a volume limit.
+- **The gateway's AJV runs `strict: true` with no format vocabulary.** A
+  `format` keyword throws at schema-compile time rather than validating
+  anything, so tool schemas use `pattern` — see `RFC3339` in `tools.ts`.
 - **Step 8 mints per *tool*, not per connection.** An account that has activated
   both Drive and Gmail still gets a Drive-only token for a Drive read
   (`SCOPE_FOR_TOOL` in `apps/gateway/src/execute.ts`).

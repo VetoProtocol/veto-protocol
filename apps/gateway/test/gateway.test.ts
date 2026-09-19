@@ -241,6 +241,8 @@ describe('a client can connect and list', () => {
       'google_drive.list_folder',
       'google_gmail.search_messages',
       'google_gmail.read_message',
+      'google_calendar.list_events',
+      'google_calendar.read_event',
     ]);
   });
 

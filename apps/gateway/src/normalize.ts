@@ -35,18 +35,24 @@ const RESOURCE_ARGUMENT: Readonly<Record<string, string>> = {
 };
 
 /**
- * Tools whose resource is the caller's own mailbox.
+ * Tools whose resource is the caller's own mailbox or calendar.
  *
- * Gmail is not like Drive. A Drive call names the thing it wants; a mail call
- * names a query or a message id, and the thing being reached is the *mailbox*
- * — which belongs to the delegating human and is never chosen by the agent.
+ * Gmail and Calendar are not like Drive. A Drive call names the thing it wants;
+ * a mail or calendar call names a query, a message id or an event id, and the
+ * thing being reached is the *mailbox* or the *calendar* — which belongs to the
+ * delegating human and is never chosen by the agent.
  *
  * Taking it from the session rather than from an argument is what stops an
  * agent asking for somebody else's mail: there is no argument to put another
  * person's id in. The message id still travels in `arguments`, so it is covered
  * by the digest and an approval stays bound to one exact message.
  */
-const MAILBOX_TOOLS = new Set(['google_gmail.search_messages', 'google_gmail.read_message']);
+const MAILBOX_TOOLS = new Set([
+  'google_gmail.search_messages',
+  'google_gmail.read_message',
+  'google_calendar.list_events',
+  'google_calendar.read_event',
+]);
 
 const invalid = (): RpcError =>
   // The validation detail is not echoed. It is derived from attacker-supplied

@@ -28,6 +28,9 @@ export interface ToolDefinition {
   readonly resourceType: string;
 }
 
+/** `2026-10-01T09:00:00Z`, with optional fractional seconds and offset form. */
+const RFC3339 = '^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|[+-]\\d{2}:\\d{2})$';
+
 export const TOOLS: readonly ToolDefinition[] = [
   {
     name: 'google_drive.read_file',
@@ -114,6 +117,61 @@ export const TOOLS: readonly ToolDefinition[] = [
           type: 'array',
           maxItems: 5,
           items: { type: 'string', enum: ['from', 'subject', 'date', 'snippet', 'body'] },
+        },
+        declared_intent: { type: 'string', maxLength: 500 },
+      },
+    },
+  },
+  {
+    name: 'google_calendar.list_events',
+    title: 'List calendar events',
+    description:
+      'List events in a bounded time window from the connected calendar. Returns times, ' +
+      'titles, locations and how many people are invited — never event descriptions, and ' +
+      'never who the other guests are. Reading one event is a separate call.',
+    action: 'search',
+    resourceType: 'google_calendar',
+    inputSchema: {
+      type: 'object',
+      additionalProperties: false,
+      // Both ends required. "Everything from the beginning of time" is not a
+      // request this tool can express, which is the point of a bounded window.
+      required: ['time_min', 'time_max'],
+      properties: {
+        // RFC3339, as a pattern rather than `format: 'date-time'`. The
+        // gateway's AJV runs in strict mode with no format vocabulary
+        // registered, so a format keyword throws at compile time instead of
+        // validating anything — and a regex says out loud what is accepted.
+        time_min: { type: 'string', pattern: RFC3339, maxLength: 40 },
+        time_max: { type: 'string', pattern: RFC3339, maxLength: 40 },
+        page_size: { type: 'integer', minimum: 1, maximum: 100 },
+        declared_intent: { type: 'string', maxLength: 500 },
+      },
+    },
+  },
+  {
+    name: 'google_calendar.read_event',
+    title: 'Read one event',
+    description:
+      'Read one event from the connected calendar by id. Ask for the description only when ' +
+      'you need it. Every call is authorized individually.',
+    action: 'read',
+    resourceType: 'google_calendar',
+    inputSchema: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['event_id'],
+      properties: {
+        // Constrained so a caller cannot smuggle a path segment or a query
+        // string into the URL step 8 builds.
+        event_id: { type: 'string', minLength: 1, maxLength: 1024, pattern: '^[A-Za-z0-9_-]+$' },
+        fields: {
+          type: 'array',
+          maxItems: 6,
+          items: {
+            type: 'string',
+            enum: ['summary', 'start', 'end', 'location', 'organizer', 'description'],
+          },
         },
         declared_intent: { type: 'string', maxLength: 500 },
       },

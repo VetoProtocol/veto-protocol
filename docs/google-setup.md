@@ -1,4 +1,4 @@
-# Connecting Google (Drive and Gmail)
+# Connecting Google (Drive, Gmail, Calendar)
 
 Signing in with Google and *connecting* Google are two different things, and the
 difference is worth stating before the setup steps:
@@ -29,6 +29,7 @@ subsequent call returns 403, which is a confusing place to discover it.
 | --- | --- | --- |
 | `.../auth/drive.readonly` | Drive | sensitive |
 | `.../auth/gmail.readonly` | Gmail | **restricted** |
+| `.../auth/calendar.readonly` | Calendar | sensitive |
 
 On an **Internal** consent screen both cost nothing. On an **External** one, an
 app in *Testing* works for the users listed as testers; publishing needs
@@ -38,10 +39,11 @@ the right answer.
 
 Add only the scopes for the services you will actually use. §9.1 is explicit
 that scopes are requested when a feature activates, and a grant Veto cannot
-police is worse than no grant. Calendar is not offered yet.
+police is worse than no grant.
 
-**Enable the Gmail API too** (APIs & Services → Library → Gmail API) if you want
-mail, for the same reason as step 1.
+**Enable each API you want** in APIs & Services → Library: Google Drive API,
+Gmail API, Google Calendar API. Consent succeeds without this and every call
+then returns 403, which is a confusing place to find out.
 
 ## 3. Register the redirect URI
 
@@ -96,6 +98,22 @@ than being recorded as a full one.
 Each upstream call still mints its own narrow token: a Drive read from an
 account holding both scopes produces a Drive-only token, never a combined one.
 
+## What Calendar can and cannot do
+
+Two tools: **list** events in a time window — titles, times, locations and how
+many people are invited, never the guest list and never the description — and
+**read** one event, with its description only when the call asks for it.
+
+The window is capped at 90 days and both ends are required. "Everything from
+the beginning of time" is not a request the tool can express.
+
+Only the **primary** calendar. A Google user can often see colleagues'
+calendars; there is no calendar argument anywhere, so reaching one is not a
+mistake that can be made later.
+
+There is **no create, update or delete**. §9.1 defers writes to a later release,
+behind a step-up approval.
+
 ## What Gmail can and cannot do
 
 Two tools: **search** returns ids, senders, subjects and dates — never bodies —
@@ -104,9 +122,16 @@ and **read** returns one message, with its body only when the call asks for it.
 There is **no send tool and no send scope**. Sending is not something the
 product declines to do; it is something it has no way to do (§9.1).
 
-An agent can only ever reach the mailbox of the person who delegated to it. The
-mailbox is taken from the session, not from a tool argument, so "read someone
-else's mail" is not a request that can be expressed.
+An agent can only ever reach the mailbox and calendar of the person who
+delegated to it. Both are taken from the session, not from a tool argument, so
+"read someone else's mail" is not a request that can be expressed.
+
+## One note about the first call
+
+The first check against a resource type Permit has only just learned about can
+come back as *unavailable* rather than *deny* while the PDP catches up. Both
+refuse the request; the reason code differs (`POLICY_UNAVAILABLE` rather than
+`POLICY_DENIED`). Re-run the bootstrap before a pilot rather than during one.
 
 ## Things that go wrong
 

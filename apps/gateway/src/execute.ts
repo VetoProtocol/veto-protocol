@@ -23,12 +23,16 @@
 
 import {
   BrokerError,
+  CalendarError,
   DriveError,
   findActiveConnection,
   mintUpstreamToken,
+  CALENDAR_READONLY_SCOPE,
   DRIVE_READONLY_SCOPE,
   GMAIL_READONLY_SCOPE,
   GmailError,
+  MAX_WINDOW_DAYS,
+  type CalendarReader,
   type DriveReader,
   type GmailReader,
   type UpstreamTokenExchange,
@@ -46,6 +50,8 @@ export interface ExecuteDeps {
   readonly drive: DriveReader;
   /** Absent until Gmail is configured; a mail tool then refuses rather than half-works. */
   readonly gmail?: GmailReader;
+  /** Absent until Calendar is configured. Same rule. */
+  readonly calendar?: CalendarReader;
 }
 
 /**
@@ -60,6 +66,8 @@ const SCOPE_FOR_TOOL: Readonly<Record<string, string>> = {
   'google_drive.read_file': DRIVE_READONLY_SCOPE,
   'google_gmail.search_messages': GMAIL_READONLY_SCOPE,
   'google_gmail.read_message': GMAIL_READONLY_SCOPE,
+  'google_calendar.list_events': CALENDAR_READONLY_SCOPE,
+  'google_calendar.read_event': CALENDAR_READONLY_SCOPE,
 };
 
 export type ExecuteOutcome =
@@ -87,6 +95,14 @@ export async function executeAllowed(
       ok: false,
       reasonCode: 'TOOL_NOT_ALLOWED',
       message: 'Gmail is not configured on this server.',
+    };
+  }
+
+  if (input.tool.startsWith('google_calendar.') && deps.calendar === undefined) {
+    return {
+      ok: false,
+      reasonCode: 'TOOL_NOT_ALLOWED',
+      message: 'Calendar is not configured on this server.',
     };
   }
 
@@ -159,7 +175,9 @@ export async function executeAllowed(
     return { ok: true, content: [{ type: 'text', text: JSON.stringify(payload) }] };
   } catch (error) {
     const status =
-      error instanceof DriveError || error instanceof GmailError ? error.status : 0;
+      error instanceof DriveError || error instanceof GmailError || error instanceof CalendarError
+        ? error.status
+        : 0;
     const reasonCode =
       status === 403 || status === 401 ? 'CREDENTIAL_REVOKED' : 'CONNECTION_EXPIRED';
     await announceExpiry(reasonCode);
@@ -199,6 +217,39 @@ async function carryOut(
       modifiedTime: file.modifiedTime,
       content: file.content,
     };
+  }
+
+  if (input.tool.startsWith('google_calendar.')) {
+    const calendar = deps.calendar;
+    if (!calendar) throw new CalendarError(503);
+
+    if (input.tool === 'google_calendar.list_events') {
+      const timeMin = input.arguments['time_min'];
+      const timeMax = input.arguments['time_max'];
+      const pageSize = input.arguments['page_size'];
+      if (typeof timeMin !== 'string' || typeof timeMax !== 'string') {
+        throw new CalendarError(400);
+      }
+
+      // The window is bounded *here*, not only in the schema. A schema can
+      // check that two timestamps are timestamps; only this can check that they
+      // are not two years apart, which is the difference between "my week" and
+      // "everything I have ever done".
+      const span = Date.parse(timeMax) - Date.parse(timeMin);
+      if (!Number.isFinite(span) || span <= 0) throw new CalendarError(400);
+      if (span > MAX_WINDOW_DAYS * 24 * 60 * 60 * 1000) throw new CalendarError(400);
+
+      const events = await calendar.listEvents(
+        accessToken,
+        { timeMin, timeMax },
+        typeof pageSize === 'number' ? pageSize : 25,
+      );
+      return { events };
+    }
+
+    const eventId = input.arguments['event_id'];
+    if (typeof eventId !== 'string') throw new CalendarError(400);
+    return calendar.readEvent(accessToken, eventId, fields);
   }
 
   const gmail = deps.gmail;

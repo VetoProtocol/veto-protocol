@@ -28,6 +28,12 @@ export const DRIVE_READONLY_SCOPE = 'https://www.googleapis.com/auth/drive.reado
 export const GMAIL_READONLY_SCOPE = 'https://www.googleapis.com/auth/gmail.readonly';
 
 /**
+ * Calendar, read only. §9.1 begins read-only; create and update arrive later,
+ * behind a step-up approval, and will need their own scope when they do.
+ */
+export const CALENDAR_READONLY_SCOPE = 'https://www.googleapis.com/auth/calendar.readonly';
+
+/**
  * Which scopes each service needs, and nothing more.
  *
  * §9.1: "Do not request Gmail, Drive, and Calendar access together before the
@@ -43,6 +49,7 @@ export const GMAIL_READONLY_SCOPE = 'https://www.googleapis.com/auth/gmail.reado
 export const GOOGLE_SERVICES = {
   drive: [DRIVE_READONLY_SCOPE],
   gmail: [GMAIL_READONLY_SCOPE],
+  calendar: [CALENDAR_READONLY_SCOPE],
 } as const satisfies Record<string, readonly string[]>;
 
 export type GoogleService = keyof typeof GOOGLE_SERVICES;

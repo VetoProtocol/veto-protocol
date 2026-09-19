@@ -38,6 +38,8 @@ const STATUS_TONE: Record<string, Tone> = {
 const SCOPE_MEANING: Record<string, string> = {
   'https://www.googleapis.com/auth/drive.readonly': 'read Drive files — no writing, no deleting',
   'https://www.googleapis.com/auth/gmail.readonly': 'read and search mail — no sending, no deleting',
+  'https://www.googleapis.com/auth/calendar.readonly':
+    'read the calendar — no creating, changing or cancelling',
 };
 
 /**
@@ -54,6 +56,11 @@ const SERVICES = [
     key: 'gmail',
     label: 'Connect Gmail',
     detail: 'Read-only. Searching and reading; there is no send permission to grant.',
+  },
+  {
+    key: 'calendar',
+    label: 'Connect Calendar',
+    detail: 'Read-only. Creating and changing events come later, behind an approval.',
   },
 ] as const;
 
@@ -161,8 +168,8 @@ export default async function ConnectionsPage({
             ))}
           </div>
           <p style={{ color: 'var(--text-faint)', fontSize: 11.5, margin: '14px 0 0' }}>
-            Connect them one at a time, and only the ones you need. Calendar is not offered yet —
-            there is nothing built that would enforce rules on it.
+            Connect them one at a time, and only the ones you need. Each one is a separate trip to
+            Google, and each grants only what that feature reads.
           </p>
         </div>
       </Panel>

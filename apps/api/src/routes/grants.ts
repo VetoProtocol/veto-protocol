@@ -24,6 +24,7 @@ import type { Pool } from 'pg';
 import { withWorkspace } from '@veto/db';
 import { findAgent, writeAuditEvent } from '@veto/identity';
 import {
+  CALENDAR_RESOURCE,
   FILE_RESOURCE,
   FOLDER_RESOURCE,
   MAILBOX_RESOURCE,
@@ -33,7 +34,7 @@ import { ERROR_SCHEMA, HttpError } from '../errors.ts';
 import { requireScope, SCOPE_CONTROL_PLANE } from '../scope.ts';
 
 /** Only what the tool catalogue can actually ask about. */
-const GRANTABLE = [FOLDER_RESOURCE, FILE_RESOURCE, MAILBOX_RESOURCE] as const;
+const GRANTABLE = [FOLDER_RESOURCE, FILE_RESOURCE, MAILBOX_RESOURCE, CALENDAR_RESOURCE] as const;
 
 const GRANT_SCHEMA = {
   type: 'object',

@@ -76,6 +76,17 @@ export const FOLDER_RESOURCE = 'google_folder';
 export const MAILBOX_RESOURCE = 'gmail_mailbox';
 
 /**
+ * The calendar, §4.2's `calendar` resource type.
+ *
+ * One instance per human, keyed by the Veto user id, for the same reason the
+ * mailbox is: an agent acts for one person and reaches that person's calendar.
+ * Google's own calendar ids are email-shaped (`a@b.com`, `x@group.calendar...`)
+ * and would not survive Permit's instance-key grammar anyway — but the reason
+ * not to use them is the delegation model, not the character set.
+ */
+export const CALENDAR_RESOURCE = 'google_calendar';
+
+/**
  * Folder-to-file containment.
  *
  * Declared on the file, naming the folder as subject, so a grant on a folder

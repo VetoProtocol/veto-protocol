@@ -115,6 +115,7 @@ export function CreatePolicyForm({ agents }: { agents: readonly AgentChoice[] })
             <option value="google_file">google_file</option>
             <option value="google_folder">google_folder</option>
             <option value="gmail_mailbox">gmail_mailbox</option>
+            <option value="google_calendar">google_calendar</option>
           </select>
         </label>
       </div>
@@ -276,6 +277,7 @@ export function CreateGrantForm({ agents }: { agents: readonly AgentChoice[] }) 
             <option value="google_folder">folder — and the files inside it</option>
             <option value="google_file">file — just this one</option>
             <option value="gmail_mailbox">mailbox — one person&rsquo;s mail</option>
+            <option value="google_calendar">calendar — one person&rsquo;s calendar</option>
           </select>
         </label>
 
@@ -296,8 +298,8 @@ export function CreateGrantForm({ agents }: { agents: readonly AgentChoice[] }) 
       <p style={{ color: 'var(--text-faint)', fontSize: 11.5, margin: 0, maxWidth: 560 }}>
         For Drive, the id is the long string in the URL after <code>/folders/</code> or{' '}
         <code>/d/</code>. A path like <code>/Work</code> is not an id and will be refused. For a
-        mailbox, the id is the person&rsquo;s Veto user id — an agent can only ever reach the
-        mailbox of the person who delegated to it.
+        mailbox or a calendar, the id is the person&rsquo;s Veto user id — an agent can only ever
+        reach the mailbox and calendar of the person who delegated to it.
       </p>
 
       <div>

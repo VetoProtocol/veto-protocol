@@ -9,17 +9,18 @@
  * carry the delegator relation; stage 2 adds Drive, because the pipeline now
  * asks Permit about files and folders.
  *
- * `calendar`, `wallet` and `contract` are still absent. §4.2 lists them, but
+ * `wallet` and `contract` are still absent. §4.2 lists them, but
  * modelling a resource before anything enforces it puts policy in Permit that
  * nothing reads, and an unread policy is one nobody notices is wrong. They
- * arrive with the integrations that need them (§9.1). `mailbox` arrived with
- * Gmail, on exactly that rule.
+ * arrive with the integrations that need them (§9.1). `mailbox` and `calendar`
+ * arrived with Gmail and Calendar, on exactly that rule.
  */
 
 import { Permit } from 'permitio';
 import type { PermitConfig } from './config.ts';
 import {
   AGENT_RESOURCE,
+  CALENDAR_RESOURCE,
   FILE_RESOURCE,
   FOLDER_RESOURCE,
   HUMAN_RESOURCE,
@@ -200,6 +201,31 @@ export async function bootstrapPermitEnvironment(config: PermitConfig): Promise<
       key: ROLE_READER,
       name: 'Mailbox reader',
       description: 'May search and read this mailbox. Cannot send: no send action exists.',
+      permissions: ['read', 'search'],
+    }),
+  );
+
+  // Calendar, read only (§9.1: "Begin read-only; create/update requires
+  // step-up approval in later releases"). No create or update action is
+  // declared, so the later release has to come back here and say so out loud.
+  await step(`resource:${CALENDAR_RESOURCE}`, () =>
+    permit.api.resources.create({
+      key: CALENDAR_RESOURCE,
+      name: 'Google Calendar',
+      description:
+        "One person's calendar. Keyed by Veto user id, not by Google's calendar id: an agent reaches the calendar of the person who delegated to it.",
+      actions: { read: {}, search: {} },
+      attributes: {
+        sensitivity: { type: 'string', description: 'Classification label, never the content itself.' },
+      },
+    }),
+  );
+
+  await step(`role:${CALENDAR_RESOURCE}.${ROLE_READER}`, () =>
+    permit.api.resourceRoles.create(CALENDAR_RESOURCE, {
+      key: ROLE_READER,
+      name: 'Calendar reader',
+      description: 'May list and read this calendar. Cannot create or change events.',
       permissions: ['read', 'search'],
     }),
   );

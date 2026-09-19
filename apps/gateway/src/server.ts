@@ -11,6 +11,7 @@ import Redis from 'ioredis';
 import { createPool, loadRepoEnv } from '@veto/db';
 import { createPermitPolicyDecisions, permitConfigFromEnv } from '@veto/permit';
 import {
+  createCalendarReader,
   createDriveReader,
   createGmailReader,
   createGoogleExchange,
@@ -57,6 +58,7 @@ const execute =
         exchange: createGoogleExchange(google),
         drive: createDriveReader(),
         gmail: createGmailReader(),
+        calendar: createCalendarReader(),
       };
 
 const app = createGateway({
