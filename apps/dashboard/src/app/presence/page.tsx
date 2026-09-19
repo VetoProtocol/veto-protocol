@@ -1,5 +1,4 @@
 import { redirect } from 'next/navigation';
-import { Nav } from '@/components/nav';
 import { Panel } from '@/components/panel';
 import { Chip, type Tone } from '@/components/chip';
 import { ApiError, getEmergencyLock, getPresence } from '@/lib/api';
@@ -33,7 +32,6 @@ export default async function PresencePage() {
   } catch (error) {
     return (
       <>
-        <Nav active="presence" />
         <Panel title="UNAVAILABLE" meta="CONTROL PLANE">
           <div style={{ padding: 22, color: 'var(--text-dim)', fontSize: 12.5 }}>
             {error instanceof ApiError ? error.failure.message : 'The API did not answer.'}
@@ -45,7 +43,6 @@ export default async function PresencePage() {
 
   return (
     <>
-      <Nav active="presence" />
 
       <Panel title="PRESENCE" meta="SIGNAL / NOT PROOF">
         <div style={{ padding: '22px 18px 6px' }}>

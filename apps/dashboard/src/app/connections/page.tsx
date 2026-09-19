@@ -1,5 +1,4 @@
 import { redirect } from 'next/navigation';
-import { Nav } from '@/components/nav';
 import { Panel } from '@/components/panel';
 import { Chip, type Tone } from '@/components/chip';
 import { ApiError, listConnections, type ConnectionView } from '@/lib/api';
@@ -82,7 +81,6 @@ export default async function ConnectionsPage({
   } catch (failure) {
     return (
       <>
-        <Nav active="connections" />
         <Panel title="UNAVAILABLE" meta="CONTROL PLANE">
           <div style={{ padding: 22, color: 'var(--text-dim)', fontSize: 12.5 }}>
             {failure instanceof ApiError ? failure.failure.message : 'The API did not answer.'}
@@ -96,7 +94,6 @@ export default async function ConnectionsPage({
 
   return (
     <>
-      <Nav active="connections" />
 
       <Panel title="CONNECTIONS" meta="GOOGLE WORKSPACE / §9">
         <div style={{ padding: '22px 18px 18px' }}>

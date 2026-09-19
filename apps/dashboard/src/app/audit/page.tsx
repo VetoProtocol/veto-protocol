@@ -1,5 +1,4 @@
 import { redirect } from 'next/navigation';
-import { Nav } from '@/components/nav';
 import { Panel } from '@/components/panel';
 import { Chip, StatusDot, type Tone } from '@/components/chip';
 import { ApiError, listAuditEvents, verifyAuditChain, type AuditEventView } from '@/lib/api';
@@ -37,7 +36,6 @@ export default async function AuditPage({
   } catch (error) {
     return (
       <>
-        <Nav active="audit" />
         <Panel title="UNAVAILABLE" meta="CONTROL PLANE">
           <div style={{ padding: 22, color: 'var(--text-dim)', fontSize: 12.5 }}>
             {error instanceof ApiError ? error.failure.message : 'The API did not answer.'}
@@ -49,7 +47,6 @@ export default async function AuditPage({
 
   return (
     <>
-      <Nav active="audit" />
 
       <Panel title="AUDIT" meta="APPEND-ONLY">
         <div style={{ padding: '22px 18px 6px' }}>

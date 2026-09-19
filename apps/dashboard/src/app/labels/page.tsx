@@ -1,5 +1,4 @@
 import { redirect } from 'next/navigation';
-import { Nav } from '@/components/nav';
 import { Panel } from '@/components/panel';
 import { Chip, type Tone } from '@/components/chip';
 import { ApiError, listLabels, type LabelView } from '@/lib/api';
@@ -37,7 +36,6 @@ export default async function LabelsPage() {
   } catch (error) {
     return (
       <>
-        <Nav active="labels" />
         <Panel title="UNAVAILABLE" meta="CONTROL PLANE">
           <div style={{ padding: 22, color: 'var(--text-dim)', fontSize: 12.5 }}>
             {error instanceof ApiError ? error.failure.message : 'The API did not answer.'}
@@ -59,7 +57,6 @@ export default async function LabelsPage() {
 
   return (
     <>
-      <Nav active="labels" />
 
       <Panel title="LABELS" meta="SENSITIVITY / §4.2">
         <div style={{ padding: '22px 18px 6px' }}>

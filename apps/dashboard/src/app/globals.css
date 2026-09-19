@@ -29,16 +29,25 @@
   --border-focus: #4a4a4a;
 
   --text: #ededed;
-  --text-dim: #8a8a8a;
-  --text-faint: #565656;
+  --text-dim: #9a9a9a;
+  --text-faint: #6f6f6f;
 
   /* §5.3 decision semantics. One colour each, never reused for anything else. */
-  --allow: #4e9e6a;
-  --allow-bg: rgba(78, 158, 106, 0.08);
-  --challenge: #c9a03e;
-  --challenge-bg: rgba(201, 160, 62, 0.08);
-  --deny: #d1504a;
-  --deny-bg: rgba(209, 80, 74, 0.08);
+  --allow: #5cb07a;
+  --allow-bg: rgba(92, 176, 122, 0.09);
+  --challenge: #d4ab4a;
+  --challenge-bg: rgba(212, 171, 74, 0.09);
+  --deny: #e0645d;
+  --deny-bg: rgba(224, 100, 93, 0.09);
+
+  /* Clay. The one colour that is not a decision — it marks what you cannot have
+     yet, never what the system decided. Keeping it out of the allow/deny
+     vocabulary is why an upsell can never be mistaken for an outcome. */
+  --accent: #d97757;
+  --accent-bg: rgba(217, 119, 87, 0.08);
+
+  /* The sidebar's fixed width, used by the shell and by nothing else. */
+  --rail: 216px;
 
   --grid-line: rgba(255, 255, 255, 0.022);
   --grid-size: 44px;

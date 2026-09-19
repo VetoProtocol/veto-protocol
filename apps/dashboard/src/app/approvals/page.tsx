@@ -1,5 +1,4 @@
 import { redirect } from 'next/navigation';
-import { Nav } from '@/components/nav';
 import { Panel } from '@/components/panel';
 import { Chip } from '@/components/chip';
 import { ApiError, listApprovals, listPasskeys } from '@/lib/api';
@@ -22,7 +21,6 @@ export default async function ApprovalsPage() {
   } catch (error) {
     return (
       <>
-        <Nav active="approvals" />
         <Panel title="UNAVAILABLE" meta="CONTROL PLANE">
           <div style={{ padding: 22, color: 'var(--text-dim)', fontSize: 12.5 }}>
             {error instanceof ApiError ? error.failure.message : 'The API did not answer.'}
@@ -36,7 +34,6 @@ export default async function ApprovalsPage() {
 
   return (
     <>
-      <Nav active="approvals" />
 
       <Panel title="APPROVALS" meta="AWAITING YOU">
         <div style={{ padding: '22px 18px 6px' }}>

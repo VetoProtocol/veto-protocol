@@ -1,5 +1,4 @@
 import { redirect } from 'next/navigation';
-import { Nav } from '@/components/nav';
 import { Panel } from '@/components/panel';
 import { Chip, type Tone } from '@/components/chip';
 import {
@@ -63,7 +62,6 @@ export default async function PoliciesPage() {
   } catch (error) {
     return (
       <>
-        <Nav active="policies" />
         <Panel title="UNAVAILABLE" meta="CONTROL PLANE">
           <div style={{ padding: 22, color: 'var(--text-dim)', fontSize: 12.5 }}>
             {error instanceof ApiError ? error.failure.message : 'The API did not answer.'}
@@ -82,7 +80,6 @@ export default async function PoliciesPage() {
 
   return (
     <>
-      <Nav active="policies" />
 
       <Panel title="POLICIES" meta="THE RULES THAT DECIDE / §3.3 STEP 4">
         <div style={{ padding: '22px 18px 18px' }}>
