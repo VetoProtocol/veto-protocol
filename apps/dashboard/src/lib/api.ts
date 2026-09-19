@@ -124,6 +124,30 @@ export interface AuditEventView {
   readonly occurred_at: string;
 }
 
+export interface LabelView {
+  readonly id: string;
+  readonly resource_type: string;
+  readonly pattern: string;
+  readonly exact: boolean;
+  readonly sensitivity: 'public' | 'internal' | 'confidential' | 'restricted';
+  readonly note: string | null;
+}
+
+export const listLabels = (credential: string): Promise<{ labels: LabelView[] }> =>
+  request('/v1/labels', { method: 'GET', credential });
+
+export const setLabel = (
+  credential: string,
+  body: { resource_type: string; pattern: string; sensitivity: string; exact?: boolean; note?: string },
+): Promise<LabelView> =>
+  request('/v1/labels', { method: 'PUT', credential, body: JSON.stringify(body) });
+
+export const removeLabel = (
+  credential: string,
+  labelId: string,
+): Promise<{ label_id: string; removed: boolean }> =>
+  request(`/v1/labels/${encodeURIComponent(labelId)}`, { method: 'DELETE', credential });
+
 export const getPresence = (credential: string): Promise<PresenceView> =>
   request('/v1/presence', { method: 'GET', credential });
 

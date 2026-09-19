@@ -80,7 +80,7 @@ outside a test env, and the app `.env` sets `NODE_ENV=development`.
 | `packages/passkeys` | WebAuthn enrolment and assertion. Public keys only. |
 | `apps/api` | Fastify control plane (§5). Manages objects; not an enforcement point. |
 | `apps/gateway` | **The** MCP enforcement point (§3.1). Calls the pipeline in process. |
-| `apps/dashboard` | Next.js dashboard: agents, presence, approvals, audit. Dark only. |
+| `apps/dashboard` | Next.js dashboard: agents, presence, labels, approvals, audit. Dark only. |
 
 Sign-in is OIDC against any conformant provider (`docs/auth-setup.md`). There is
 **no auto-provisioning**: an unknown subject is refused, and membership is

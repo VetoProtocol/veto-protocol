@@ -160,5 +160,8 @@ The level-to-requirement mapping is fixed in code rather than configurable per
 label. A knob there would mean two places to look when asking "why was this
 challenged", and that answer needs to be short.
 
-Still open: the dashboard has no screen for labels — they are managed through
-`/v1/labels` only.
+The dashboard screen lists labels **longest pattern first**, which is the order
+the matcher resolves them in. Any other order would misrepresent which one wins.
+
+`public` and `internal` wear a neutral chip rather than a green one: green reads
+as "allowed", and a label never allows anything.
