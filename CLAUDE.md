@@ -30,12 +30,12 @@ file, the nine-step pipeline decides, and either the file comes back or a reason
 code does. All twelve §12.1 adversarial scenarios are implemented
 (`packages/core/src/adversarial.ts`).
 
-**Stage 3 has started.** Presence is a real state machine with legal transitions,
-assurance levels and downward decay. Still to come: the passkey ceremony, the audit
-timeline API, and the dashboard screens.
+**Stage 3 is half built.** Presence is a real state machine, and approvals now
+require a WebAuthn assertion over the approval's own challenge. Still to come: the
+audit timeline API and the dashboard screens.
 
-What is **not** built: WebAuthn, Gmail and Calendar, and the browser half of the
-Google connect flow.
+What is **not** built: Gmail and Calendar, and the browser halves of the Google
+connect and passkey flows.
 
 ### Commands
 
@@ -74,6 +74,7 @@ outside a test env, and the app `.env` sets `NODE_ENV=development`.
 | `packages/vault` | Envelope encryption. The encryption context is a tenant boundary. |
 | `packages/connections` | Credential vault and broker. Never returns a refresh token. |
 | `packages/presence` | §7.2 state machine. A signal, never proof of intent. |
+| `packages/passkeys` | WebAuthn enrolment and assertion. Public keys only. |
 | `apps/api` | Fastify control plane (§5). Manages objects; not an enforcement point. |
 | `apps/gateway` | **The** MCP enforcement point (§3.1). Calls the pipeline in process. |
 | `apps/dashboard` | Next.js dashboard. Theme matches vetoprotocol.live; dark only. |
@@ -109,6 +110,9 @@ inserted by hand until an invitation flow exists.
 - **The pipeline decides and never fetches.** Step 8 lives in
   `apps/gateway/src/execute.ts`, downstream of the decision — the pipeline returns
   `allow` and something else acts on it.
+- **An approval is resolved only by a passkey assertion over that approval's stored
+  challenge.** Not a fresh challenge, not one the client chose. A user with no
+  enrolled passkey cannot resolve anything — that is a refusal, not a fallback.
 - **Presence can only narrow an answer.** It never grants; a policy names which
   states allow, absence means `away`, and a source cannot assert more assurance than
   it can witness. There is no field anywhere for an IP address or a location.

@@ -14,6 +14,7 @@
 import { createPool, loadRepoEnv } from '@veto/db';
 import { createLocalKeyWrapper } from '@veto/vault';
 import { createGoogleExchange, type GoogleOAuthConfig } from '@veto/connections';
+import type { WebAuthnConfig } from '@veto/passkeys';
 import { createPermitPolicyDecisions, createPermitPolicyFacts, permitConfigFromEnv } from '@veto/permit';
 import Redis from 'ioredis';
 import { createApp } from './app.ts';
@@ -47,6 +48,26 @@ const google: GoogleOAuthConfig | null =
         redirectUri: required('GOOGLE_REDIRECT_URI'),
       };
 
+// Origin and RP id are configuration, never derived from a request: a caller
+// that could name its own origin could satisfy the ceremony from a site it
+// controls.
+const rpID = (process.env['WEBAUTHN_RP_ID'] ?? '').trim();
+const webauthn: WebAuthnConfig | null =
+  rpID === ''
+    ? null
+    : {
+        rpID,
+        rpName: process.env['WEBAUTHN_RP_NAME'] ?? 'Veto Protocol',
+        origins: (process.env['WEBAUTHN_ORIGINS'] ?? '')
+          .split(',')
+          .map((o) => o.trim())
+          .filter(Boolean),
+      };
+
+if (webauthn !== null && webauthn.origins.length === 0) {
+  throw new Error('WEBAUTHN_ORIGINS must list at least one exact origin');
+}
+
 const app = createApp({
   pool,
   redis,
@@ -54,6 +75,7 @@ const app = createApp({
   decisions,
   wrapper,
   google,
+  webauthn,
   exchange: google === null ? null : createGoogleExchange(google),
   authenticate: capabilityAuthenticator(required('VETO_CAPABILITY_SECRET')),
   logger: true,

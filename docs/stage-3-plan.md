@@ -60,6 +60,20 @@ there.
 delegating user's enrolled credential, and §12.1's approval-link scenario stays
 green with the ceremony in place.
 
+**Done 2026-09-19**, 18 tests. The challenge signed is the one already stored on
+the approval row, so a valid signature proves three things at once: a human was
+present, they hold the delegator's credential, and what they agreed to was *that*
+approval.
+
+`userVerification` is `required`, not `preferred` — a step-up a device may
+silently skip is not a step-up. Refusals need proof too: otherwise anyone
+holding the link could deny an approval the real user wanted.
+
+The positive test earns its keep. `createVirtualAuthenticator` signs with a real
+P-256 key, because every negative test would also pass against a verifier that
+rejects everything, and "nothing gets through" is indistinguishable from
+"nothing works".
+
 ### Phase 3 — Audit timeline
 
 `/v1/audit-events`, tenant-scoped, paginated, with the hash chain verifiable on

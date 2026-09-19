@@ -20,7 +20,8 @@
     "@veto/decisions": "workspace:*",
     "@veto/connections": "workspace:*",
     "@veto/vault": "workspace:*",
-    "@veto/presence": "workspace:*"
+    "@veto/presence": "workspace:*",
+    "@veto/passkeys": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "22.10.2",

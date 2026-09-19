@@ -16,6 +16,7 @@ import type Redis from 'ioredis';
 import { PolicyUnavailableError, type PolicyDecisions, type PolicyFacts } from '@veto/permit';
 import type { GoogleOAuthConfig, UpstreamTokenExchange } from '@veto/connections';
 import type { KeyWrapper } from '@veto/vault';
+import type { WebAuthnConfig } from '@veto/passkeys';
 import { DuplicateLiveAgentError } from '@veto/identity';
 import { errorBody, HttpError } from './errors.ts';
 import type { Authenticator } from './principal.ts';
@@ -25,6 +26,7 @@ import { registerDecisionRoutes } from './routes/decisions.ts';
 import { registerApprovalRoutes } from './routes/approvals.ts';
 import { registerConnectionRoutes } from './routes/connections.ts';
 import { registerPresenceRoutes } from './routes/presence.ts';
+import { registerPasskeyRoutes } from './routes/passkeys.ts';
 
 export interface AppDeps {
   readonly pool: Pool;
@@ -36,6 +38,8 @@ export interface AppDeps {
   readonly wrapper: KeyWrapper;
   /** Null when Google is not configured; the connect route then refuses rather than half-works. */
   readonly google?: GoogleOAuthConfig | null;
+  /** Null disables the passkey routes; approvals then cannot be resolved at all. */
+  readonly webauthn?: WebAuthnConfig | null;
   readonly exchange?: UpstreamTokenExchange | null;
   /** Required. See principal.ts — there is no unauthenticated configuration. */
   readonly authenticate: Authenticator;
@@ -105,7 +109,8 @@ export function createApp(deps: AppDeps): FastifyInstance {
   registerAgentRoutes(app, { pool: deps.pool, redis: deps.redis, policy: deps.policy });
   registerAuthRoutes(app, { pool: deps.pool });
   registerDecisionRoutes(app, { pool: deps.pool, redis: deps.redis, decisions: deps.decisions });
-  registerApprovalRoutes(app, { pool: deps.pool });
+  registerApprovalRoutes(app, { pool: deps.pool, webauthn: deps.webauthn ?? null });
+  registerPasskeyRoutes(app, { pool: deps.pool, redis: deps.redis, webauthn: deps.webauthn ?? null });
   registerPresenceRoutes(app, { pool: deps.pool });
   registerConnectionRoutes(app, {
     pool: deps.pool,

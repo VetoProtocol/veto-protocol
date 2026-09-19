@@ -12,19 +12,42 @@ afterAll(async () => {
   await pool.end();
 });
 
-const EXPECTED_TABLES = [
+/** The ten entities spec §6 names. Every one must exist. */
+const SPEC_TABLES = [
   'agents', 'approvals', 'audit_events', 'connections', 'decisions',
-  'policies', 'presence', 'schema_migrations', 'sessions', 'users', 'workspaces',
+  'policies', 'presence', 'sessions', 'users', 'workspaces',
 ];
 
+/**
+ * Tables beyond §6, each with a reason.
+ *
+ * §6 gives required fields, not an exhaustive schema — but an unexplained table
+ * in an authorization database is exactly the thing nobody should be able to
+ * add quietly. Anything not listed here fails the test, so a new table arrives
+ * with a justification or not at all.
+ */
+const JUSTIFIED_EXTRAS: Readonly<Record<string, string>> = {
+  schema_migrations: 'the migration ledger itself',
+  passkeys: 'WebAuthn credentials (§15, §7.1); §6 stores only passkey_enrolled on users',
+};
+
 describe('migrations', () => {
-  it('creates every entity in spec §6', async () => {
+  it('creates every entity in spec §6, and nothing unexplained', async () => {
     const { rows } = await inRolledBackUntenanted(pool, (db) =>
       db.query<{ tablename: string }>(
         `select tablename from pg_tables where schemaname = 'public' order by tablename`,
       ),
     );
-    expect(rows.map((r) => r.tablename)).toEqual(EXPECTED_TABLES);
+    const present = rows.map((r) => r.tablename);
+
+    for (const table of SPEC_TABLES) {
+      expect(present, `§6 requires ${table}`).toContain(table);
+    }
+
+    const unexplained = present.filter(
+      (t) => !SPEC_TABLES.includes(t) && JUSTIFIED_EXTRAS[t] === undefined,
+    );
+    expect(unexplained, 'a table beyond §6 needs a reason in JUSTIFIED_EXTRAS').toEqual([]);
   });
 
   it('is idempotent — a second run applies nothing', async () => {
