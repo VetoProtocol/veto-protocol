@@ -53,6 +53,20 @@ export async function GET(request: NextRequest) {
     if (error instanceof ApiError && error.failure.status === 503) {
       return back(request, 'unconfigured');
     }
+
+    if (error instanceof ApiError) {
+      // The control plane *answered*, with a refusal. Saying "it did not
+      // answer" here sent somebody looking for a dead process when the real
+      // cause was a running API older than this dashboard — the two halves
+      // disagreeing about a query parameter. Logged with the code, because the
+      // browser must not be told which field a schema rejected but an operator
+      // has to be able to find out.
+      console.warn(
+        `[connect] control plane refused authorize-url: ${error.failure.status} ${error.failure.code}`,
+      );
+      return back(request, 'rejected');
+    }
+
     return back(request, 'unavailable');
   }
 

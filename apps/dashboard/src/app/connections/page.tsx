@@ -19,7 +19,9 @@ export const dynamic = 'force-dynamic';
 const ERRORS: Record<string, string> = {
   session: 'Your session expired before that finished. Sign in and try again.',
   unconfigured: 'Google is not set up on this server yet. An operator needs to add the credentials.',
-  unavailable: 'The control plane did not answer. Nothing was connected.',
+  unavailable: 'The control plane could not be reached at all. Nothing was connected.',
+  rejected:
+    'The control plane refused that request. If the dashboard and the API were deployed at different times, restarting the API usually fixes it — the server log names the reason.',
   expired: 'That attempt timed out. Five minutes is the window; start it again.',
   declined: 'You declined at the Google screen. Nothing was connected.',
   refused: 'Google refused that authorization. Nothing was connected.',
