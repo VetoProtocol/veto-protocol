@@ -24,6 +24,16 @@ export interface GoogleOAuthConfig {
   readonly redirectUri: string;
 }
 
+/**
+ * What building a consent URL needs — and pointedly not the client secret.
+ *
+ * The URL is assembled by the control plane but the browser round trip belongs
+ * to the dashboard, so this narrower type is what crosses that line. Keeping
+ * the secret unrepresentable here is the same move the vault makes with refresh
+ * tokens: a field that does not exist cannot be handed to the wrong process.
+ */
+export type ConsentConfig = Pick<GoogleOAuthConfig, 'clientId' | 'redirectUri'>;
+
 export interface CodeExchangeResult {
   readonly refreshToken: string;
   readonly scopes: readonly string[];
@@ -88,7 +98,7 @@ export async function exchangeAuthorizationCode(
  * access token, and the connection stops working an hour later.
  */
 export function buildConsentUrl(
-  config: GoogleOAuthConfig,
+  config: ConsentConfig,
   options: { state: string; codeChallenge: string; scopes: readonly string[] },
 ): string {
   const url = new URL(GOOGLE_AUTH_URL);

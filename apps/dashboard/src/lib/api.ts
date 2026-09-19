@@ -103,6 +103,48 @@ export const registerAgent = (
 ): Promise<Agent> =>
   request('/v1/agents', { method: 'POST', credential, body: JSON.stringify(input) });
 
+export interface ConnectionView {
+  readonly id: string;
+  readonly provider: string;
+  readonly scopes: string[];
+  readonly status: string;
+  readonly expires_at: string | null;
+  readonly created_at: string;
+}
+
+export const listConnections = (credential: string): Promise<{ connections: ConnectionView[] }> =>
+  request('/v1/connections', { method: 'GET', credential });
+
+/**
+ * Where to send the browser for consent.
+ *
+ * The URL is assembled by the API because the API is what exchanges the code
+ * afterwards, and Google requires the redirect URI to match byte for byte
+ * across both halves. The dashboard supplies only the two values it has to
+ * recognise on the way back.
+ */
+export const googleAuthorizeUrl = (
+  credential: string,
+  query: { state: string; code_challenge: string },
+): Promise<{ url: string; scopes: string[] }> =>
+  request(
+    `/v1/connections/google/authorize-url?${new URLSearchParams(query).toString()}`,
+    { method: 'GET', credential },
+  );
+
+/** Hands the authorization code across. Nothing comes back but the connection row. */
+export const connectGoogle = (
+  credential: string,
+  body: { code: string; code_verifier: string },
+): Promise<ConnectionView> =>
+  request('/v1/connections/google', { method: 'POST', credential, body: JSON.stringify(body) });
+
+export const revokeConnection = (
+  credential: string,
+  connectionId: string,
+): Promise<{ connection_id: string; revoked: boolean; already_revoked: boolean; provider_revoked: boolean }> =>
+  request(`/v1/connections/${encodeURIComponent(connectionId)}`, { method: 'DELETE', credential });
+
 export interface PresenceView {
   readonly state: 'active' | 'away' | 'locked' | 'automation';
   readonly assurance: 'low' | 'medium' | 'high';

@@ -1,11 +1,17 @@
 /**
  * /v1/connections — the Google Workspace connection (spec §5, §9).
  *
- * The authorization code is exchanged **here**, not in the dashboard. The
- * dashboard owns the browser round trip because it owns the session, but it
- * posts the code across and never sees what comes back: the refresh token
- * exists in exactly one process and one column. The code itself is single-use
- * and worthless without the client secret, which only this service holds.
+ * The consent URL is built **here** and the authorization code is exchanged
+ * **here**, not in the dashboard. The dashboard owns the browser round trip
+ * because it owns the session, but it posts the code across and never sees what
+ * comes back: the refresh token exists in exactly one process and one column.
+ * The code itself is single-use and worthless without the client secret, which
+ * only this service holds.
+ *
+ * Both halves living in one process is what makes `redirect_uri` correct by
+ * construction. Google compares it byte for byte at consent time and again at
+ * exchange time, so a second copy in a second service is a mismatch waiting to
+ * happen — and the dashboard has no copy to get wrong.
  *
  * Nothing on these routes returns a credential. `Connection` has no field that
  * could carry one.
@@ -15,7 +21,9 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { Pool } from 'pg';
 import { withWorkspace } from '@veto/db';
 import {
+  buildConsentUrl,
   createConnection,
+  DRIVE_READONLY_SCOPE,
   exchangeAuthorizationCode,
   listConnections,
   revealRefreshTokenForBroker,
@@ -58,6 +66,38 @@ const CONNECT_BODY = {
     code_verifier: { type: 'string', minLength: 43, maxLength: 128, pattern: '^[A-Za-z0-9._~-]+$' },
   },
 } as const;
+
+/**
+ * The consent URL is built here, not in the browser.
+ *
+ * `redirect_uri` and the scope list have to be identical at consent time and at
+ * exchange time, or Google refuses the code — and the exchange happens in this
+ * process. Having one process own both halves means there is no second copy of
+ * the redirect URI to drift out of step with the one registered with Google.
+ *
+ * The caller supplies `state` and `code_challenge` because it is the caller who
+ * must recognise its own callback later; both are public values, and both are
+ * shape-checked before they are interpolated into a URL that a browser follows.
+ */
+const AUTHORIZE_QUERY = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['state', 'code_challenge'],
+  properties: {
+    state: { type: 'string', minLength: 16, maxLength: 128, pattern: '^[A-Za-z0-9._~-]+$' },
+    code_challenge: {
+      type: 'string',
+      minLength: 43,
+      maxLength: 128,
+      pattern: '^[A-Za-z0-9._~-]+$',
+    },
+  },
+} as const;
+
+interface AuthorizeQuery {
+  state: string;
+  code_challenge: string;
+}
 
 interface ConnectBody {
   code: string;
@@ -109,6 +149,48 @@ export function registerConnectionRoutes(app: FastifyInstance, deps: ConnectionR
         listConnections(db, workspaceId),
       );
       return { connections: rows.map(serialize) };
+    },
+  );
+
+  app.get(
+    '/v1/connections/google/authorize-url',
+    {
+      schema: {
+        querystring: AUTHORIZE_QUERY,
+        response: {
+          200: {
+            type: 'object',
+            properties: {
+              url: { type: 'string' },
+              scopes: { type: 'array', items: { type: 'string' } },
+            },
+            required: ['url', 'scopes'],
+          },
+          '4xx': ERROR_SCHEMA,
+          '5xx': ERROR_SCHEMA,
+        },
+      },
+    },
+    async (request: FastifyRequest<{ Querystring: AuthorizeQuery }>) => {
+      requireScope(request, SCOPE_CONTROL_PLANE);
+
+      if (!deps.google) {
+        throw new HttpError(503, 'CONNECTION_EXPIRED', 'Google is not configured on this server');
+      }
+
+      // Drive read-only and nothing else. Gmail and Calendar are not requested
+      // until those integrations exist (§9.1) — asking early would collect a
+      // grant the product has no way to enforce against yet.
+      const scopes = [DRIVE_READONLY_SCOPE];
+
+      return {
+        url: buildConsentUrl(deps.google, {
+          state: request.query.state,
+          codeChallenge: request.query.code_challenge,
+          scopes,
+        }),
+        scopes,
+      };
     },
   );
 

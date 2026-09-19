@@ -34,11 +34,12 @@ code does. All twelve §12.1 adversarial scenarios are implemented
 assertion over the approval's own challenge, the audit timeline is readable and
 independently verifiable, and all four are usable in the browser.
 
-What is **not** built: Gmail and Calendar (stage 4), the browser half of the Google
-connect flow, and alerts/webhooks.
+The Google connect flow is complete in the browser: `/connections` runs PKCE and
+the state cookie, the API builds the consent URL and exchanges the code, and
+`docs/google-setup.md` covers the console side.
 
-What is **not** built: Gmail and Calendar, and the browser halves of the Google
-connect and passkey flows.
+What is **not** built: Gmail and Calendar (stage 4), alerts/webhooks, and the
+browser half of passkey *enrolment*.
 
 ### Commands
 
@@ -80,7 +81,7 @@ outside a test env, and the app `.env` sets `NODE_ENV=development`.
 | `packages/passkeys` | WebAuthn enrolment and assertion. Public keys only. |
 | `apps/api` | Fastify control plane (§5). Manages objects; not an enforcement point. |
 | `apps/gateway` | **The** MCP enforcement point (§3.1). Calls the pipeline in process. |
-| `apps/dashboard` | Next.js dashboard: agents, presence, labels, approvals, audit. Dark only. |
+| `apps/dashboard` | Next.js dashboard: agents, connections, presence, labels, approvals, audit. Dark only. |
 
 Sign-in is OIDC against any conformant provider (`docs/auth-setup.md`). There is
 **no auto-provisioning**: an unknown subject is refused, and membership is
@@ -107,6 +108,16 @@ inserted by hand until an invitation flow exists.
   reads `users` across tenants because sign-in must find the workspace before it can
   scope to one. It takes one exact subject, returns two columns, filters to active
   users, and is SELECT-only. Do not extend it.
+- **The consent URL is built by the API, never by the dashboard.** The process
+  that assembles it is the one that exchanges the code, and Google requires
+  `redirect_uri` to match across both — so there is only one copy of it. The
+  dashboard supplies `state` and `code_challenge`, keeps the PKCE verifier in a
+  signed five-minute cookie, and never holds the client secret. `ConsentConfig`
+  is the narrowed type that crosses that line.
+- **The connect cookie is domain-separated from the sign-in cookie.** Both are
+  signed with `DASHBOARD_SESSION_SECRET`, but one ends in a session and the
+  other in a stored credential, so a value minted for either must not satisfy
+  the other. `packages`-style reuse would have made them interchangeable.
 - **The vault never returns a refresh token.** `Connection` has no field that could
   carry one; the broker hands back a short-lived access token instead. Keep it
   unrepresentable rather than remembering not to.

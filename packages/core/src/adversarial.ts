@@ -151,9 +151,13 @@ export const ADVERSARIAL_SCENARIOS: readonly AdversarialScenario[] = [
     stage: 'identity',
     asserts:
       'A callback with no flow cookie, a substituted state, or a replayed one is ' +
-      'refused. Covered for dashboard sign-in; the gateway OAuth flow needs its own.',
+      'refused. Both browser OAuth flows are covered, and their cookies are ' +
+      'domain-separated so one cannot satisfy the other: sign-in in ' +
+      'flow-cookie.test.ts, the Google connect round trip in connect-cookie.test.ts. ' +
+      'The connect case is the one with teeth — a forged callback there attaches the ' +
+      "attacker's Google account to the victim's workspace.",
     status: 'implemented',
-    test: 'apps/dashboard/test/flow-cookie.test.ts',
+    test: 'apps/dashboard/test/connect-cookie.test.ts',
   },
   {
     id: 'S10',

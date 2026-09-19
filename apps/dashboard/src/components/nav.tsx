@@ -8,6 +8,7 @@
 
 const ITEMS = [
   ['/agents', 'agents'],
+  ['/connections', 'connections'],
   ['/presence', 'presence'],
   ['/labels', 'labels'],
   ['/approvals', 'approvals'],

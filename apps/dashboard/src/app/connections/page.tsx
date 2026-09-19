@@ -1,0 +1,244 @@
+import { redirect } from 'next/navigation';
+import { Nav } from '@/components/nav';
+import { Panel } from '@/components/panel';
+import { Chip, type Tone } from '@/components/chip';
+import { ApiError, listConnections, type ConnectionView } from '@/lib/api';
+import { currentSession } from '@/lib/session';
+import { RevokeConnection } from './forms';
+
+export const dynamic = 'force-dynamic';
+
+/**
+ * Outcomes of the consent round trip, looked up by code.
+ *
+ * The query string never reaches the page as text. Both routes that redirect
+ * here handle values a stranger chose — a `state` parameter, an `error`
+ * parameter from Google — and a crafted link must not be able to print its own
+ * sentence above a "connect" button.
+ */
+const ERRORS: Record<string, string> = {
+  session: 'Your session expired before that finished. Sign in and try again.',
+  unconfigured: 'Google is not set up on this server yet. An operator needs to add the credentials.',
+  unavailable: 'The control plane did not answer. Nothing was connected.',
+  expired: 'That attempt timed out. Five minutes is the window; start it again.',
+  declined: 'You declined at the Google screen. Nothing was connected.',
+  refused: 'Google refused that authorization. Nothing was connected.',
+  mismatch: 'That response did not match the attempt that started here, so it was rejected.',
+  nocode: 'Google sent no authorization code back. Nothing was connected.',
+  exchange: 'That authorization could not be completed. Start again, and grant offline access.',
+};
+
+const STATUS_TONE: Record<string, Tone> = {
+  active: 'allow',
+  expired: 'challenge',
+  revoked: 'deny',
+};
+
+/** Scope URLs are unreadable at a glance. This is what each one actually permits. */
+const SCOPE_MEANING: Record<string, string> = {
+  'https://www.googleapis.com/auth/drive.readonly': 'read Drive files — no writing, no deleting',
+};
+
+export default async function ConnectionsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ connected?: string; error?: string }>;
+}) {
+  const session = await currentSession();
+  if (!session) redirect('/signed-out');
+
+  const { connected, error } = await searchParams;
+
+  let connections: ConnectionView[];
+  try {
+    connections = (await listConnections(session.credential)).connections;
+  } catch (failure) {
+    return (
+      <>
+        <Nav active="connections" />
+        <Panel title="UNAVAILABLE" meta="CONTROL PLANE">
+          <div style={{ padding: 22, color: 'var(--text-dim)', fontSize: 12.5 }}>
+            {failure instanceof ApiError ? failure.failure.message : 'The API did not answer.'}
+          </div>
+        </Panel>
+      </>
+    );
+  }
+
+  const live = connections.filter((c) => c.status === 'active');
+
+  return (
+    <>
+      <Nav active="connections" />
+
+      <Panel title="CONNECTIONS" meta="GOOGLE WORKSPACE / §9">
+        <div style={{ padding: '22px 18px 18px' }}>
+          <p className="path" style={{ margin: '0 0 12px' }}>
+            ~/{session.workspaceId}/connections
+          </p>
+          <h1 className="headline" style={{ fontSize: 30 }}>
+            {live.length} connected
+            <span style={{ color: 'var(--text-faint)' }}> · {connections.length} total</span>
+          </h1>
+          <p style={{ color: 'var(--text-dim)', maxWidth: 660, marginTop: 12, fontSize: 12.5 }}>
+            Connecting Google lets Veto reach your Drive{' '}
+            <span style={{ color: 'var(--text)' }}>on an agent&rsquo;s behalf</span> — and only when
+            a decision says yes. The credential is stored encrypted and never handed to an agent;
+            each allowed call gets a fresh short-lived token instead.
+          </p>
+
+          {connected ? (
+            <p
+              role="status"
+              style={{
+                margin: '16px 0 0',
+                padding: '10px 12px',
+                border: '1px solid var(--allow)',
+                background: 'var(--allow-bg)',
+                color: 'var(--allow)',
+                fontSize: 12.5,
+              }}
+            >
+              Connected. What Google actually granted is listed below.
+            </p>
+          ) : null}
+
+          {error ? (
+            <p
+              role="alert"
+              style={{
+                margin: '16px 0 0',
+                padding: '10px 12px',
+                border: '1px solid var(--deny)',
+                background: 'var(--deny-bg)',
+                color: 'var(--deny)',
+                fontSize: 12.5,
+              }}
+            >
+              {ERRORS[error] ?? 'That did not complete. Nothing was connected.'}
+            </p>
+          ) : null}
+
+          <a
+            href="/connections/google/start"
+            style={{
+              display: 'inline-block',
+              marginTop: 18,
+              padding: '9px 18px',
+              fontSize: 12,
+              background: 'var(--text)',
+              color: 'var(--bg)',
+              border: '1px solid var(--text)',
+            }}
+          >
+            Connect Google Drive
+          </a>
+          <p style={{ color: 'var(--text-faint)', fontSize: 11.5, margin: '10px 0 0' }}>
+            Read-only. Gmail and Calendar are not requested — there is nothing built yet that would
+            enforce rules on them.
+          </p>
+        </div>
+      </Panel>
+
+      <Panel title="STORED CREDENTIALS" meta="NONE OF THEM LEAVE THE SERVER">
+        {connections.length === 0 ? (
+          <div
+            style={{
+              margin: '18px',
+              padding: '20px 18px',
+              border: '1px dashed var(--border-strong)',
+              color: 'var(--text-faint)',
+              fontSize: 12.5,
+            }}
+          >
+            Nothing connected. An agent asking for a Drive file will be denied for want of a
+            credential, which is the correct answer rather than an error.
+          </div>
+        ) : (
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+              <thead>
+                <tr>
+                  {['provider', 'status', 'what it permits', 'connected', ''].map((h) => (
+                    <th
+                      key={h}
+                      scope="col"
+                      className="label"
+                      style={{ textAlign: 'left', padding: '10px 14px', fontWeight: 400 }}
+                    >
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {connections.map((connection) => (
+                  <tr key={connection.id} style={{ borderTop: '1px solid var(--border)' }}>
+                    <th
+                      scope="row"
+                      style={{ padding: '14px', textAlign: 'left', fontWeight: 400 }}
+                    >
+                      {connection.provider}
+                      <span style={{ display: 'block', color: 'var(--text-faint)', fontSize: 11 }}>
+                        {connection.id}
+                      </span>
+                    </th>
+                    <td style={{ padding: '14px' }}>
+                      <Chip tone={STATUS_TONE[connection.status] ?? 'neutral'}>
+                        {connection.status}
+                      </Chip>
+                    </td>
+                    <td style={{ padding: '14px', color: 'var(--text-dim)' }}>
+                      {connection.scopes.length === 0 ? (
+                        'Google reported no scopes'
+                      ) : (
+                        <ul style={{ margin: 0, paddingLeft: 16 }}>
+                          {connection.scopes.map((scope) => (
+                            <li key={scope}>
+                              {SCOPE_MEANING[scope] ?? scope.replace(/^https:\/\/www\.googleapis\.com\/auth\//, '')}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </td>
+                    <td
+                      style={{ padding: '14px', color: 'var(--text-dim)', whiteSpace: 'nowrap' }}
+                    >
+                      {new Date(connection.created_at).toISOString().replace('T', ' ').slice(0, 16)}
+                    </td>
+                    <td style={{ padding: '14px' }}>
+                      {connection.status === 'revoked' ? (
+                        <span style={{ color: 'var(--text-faint)', fontSize: 11.5 }}>—</span>
+                      ) : (
+                        <RevokeConnection connectionId={connection.id} />
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Panel>
+
+      <Panel title="WHAT CONNECTING DOES NOT DO" meta="WORTH BEING EXPLICIT">
+        <div style={{ padding: 18, color: 'var(--text-dim)', fontSize: 12.5, lineHeight: 1.8 }}>
+          <ul style={{ margin: 0, paddingLeft: 18 }}>
+            <li>
+              It does not give any agent access. Every call is still decided, and{' '}
+              <span style={{ color: 'var(--text)' }}>no rule means denied</span>.
+            </li>
+            <li>
+              It does not hand a token to an agent. Agents talk to the gateway; the gateway mints a
+              short-lived token for one allowed call and keeps it.
+            </li>
+            <li>
+              It does not survive disconnecting. The stored credential is destroyed here first, then
+              revoked at Google — so an outage there still leaves it dead.
+            </li>
+          </ul>
+        </div>
+      </Panel>
+    </>
+  );
+}
