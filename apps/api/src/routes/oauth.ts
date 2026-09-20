@@ -99,6 +99,22 @@ export interface OAuthRoutesDeps {
  */
 const ACCESS_TTL_MS = 10 * 60 * 1000;
 
+/**
+ * How many clients one caller may register in an hour.
+ *
+ * Registration is public and has to be, so this is the only thing standing
+ * between an open endpoint and an unbounded table. It is an **availability
+ * control and never authorization** — a registered client holds nothing, so the
+ * harm of a flood is storage and noise, not access. Rate limits are never a
+ * substitute for a policy check here or anywhere else.
+ *
+ * Generous, because a legitimate developer restarting a client repeatedly
+ * during setup looks exactly like the flood, and refusing them is a worse
+ * outcome than a few hundred rows.
+ */
+const REGISTRATIONS_PER_HOUR = 60;
+const REGISTRATION_WINDOW_SECONDS = 3600;
+
 const TOKEN_RESPONSE = {
   type: 'object',
   required: ['access_token', 'token_type', 'expires_in', 'refresh_token'],
@@ -192,6 +208,20 @@ export function registerOAuthRoutes(app: FastifyInstance, deps: OAuthRoutesDeps)
           invalid === 'REDIRECT_URI_INVALID'
             ? 'A redirect URI must be https, a loopback address, or a private-use scheme'
             : 'Client name and at least one redirect URI are required',
+        );
+      }
+
+      // Keyed by caller address. Crude — a caller behind a proxy shares a key
+      // with everyone else behind it — and the alternative is no bound at all
+      // on an endpoint that must stay open.
+      const bucket = `veto:oauth:register:${request.ip}`;
+      const used = await deps.redis.incr(bucket);
+      if (used === 1) await deps.redis.expire(bucket, REGISTRATION_WINDOW_SECONDS);
+      if (used > REGISTRATIONS_PER_HOUR) {
+        throw new HttpError(
+          429,
+          'VOLUME_LIMIT_EXCEEDED',
+          'Too many registrations from this address; try again later',
         );
       }
 

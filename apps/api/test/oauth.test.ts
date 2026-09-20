@@ -41,6 +41,11 @@ beforeAll(async () => {
     wrapper: createLocalKeyWrapper(randomBytes(32).toString('base64')),
     authenticate: headerAuthenticator(),
   });
+  // Registration is rate limited per address, and every injected request
+  // reports the same one. A previous run's bucket has an hour to live, so a
+  // suite that did not clear it would fail for an hour after one flood test.
+  await redis.del('veto:oauth:register:127.0.0.1');
+
   await app.ready();
 });
 
