@@ -9,7 +9,7 @@
 
 import { Permit } from 'permitio';
 import type { PermitConfig } from './config.ts';
-import { agentUserKey, tenantKey } from './model.ts';
+import { agentUserKey, scopedInstanceKey, tenantKey } from './model.ts';
 import type { CheckInput, PermitOutcome, PolicyDecisions } from './decisions-port.ts';
 
 export interface PermitPolicyDecisions extends PolicyDecisions {
@@ -33,7 +33,10 @@ export function createPermitPolicyDecisions(config: PermitConfig): PermitPolicyD
       try {
         const allowed = await permit.check(agentUserKey(input.agentId), input.action, {
           type: input.resourceType,
-          key: input.resourceKey,
+          // The same scoping the facts adapter writes with. An unscoped key
+          // here would ask about a resource instance that belongs to whichever
+          // workspace happened to create that key first — see model.ts.
+          key: scopedInstanceKey(input.workspaceId, input.resourceKey),
           tenant: tenantKey(input.workspaceId),
           ...(input.attributes === undefined ? {} : { attributes: { ...input.attributes } }),
         });

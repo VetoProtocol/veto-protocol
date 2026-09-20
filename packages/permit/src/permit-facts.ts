@@ -50,6 +50,8 @@ import {
   humanInstanceKey,
   humanUserKey,
   resourceInstanceKey,
+  scopedInstanceKey,
+  unscopeInstanceKey,
   roleFact,
   ROLE_READER,
   tenantKey,
@@ -60,6 +62,17 @@ import {
   type PolicyFacts,
   type ResourceGrant,
 } from './port.ts';
+
+/**
+ * How hard to try before declaring a grant failed.
+ *
+ * Four attempts across three seconds. Long enough for a freshly created
+ * resource instance to become visible in a new tenant, short enough that a
+ * genuinely broken grant is reported while somebody is still looking at the
+ * screen that asked for it.
+ */
+const GRANT_ATTEMPTS = 4;
+const GRANT_RETRY_MS = 1000;
 
 /** `agent|agt_x` back to `agt_x`, or null when the key is some other principal. */
 const agentIdOf = (userKey: string): string | null =>
@@ -221,22 +234,54 @@ export function createPermitPolicyFacts(config: PermitConfig): PermitPolicyFacts
         // folder is the moment it becomes a thing Permit can hold an opinion
         // about. Creating it here rather than requiring a separate call keeps
         // "grant" a single operation that either happened or did not.
+        // Scoped, because Permit makes an instance key unique per environment
+        // rather than per tenant. Unscoped, the second workspace to grant
+        // `root` collides with the first one's instance. See model.ts.
+        const scopedKey = scopedInstanceKey(grant.workspaceId, grant.resourceKey);
+
         await permit.api.resourceInstances
           .create({
             resource: grant.resourceType,
-            key: grant.resourceKey,
+            key: scopedKey,
             tenant,
           })
           .catch(swallowConflict);
 
-        await permit.api.roleAssignments
-          .assign({
-            user: agentUserKey(grant.agentId),
-            role: ROLE_READER,
+        const user = agentUserKey(grant.agentId);
+        const instance = resourceInstanceKey(grant.resourceType, scopedKey);
+
+        // Retried, because the instance created a moment ago is not always
+        // queryable yet in a tenant Permit has just seen for the first time,
+        // and the assignment fails against a resource that does not exist to
+        // it yet. The first grant in a brand-new workspace is exactly that
+        // case — the one every new customer hits.
+        for (let attempt = 0; attempt < GRANT_ATTEMPTS; attempt += 1) {
+          await permit.api.roleAssignments
+            .assign({ user, role: ROLE_READER, tenant, resource_instance: instance })
+            .catch(swallowConflict);
+
+          // Read it back rather than trusting the write.
+          //
+          // `swallowConflict` treats 409 as "already assigned", which is right
+          // when it is and catastrophic when it is not: a grant that answered
+          // 201 while storing nothing tells an operator they have given access
+          // they have not given. It fails closed, so it is not a hole — it is
+          // worse in a different way, because the system and the person
+          // disagree about what is permitted and nothing surfaces it.
+          const held = await permit.api.roleAssignments.list({
+            user,
             tenant,
-            resource_instance: resourceInstanceKey(grant.resourceType, grant.resourceKey),
-          })
-          .catch(swallowConflict);
+            resourceInstance: instance,
+            perPage: 10,
+          });
+          if (held.some((a) => a.role === ROLE_READER)) return;
+
+          await new Promise((resolve) => setTimeout(resolve, GRANT_RETRY_MS));
+        }
+
+        // Out of attempts with nothing stored. Raising here turns a silent
+        // no-op into a 503 the caller can see and retry.
+        throw new Error(`grant not visible after ${GRANT_ATTEMPTS} attempts: ${user} -> ${instance}`);
       });
     },
 
@@ -247,7 +292,10 @@ export function createPermitPolicyFacts(config: PermitConfig): PermitPolicyFacts
             user: agentUserKey(grant.agentId),
             role: ROLE_READER,
             tenant: tenantKey(grant.workspaceId),
-            resource_instance: resourceInstanceKey(grant.resourceType, grant.resourceKey),
+            resource_instance: resourceInstanceKey(
+              grant.resourceType,
+              scopedInstanceKey(grant.workspaceId, grant.resourceKey),
+            ),
           })
           .catch(swallowNotFound);
 
@@ -265,9 +313,12 @@ export function createPermitPolicyFacts(config: PermitConfig): PermitPolicyFacts
 
         // Both ends, because either may be the first time Permit has heard of
         // it. A tuple whose endpoint does not exist is a 404, not an edge.
+        const childKey = scopedInstanceKey(link.workspaceId, link.childKey);
+        const parentKey = scopedInstanceKey(link.workspaceId, link.parentKey);
+
         for (const instance of [
-          { resource: link.childType, key: link.childKey },
-          { resource: FOLDER_RESOURCE, key: link.parentKey },
+          { resource: link.childType, key: childKey },
+          { resource: FOLDER_RESOURCE, key: parentKey },
         ]) {
           await permit.api.resourceInstances
             .create({ ...instance, tenant })
@@ -281,9 +332,9 @@ export function createPermitPolicyFacts(config: PermitConfig): PermitPolicyFacts
         // reach the whole folder.
         await permit.api.relationshipTuples
           .create({
-            subject: resourceInstanceKey(FOLDER_RESOURCE, link.parentKey),
+            subject: resourceInstanceKey(FOLDER_RESOURCE, parentKey),
             relation: RELATION_PARENT,
-            object: resourceInstanceKey(link.childType, link.childKey),
+            object: resourceInstanceKey(link.childType, childKey),
             tenant,
           })
           .catch(swallowConflict);
@@ -310,11 +361,18 @@ export function createPermitPolicyFacts(config: PermitConfig): PermitPolicyFacts
           const at = instance.indexOf(':');
           if (at <= 0) continue;
 
+          // Null means the instance is scoped to a different workspace, which a
+          // tenant-filtered listing should never return — but reporting it as
+          // this tenant's resource would be exactly the leak the scoping
+          // prevents, so it is skipped rather than guessed at.
+          const resourceKey = unscopeInstanceKey(workspaceId, instance.slice(at + 1));
+          if (resourceKey === null) continue;
+
           grants.push({
             workspaceId,
             agentId,
             resourceType: instance.slice(0, at),
-            resourceKey: instance.slice(at + 1),
+            resourceKey,
           });
         }
 

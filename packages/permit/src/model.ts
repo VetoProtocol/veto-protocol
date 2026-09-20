@@ -105,7 +105,7 @@ export const agentInstanceKey = (agentId: string): string => `${AGENT_RESOURCE}:
 export const humanInstanceKey = (userId: string): string => `${HUMAN_RESOURCE}:${userId}`;
 
 /**
- * A Drive resource as a relation endpoint: `google_folder:/Work`.
+ * A Drive resource as a relation endpoint: `google_folder:ws_x__1AbC`.
  *
  * The colon is Permit's own `type:key` grammar for instances, not our `|`
  * separator for principals. See the note at the top of this file — the two key
@@ -113,6 +113,55 @@ export const humanInstanceKey = (userId: string): string => `${HUMAN_RESOURCE}:$
  */
 export const resourceInstanceKey = (resourceType: string, key: string): string =>
   `${resourceType}:${key}`;
+
+/** Separates the workspace from the resource it scopes. Two underscores, so a
+ * single underscore inside a Drive id is never mistaken for the boundary. */
+const SCOPE_SEPARATOR = '__';
+
+/**
+ * A resource instance key, scoped to its workspace.
+ *
+ * ## Why this exists
+ *
+ * Permit enforces uniqueness on a resource instance by `(resource, key,
+ * environment)` — **not** by tenant. Two tenants cannot both hold an instance
+ * called `root`; the second gets a 409 naming the first one's id, and any role
+ * assigned against it lands on a resource belonging to somebody else's
+ * workspace.
+ *
+ * Most Drive ids are globally unique and would never have collided. `root` is
+ * not an id at all — it is Google's alias for "the top of *this* account's My
+ * Drive" — so every workspace's first folder is the same string. The first
+ * customer to grant it takes it, and every customer after them is refused.
+ *
+ * Scoping the key restores invariant 4 for a key space that did not have it:
+ * every fact Veto writes into Permit is now addressed by workspace, the same
+ * way every query, cache key and encryption context already is. It is not a
+ * defence against a confused-deputy attack — the collision denies rather than
+ * grants — it is the difference between a product that works for its second
+ * customer and one that does not.
+ *
+ * The fake does not do this, deliberately. Its key space is already a map per
+ * workspace, so it has no global namespace to collide in; scoping there would
+ * encode an adapter's workaround into the shared vocabulary. This is the same
+ * shape of asymmetry as `agent|` — an encoding one implementation needs and the
+ * other does not.
+ */
+export const scopedInstanceKey = (workspaceId: string, key: string): string =>
+  `${workspaceId}${SCOPE_SEPARATOR}${key}`;
+
+/**
+ * The resource key back out of a scoped one, or null when it belongs to another
+ * workspace.
+ *
+ * Returning null rather than the raw string matters: a listing that fell back
+ * to the unscoped value would report another tenant's resource as this
+ * tenant's, which is the leak the scoping exists to prevent.
+ */
+export const unscopeInstanceKey = (workspaceId: string, scoped: string): string | null => {
+  const prefix = `${workspaceId}${SCOPE_SEPARATOR}`;
+  return scoped.startsWith(prefix) ? scoped.slice(prefix.length) : null;
+};
 
 /**
  * The only role this product grants.
