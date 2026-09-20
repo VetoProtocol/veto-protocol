@@ -22,7 +22,8 @@
     "ajv": "8.17.1",
     "@veto/connections": "workspace:*",
     "@veto/vault": "workspace:*",
-    "@veto/webhooks": "workspace:*"
+    "@veto/webhooks": "workspace:*",
+    "@veto/health": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "22.10.2",

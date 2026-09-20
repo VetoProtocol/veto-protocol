@@ -117,6 +117,7 @@ outside a test env, and the app `.env` sets `NODE_ENV=development`.
 | `packages/presence` | §7.2 state machine. A signal, never proof of intent. |
 | `packages/webhooks` | §5.4 alerts. Enqueue is transactional; delivery is a worker. |
 | `packages/passkeys` | WebAuthn enrolment and assertion. Public keys only. |
+| `packages/health` | Startup probes. Reachability only — never validates a credential. |
 | `apps/api` | Fastify control plane (§5). Manages objects; not an enforcement point. |
 | `apps/gateway` | **The** MCP enforcement point (§3.1). Calls the pipeline in process. |
 | `apps/dashboard` | Next.js dashboard: agents, policies, connections, presence, labels, approvals, audit, alerts. Dark only. |
@@ -144,6 +145,13 @@ since migration 0001 and nothing created the first kind until stage 4.
   erases types, and a parameter property emits an assignment, so such a file compiles
   under vitest and then fails whenever anything runs it directly. Assign fields in the
   constructor body instead.
+- **Every service reports what it can reach before it serves a request.**
+  `@veto/health` probes Postgres, Redis, the PDP and Google's token endpoint at
+  boot and logs one line each. Only Postgres is fatal — invariant 1 is fail
+  closed at request time, not refuse to boot, and a gateway that will not start
+  cannot be restarted into a recovering system. A probe answers "can this be
+  reached" and never "is this key valid": validating a credential means using a
+  real secret on a path whose whole output is a log line.
 - **Every entry point that leaves the machine prefers IPv4 and does not race
   IPv6.** `--dns-result-order=ipv4first --no-network-family-autoselection`, in
   the `start` scripts of `apps/api`, `apps/gateway` and `apps/dashboard`. Node

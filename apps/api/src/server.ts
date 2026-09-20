@@ -19,6 +19,15 @@ import { createPermitPolicyDecisions, createPermitPolicyFacts, permitConfigFromE
 import Redis from 'ioredis';
 import { createApp } from './app.ts';
 import { capabilityAuthenticator } from './capability-auth.ts';
+import {
+  bootable,
+  formatReport,
+  googleTokenProbe,
+  pdpProbe,
+  postgresProbe,
+  redisProbe,
+  runProbes,
+} from '@veto/health';
 
 // The repo-root .env, with anything already in the environment winning over it.
 loadRepoEnv();
@@ -86,6 +95,34 @@ const host = process.env['API_HOST'] ?? '127.0.0.1';
 
 // Loopback by default. Binding 0.0.0.0 is a deployment decision that should be
 // made explicitly by whoever knows what is in front of the process.
+// What this process can and cannot reach, before it accepts a request.
+//
+// An unreachable dependency does not announce itself — it arrives later wearing
+// a disguise. A black-holed IPv6 route to Google reads as CONNECTION_EXPIRED,
+// "the connected account could not be used", which sounds like a revoked
+// credential; a Permit account over its tenant quota reads as
+// POLICY_UNAVAILABLE. Both cost an afternoon to trace. This turns them into one
+// line each.
+//
+// Only Postgres is fatal. Invariant 1 is fail closed at request time, not
+// refuse to boot: a service that cannot reach Permit denies every protected
+// request, which is correct, while one that will not start cannot be restarted
+// into a recovering system.
+const health = await runProbes([
+  postgresProbe((sql) => pool.query(sql)),
+  redisProbe(() => redis.ping()),
+  pdpProbe(permitConfigFromEnv().pdpUrl),
+  googleTokenProbe(),
+]);
+for (const line of formatReport(health)) {
+  const failed = line.includes('FAIL');
+  app.log[failed ? 'error' : 'info'](line);
+}
+if (!bootable(health)) {
+  app.log.error('health  a required dependency is unreachable; refusing to start');
+  process.exit(1);
+}
+
 await app.listen({ port, host });
 
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {

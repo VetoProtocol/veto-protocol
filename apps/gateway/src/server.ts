@@ -19,6 +19,15 @@ import {
 } from '@veto/connections';
 import { createLocalKeyWrapper } from '@veto/vault';
 import { createGateway } from './app.ts';
+import {
+  bootable,
+  formatReport,
+  googleTokenProbe,
+  pdpProbe,
+  postgresProbe,
+  redisProbe,
+  runProbes,
+} from '@veto/health';
 
 loadRepoEnv();
 
@@ -71,6 +80,34 @@ const app = createGateway({
   authorizationServer: process.env['GATEWAY_AUTH_SERVER'] ?? 'http://localhost:3000',
   logger: true,
 });
+
+// What this process can and cannot reach, before it accepts a request.
+//
+// An unreachable dependency does not announce itself — it arrives later wearing
+// a disguise. A black-holed IPv6 route to Google reads as CONNECTION_EXPIRED,
+// "the connected account could not be used", which sounds like a revoked
+// credential; a Permit account over its tenant quota reads as
+// POLICY_UNAVAILABLE. Both cost an afternoon to trace. This turns them into one
+// line each.
+//
+// Only Postgres is fatal. Invariant 1 is fail closed at request time, not
+// refuse to boot: a service that cannot reach Permit denies every protected
+// request, which is correct, while one that will not start cannot be restarted
+// into a recovering system.
+const health = await runProbes([
+  postgresProbe((sql) => pool.query(sql)),
+  redisProbe(() => redis.ping()),
+  pdpProbe(permitConfigFromEnv().pdpUrl),
+  googleTokenProbe(),
+]);
+for (const line of formatReport(health)) {
+  const failed = line.includes('FAIL');
+  app.log[failed ? 'error' : 'info'](line);
+}
+if (!bootable(health)) {
+  app.log.error('health  a required dependency is unreachable; refusing to start');
+  process.exit(1);
+}
 
 await app.listen({
   port: Number(process.env['GATEWAY_PORT'] ?? 4100),
