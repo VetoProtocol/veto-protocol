@@ -150,7 +150,9 @@ export default async function AgentsPage() {
             // Defaults match a local checkout. Overridable because the paths
             // are the one part of this that is genuinely machine-specific, and
             // a wrong path in a copied config fails in a way nobody can read.
-            gatewayUrl={process.env['VETO_GATEWAY_PUBLIC_URL'] ?? 'http://127.0.0.1:4100/mcp'}
+            // The same address the gateway publishes, so a pasted config and a
+            // discovered one point at one place.
+            gatewayUrl={`${(process.env['GATEWAY_PUBLIC_URL'] ?? 'http://localhost:4100').replace(/\/$/, '')}/mcp`}
             bridgePath={
               process.env['VETO_BRIDGE_PATH'] ??
               '/home/void/vetoprotocol/apps/gateway/src/desktop-bridge.ts'

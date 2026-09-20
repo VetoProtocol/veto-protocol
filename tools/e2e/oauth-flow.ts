@@ -16,7 +16,8 @@ import { mintCapability } from '@veto/tokens';
 loadRepoEnv();
 
 const DASH = 'http://localhost:3000';
-const GW = 'http://127.0.0.1:4100/mcp';
+/** Where a client *starts*: the gateway, with no other configuration. */
+const GW_ENTRY = 'http://127.0.0.1:4100/mcp';
 const WS = process.argv[2] ?? '';
 const USER = process.argv[3] ?? '';
 const REDIRECT = 'http://127.0.0.1:33418/callback';
@@ -28,12 +29,49 @@ const check = (ok: boolean, label: string, detail = '') => {
   say(`  ${ok ? 'PASS' : 'FAIL'}  ${label}${detail ? ` — ${detail}` : ''}`);
 };
 
+/**
+ * Discovery, exactly as a client does it.
+ *
+ * Nothing below is hardcoded from our own settings. The whole point is that a
+ * client configured with one address can find everything else — and when the
+ * resource indicator was a second setting, it disagreed with what the gateway
+ * published and every conforming client was answered `invalid_target` while a
+ * test with the value hardcoded passed.
+ */
+const unauthorized = await fetch(GW_ENTRY, {
+  method: 'POST',
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }),
+});
+const challengeHeader = unauthorized.headers.get('www-authenticate') ?? '';
+const metadataUrl = /resource_metadata="([^"]+)"/.exec(challengeHeader)?.[1] ?? '';
+check(metadataUrl !== '', 'the gateway says where its metadata is', metadataUrl);
+
+const resourceMeta = await (await fetch(metadataUrl)).json() as {
+  resource: string;
+  authorization_servers: string[];
+};
+const GW = resourceMeta.resource;
+const asBase = resourceMeta.authorization_servers[0] ?? '';
+check(asBase !== '', 'it names an authorization server', asBase);
+
+const asMeta = await (await fetch(`${asBase}/.well-known/oauth-authorization-server`)).json() as {
+  registration_endpoint: string;
+  authorization_endpoint: string;
+  token_endpoint: string;
+};
+check(
+  asMeta.token_endpoint.startsWith(asBase),
+  'the authorization server describes itself',
+  asMeta.token_endpoint,
+);
+
 const verifier = randomBytes(32).toString('base64url');
 const challenge = createHash('sha256').update(verifier, 'ascii').digest('base64url');
 
 // 1 — register
 const reg = await (
-  await fetch(`${DASH}/register`, {
+  await fetch(asMeta.registration_endpoint, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ client_name: 'Flow test client', redirect_uris: [REDIRECT] }),
@@ -83,7 +121,7 @@ await context.addCookies([
 
 async function approveInBrowser(): Promise<string> {
   const page = await context.newPage();
-  const url = `${DASH}/authorize?${new URLSearchParams({
+  const url = `${asMeta.authorization_endpoint}?${new URLSearchParams({
     client_id: clientId,
     redirect_uri: REDIRECT,
     response_type: 'code',
@@ -118,7 +156,7 @@ check(code !== '', 'approving in the browser yields a code', code.slice(0, 20));
 
 // 3 — exchange
 const exchange = async (extra: Record<string, string> = {}) =>
-  fetch(`${DASH}/token`, {
+  fetch(asMeta.token_endpoint, {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
@@ -135,7 +173,7 @@ check(wrongPkce['error'] === 'invalid_grant' || wrongPkce['error'] === 'invalid_
 const code2 = await approveInBrowser();
 
 const tokens = await (
-  await fetch(`${DASH}/token`, {
+  await fetch(asMeta.token_endpoint, {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
@@ -159,7 +197,7 @@ check(call['result'] !== undefined, 'the gateway accepts it', JSON.stringify(cal
 
 // 5 — replay the spent code
 const replay = await (
-  await fetch(`${DASH}/token`, {
+  await fetch(asMeta.token_endpoint, {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
@@ -172,7 +210,7 @@ check(replay['error'] === 'invalid_grant', 'a spent code cannot be replayed', St
 
 // 6 — refresh, then reuse the old one
 const refreshed = await (
-  await fetch(`${DASH}/token`, {
+  await fetch(asMeta.token_endpoint, {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
@@ -184,7 +222,7 @@ check(typeof refreshed['access_token'] === 'string', 'refresh yields a new acces
 check(refreshed['refresh_token'] !== tokens['refresh_token'], 'the refresh token rotated');
 
 const reused = await (
-  await fetch(`${DASH}/token`, {
+  await fetch(asMeta.token_endpoint, {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
@@ -195,7 +233,7 @@ const reused = await (
 check(reused['error'] === 'invalid_grant', 'the spent refresh token is refused', String(reused['error']));
 
 const afterReuse = await (
-  await fetch(`${DASH}/token`, {
+  await fetch(asMeta.token_endpoint, {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({

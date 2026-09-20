@@ -20,8 +20,18 @@ export const issuer = (): string =>
  * anywhere else, which is already true of capability tokens — this keeps it true
  * when a client is the one asking.
  */
-export const gatewayResource = (): string =>
-  (process.env['VETO_GATEWAY_PUBLIC_URL'] ?? 'http://127.0.0.1:4100/mcp').replace(/\/$/, '');
+export const gatewayResource = (): string => {
+  // Derived from the gateway's own base URL, not from a second variable.
+  //
+  // The gateway publishes `${GATEWAY_PUBLIC_URL}/mcp` as the resource in its
+  // protected-resource metadata, and a conforming client sends back exactly
+  // what it read there. When these were two settings they disagreed —
+  // `localhost` against `127.0.0.1` — and every client that followed discovery
+  // correctly was answered `invalid_target`, while a test with the address
+  // hardcoded passed. One fact, one source.
+  const base = (process.env['GATEWAY_PUBLIC_URL'] ?? 'http://localhost:4100').replace(/\/$/, '');
+  return `${base}/mcp`;
+};
 
 export const SCOPE_OAUTH_SERVER = 'oauth-server';
 
