@@ -6,7 +6,7 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "start": "node --experimental-strip-types src/server.ts"
+    "start": "node --dns-result-order=ipv4first --no-network-family-autoselection --experimental-strip-types src/server.ts"
   },
   "dependencies": {
     "@veto/core": "workspace:*",

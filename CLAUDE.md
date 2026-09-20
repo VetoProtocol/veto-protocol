@@ -144,6 +144,16 @@ since migration 0001 and nothing created the first kind until stage 4.
   erases types, and a parameter property emits an assignment, so such a file compiles
   under vitest and then fails whenever anything runs it directly. Assign fields in the
   constructor body instead.
+- **Every entry point that leaves the machine prefers IPv4 and does not race
+  IPv6.** `--dns-result-order=ipv4first --no-network-family-autoselection`, in
+  the `start` scripts of `apps/api`, `apps/gateway` and `apps/dashboard`. Node
+  races both address families by default; on a host whose IPv6 route to Google
+  is black-holed it keeps choosing the dead one, and roughly two calls in three
+  fail with `ETIMEDOUT` after a second or two. What reaches the user is
+  `CONNECTION_EXPIRED` — "the connected account could not be used" — which reads
+  as a credential problem and is not one. `curl` does not race, which is why
+  every hand-run check looks healthy. Do not remove these flags because the
+  network looks fine today.
 - **`pg` is CommonJS.** `import pg from 'pg'; const { Pool } = pg;` — a named ESM import
   fails at runtime, not at typecheck.
 - **Every tenant-scoped query runs inside `withWorkspace()`**, which sets

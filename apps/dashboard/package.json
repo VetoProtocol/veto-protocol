@@ -4,9 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "next dev --port 3000",
+    "dev": "NODE_OPTIONS='--dns-result-order=ipv4first --no-network-family-autoselection' next dev --port 3000",
     "build": "next build",
-    "start": "next start --port 3000",
+    "start": "NODE_OPTIONS='--dns-result-order=ipv4first --no-network-family-autoselection' next start --port 3000",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
