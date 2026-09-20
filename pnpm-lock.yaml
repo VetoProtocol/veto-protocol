@@ -455,6 +455,15 @@ importers:
         specifier: workspace:*
         version: link:../../packages/tokens
 
+  tools/e2e:
+    dependencies:
+      '@veto/db':
+        specifier: workspace:*
+        version: link:../../packages/db
+      '@veto/tokens':
+        specifier: workspace:*
+        version: link:../../packages/tokens
+
 packages:
 
   '@bitauth/libauth@1.19.1':
