@@ -111,7 +111,16 @@ export default async function AuthorizePage({
   // bouncing an unvalidated request through a login is a way to have somebody
   // authenticate into somebody else's flow.
   const session = await currentSession();
-  if (!session) redirect(`/signed-out?next=${encodeURIComponent('/authorize')}`);
+  // A flag from a closed set, never a URL to return to. Implementing a `next`
+  // redirect is where open redirects come from, and the previous version passed
+  // one that nothing consumed — so a signed-out user was silently dropped on
+  // the dashboard while the client waited for a code that was never coming.
+  //
+  // Resuming the request after sign-in would be better and is not free: it
+  // means holding the authorization parameters in a signed cookie across the
+  // OIDC round trip. Until then the screen says what to do instead of
+  // pretending it happened.
+  if (!session) redirect('/signed-out?reason=authorize');
 
   const agents = (await listAgents(session.credential)).agents.filter(
     (agent) => agent.status !== 'revoked',

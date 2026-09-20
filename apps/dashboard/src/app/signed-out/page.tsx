@@ -12,6 +12,10 @@ const REASONS: Record<string, string> = {
   rejected: 'Sign-in could not be verified. Start again.',
   unknown: 'That account is not a member of any workspace here.',
   ambiguous: 'That account belongs to more than one workspace.',
+  // An application asked to connect while nobody was signed in. Sign-in cannot
+  // resume the request — it lands on the dashboard — so the honest instruction
+  // is to start it again from the application.
+  authorize: 'Sign in, then start the connection again from the application that asked.',
 };
 
 export default async function SignedOut({

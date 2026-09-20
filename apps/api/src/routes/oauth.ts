@@ -29,6 +29,7 @@ import {
   issueCode,
   issueRefresh,
   redeemCode,
+  redirectUriMatches,
   registerClient,
   rotateRefresh,
   validateRegistration,
@@ -98,6 +99,16 @@ export interface OAuthRoutesDeps {
  * effect.
  */
 const ACCESS_TTL_MS = 10 * 60 * 1000;
+
+/**
+ * The one resource this server issues tokens for.
+ *
+ * Derived from the gateway's own published address, so a client that reads the
+ * protected-resource metadata and echoes it back is answered rather than
+ * refused — these were two settings once, and they disagreed.
+ */
+const gatewayResource = (): string =>
+  `${(process.env['GATEWAY_PUBLIC_URL'] ?? 'http://localhost:4100').replace(/\/$/, '')}/mcp`;
 
 /**
  * How many clients one caller may register in an hour.
@@ -269,6 +280,33 @@ export function registerOAuthRoutes(app: FastifyInstance, deps: OAuthRoutesDeps)
 
       const client = await findClient(deps.pool, body.client_id);
       if (!client) throw new HttpError(404, 'CLIENT_UNKNOWN', 'No such client');
+
+      // Checked here as well as on the consent page.
+      //
+      // The page validates the redirect URI before it renders the form, and the
+      // form carries it in a hidden field — one check, in one place, on the
+      // value that decides where a code is delivered. Anything that reached
+      // this route with a tampered field would get a code minted for an address
+      // the client never registered, and the browser would be sent there with
+      // it. The screen and the mint are different trust domains; each does its
+      // own check.
+      if (!redirectUriMatches(client, body.redirect_uri)) {
+        throw new HttpError(
+          400,
+          'REDIRECT_URI_MISMATCH',
+          'That redirect URI is not registered to this client',
+        );
+      }
+
+      // Same reasoning for the audience. A code approved for one resource must
+      // not become a token for another (RFC 8707).
+      if (body.resource.replace(/\/$/, '') !== gatewayResource()) {
+        throw new HttpError(
+          400,
+          'RESOURCE_OUT_OF_SCOPE',
+          'This server only issues tokens for the Veto gateway',
+        );
+      }
 
       const agent = await withWorkspace(deps.pool, body.workspace_id, (db) =>
         findAgent(db, body.workspace_id, body.agent_id),

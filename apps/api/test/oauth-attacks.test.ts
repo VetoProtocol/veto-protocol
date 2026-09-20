@@ -30,7 +30,16 @@ const ALICE = `usr_alice${s}`;
 const CAROL = `usr_carol${s}`;
 const SECRET = randomBytes(24).toString('hex');
 const REDIRECT = 'http://127.0.0.1:7777/cb';
-const RESOURCE = 'http://127.0.0.1:4100/mcp';
+/**
+ * Derived the same way the server derives it, not hardcoded.
+ *
+ * This constant was `http://127.0.0.1:4100/mcp` and the server now says
+ * `http://localhost:4100/mcp`, so every test that minted a code started
+ * failing — which is the bug being fixed, reappearing in the test that was
+ * supposed to catch it. A test that pins the address cannot notice the address
+ * changing.
+ */
+const RESOURCE = `${(process.env['GATEWAY_PUBLIC_URL'] ?? 'http://localhost:4100').replace(/\/$/, '')}/mcp`;
 
 const verifier = randomBytes(32).toString('base64url');
 const challenge = createHash('sha256').update(verifier, 'ascii').digest('base64url');
@@ -285,6 +294,31 @@ describe('the credential that opens the token endpoint', () => {
       as(WS, ALICE),
     );
     expect(response.statusCode).toBe(403);
+  });
+});
+
+describe('the code endpoint does not trust the consent screen', () => {
+  it('refuses a redirect_uri the client never registered', async () => {
+    // The page validates this before rendering the form, and the form carries
+    // it in a hidden field. That is one check, in one place, on a value whose
+    // whole purpose is to say where a code gets delivered — so the service that
+    // mints the code checks it too.
+    const response = await mintCode({ redirect_uri: 'http://127.0.0.1:9999/cb' });
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error.code).toBe('REDIRECT_URI_MISMATCH');
+  });
+
+  it('refuses a redirect_uri registered by a different client', async () => {
+    // `http://127.0.0.1:9999/cb` is the rival's registered URI. Being somebody's
+    // does not make it this client's.
+    const response = await mintCode({ redirect_uri: 'http://127.0.0.1:9999/cb' });
+    expect(response.statusCode).toBe(400);
+  });
+
+  it('refuses a resource that is not the gateway', async () => {
+    const response = await mintCode({ resource: 'https://evil.example/mcp' });
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error.code).toBe('RESOURCE_OUT_OF_SCOPE');
   });
 });
 
