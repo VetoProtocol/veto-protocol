@@ -126,6 +126,38 @@ const gatewayResource = (): string =>
 const REGISTRATIONS_PER_HOUR = 60;
 const REGISTRATION_WINDOW_SECONDS = 3600;
 
+/**
+ * A bound on the token endpoint.
+ *
+ * Unauthenticated by necessity — a public client has no credential to present —
+ * and every call touches Redis and Postgres. Codes and refresh tokens are 256
+ * bits, so this is not about guessing: it is about an open endpoint that does
+ * database work being able to do unbounded database work.
+ *
+ * Sixty a minute per address is far above legitimate use. A client refreshes
+ * roughly every ten minutes, so a whole office behind one address stays well
+ * inside it, while a loop does not.
+ */
+const TOKEN_CALLS_PER_MINUTE = 60;
+const TOKEN_WINDOW_SECONDS = 60;
+
+/**
+ * Count a call against a bucket, and say whether it is over.
+ *
+ * Keyed by caller address. Crude — everyone behind one proxy shares a key — and
+ * the alternative is no bound at all on an endpoint that has to stay open.
+ */
+async function overLimit(
+  redis: Redis,
+  bucket: string,
+  limit: number,
+  windowSeconds: number,
+): Promise<boolean> {
+  const used = await redis.incr(bucket);
+  if (used === 1) await redis.expire(bucket, windowSeconds);
+  return used > limit;
+}
+
 const TOKEN_RESPONSE = {
   type: 'object',
   required: ['access_token', 'token_type', 'expires_in', 'refresh_token'],
@@ -213,22 +245,29 @@ export function registerOAuthRoutes(app: FastifyInstance, deps: OAuthRoutesDeps)
       // remote host is a code somebody else also receives.
       const invalid = validateRegistration(body.client_name, body.redirect_uris);
       if (invalid !== null) {
-        throw new HttpError(
-          400,
-          invalid,
-          invalid === 'REDIRECT_URI_INVALID'
-            ? 'A redirect URI must be https, a loopback address, or a private-use scheme'
-            : 'Client name and at least one redirect URI are required',
-        );
+        // A distinct message per failure. "Client name and a redirect URI are
+        // required" for a name that was supplied and rejected sends a
+        // developer looking for a field they already filled in.
+        const REASON: Record<string, string> = {
+          REDIRECT_URI_INVALID:
+            'A redirect URI must be https, a loopback address, or a private-use scheme',
+          REDIRECT_URIS_MISSING: 'At least one redirect URI is required',
+          NAME_INVALID:
+            'client_name must be one line of visible text — no control, zero-width or bidirectional characters',
+        };
+        throw new HttpError(400, invalid, REASON[invalid] ?? 'That registration was refused');
       }
 
       // Keyed by caller address. Crude — a caller behind a proxy shares a key
       // with everyone else behind it — and the alternative is no bound at all
       // on an endpoint that must stay open.
-      const bucket = `veto:oauth:register:${request.ip}`;
-      const used = await deps.redis.incr(bucket);
-      if (used === 1) await deps.redis.expire(bucket, REGISTRATION_WINDOW_SECONDS);
-      if (used > REGISTRATIONS_PER_HOUR) {
+      const over = await overLimit(
+        deps.redis,
+        `veto:oauth:register:${request.ip}`,
+        REGISTRATIONS_PER_HOUR,
+        REGISTRATION_WINDOW_SECONDS,
+      );
+      if (over) {
         throw new HttpError(
           429,
           'VOLUME_LIMIT_EXCEEDED',
@@ -401,6 +440,21 @@ export function registerOAuthRoutes(app: FastifyInstance, deps: OAuthRoutesDeps)
       requireScope(request, SCOPE_OAUTH_SERVER);
       const body = request.body;
 
+      if (
+        await overLimit(
+          deps.redis,
+          `veto:oauth:token:${request.ip}`,
+          TOKEN_CALLS_PER_MINUTE,
+          TOKEN_WINDOW_SECONDS,
+        )
+      ) {
+        throw new HttpError(
+          429,
+          'VOLUME_LIMIT_EXCEEDED',
+          'Too many token requests from this address; try again shortly',
+        );
+      }
+
       // Refuse rather than mint with a key too weak to sign with. A token
       // endpoint that issued something the gateway then rejected would look
       // like a broken client and be a broken deployment.
@@ -442,7 +496,11 @@ export function registerOAuthRoutes(app: FastifyInstance, deps: OAuthRoutesDeps)
         // The code was issued to one client. Another presenting it is either a
         // mix-up or a theft, and neither gets a token.
         if (grant.clientId !== client.id) {
-          throw new HttpError(400, 'IDENTITY_UNRESOLVED', 'That code was issued to another client');
+          // The same wording as an unknown or spent code, and deliberately so.
+          // Saying "issued to another client" tells whoever is holding it that
+          // the code was real — and the only way to be holding somebody else's
+          // code is to have taken it.
+          throw new HttpError(400, 'APPROVAL_EXPIRED', 'That code is not redeemable');
         }
 
         // RFC 6749 §4.1.3: the redirect URI at exchange must equal the one the

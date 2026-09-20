@@ -42,11 +42,61 @@ export { redirectUriAllowed } from './redirect.ts';
 export const redirectUriMatches = (client: OAuthClient, uri: string): boolean =>
   matches(client.redirectUris, uri);
 
+/**
+ * Characters that change how a name *reads* rather than what it says.
+ *
+ * The consent screen shows `client_name` to a person who is deciding. React
+ * escapes it, so there is no injection — but a right-to-left override reverses
+ * the text after it, and somebody reading the result has been told something
+ * the string does not contain. A zero-width space splits a word that looks
+ * whole, so two clients can present the same name. A newline turns a name into
+ * a sentence the product did not write.
+ *
+ *   U+0000–U+001F, U+007F–U+009F  control characters, including newlines
+ *   U+200B–U+200F                 zero-width and bidi marks
+ *   U+202A–U+202E                 bidi embedding and override
+ *   U+2066–U+2069                 bidi isolates
+ *   U+FEFF                        zero-width no-break space
+ *
+ * Rejected, not stripped. Silently rewriting what a client asked to be called
+ * would show one name on this screen and a different one in its own interface,
+ * and the person comparing them is the one this check is for.
+ *
+ * This is not a defence against a client that calls itself something
+ * misleading in plain characters — nothing here can be. That is the consent
+ * screen's wording to handle, and it does, by saying the name is self-declared
+ * and showing the redirect address instead.
+ */
+const DECEPTIVE_RANGES: ReadonlyArray<readonly [number, number]> = [
+  [0x0000, 0x001f], // C0 controls, including newline and tab
+  [0x007f, 0x009f], // delete and C1 controls
+  [0x200b, 0x200f], // zero-width space through the bidi marks
+  [0x202a, 0x202e], // bidi embedding and override
+  [0x2066, 0x2069], // bidi isolates
+  [0xfeff, 0xfeff], // zero-width no-break space
+];
+
+/**
+ * Checked by code point rather than a character class.
+ *
+ * A regex with literal control characters in it is almost always a mistake —
+ * lint says so, and is right — so the deliberate version says which ranges and
+ * why beside each one, which a character class cannot.
+ */
+const isDeceptive = (name: string): boolean => {
+  for (const character of name) {
+    const point = character.codePointAt(0) ?? 0;
+    if (DECEPTIVE_RANGES.some(([low, high]) => point >= low && point <= high)) return true;
+  }
+  return false;
+};
+
 export function validateRegistration(
   clientName: string,
   redirectUris: readonly string[],
 ): RegistrationFailure | null {
   if (clientName.trim() === '' || clientName.length > 200) return 'NAME_INVALID';
+  if (isDeceptive(clientName)) return 'NAME_INVALID';
   if (redirectUris.length === 0 || redirectUris.length > 10) return 'REDIRECT_URIS_MISSING';
   if (!redirectUris.every(allowed)) return 'REDIRECT_URI_INVALID';
   return null;

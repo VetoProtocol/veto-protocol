@@ -112,6 +112,53 @@ describe('what may be registered', () => {
     expect(validateRegistration('   ', ['https://app.example.com/cb'])).toBe('NAME_INVALID');
   });
 
+  it('refuses a name that can rewrite how the screen reads', () => {
+    // The consent screen shows this name to a person who is deciding. React
+    // escapes it, so there is no XSS — but a right-to-left override reverses
+    // the text that follows it, and a person reading "Veto Admin ⁧settings"
+    // has been told something the string does not say.
+    //
+    // Rejected rather than stripped: silently changing what a client asked to
+    // be called would show one name here and another in its own UI.
+    const bidi = ['\u202E', '\u202A', '\u2066', '\u200F', '\u200E'];
+    for (const mark of bidi) {
+      expect(
+        validateRegistration(`Veto Admin${mark} gnitteS`, ['https://app.example.com/cb']),
+        JSON.stringify(mark),
+      ).toBe('NAME_INVALID');
+    }
+  });
+
+  it('refuses invisible characters', () => {
+    // A zero-width space splits a word that reads as one, so two different
+    // clients can present the same name to a person.
+    for (const mark of ['\u200B', '\u200D', '\uFEFF']) {
+      expect(
+        validateRegistration(`Veto${mark} Admin`, ['https://app.example.com/cb']),
+        JSON.stringify(mark),
+      ).toBe('NAME_INVALID');
+    }
+  });
+
+  it('refuses newlines and control characters', () => {
+    // A name is one line on one screen. Anything that can add a second line is
+    // a name that can add a sentence the product did not write.
+    for (const mark of ['\n', '\r', '\t', '\u0000', '\u001B']) {
+      expect(
+        validateRegistration(`Claude${mark}verified`, ['https://app.example.com/cb']),
+        JSON.stringify(mark),
+      ).toBe('NAME_INVALID');
+    }
+  });
+
+  it('still accepts ordinary names, including non-Latin ones', () => {
+    // The rule is about characters that change how text is *read*, not about
+    // which language it is in.
+    for (const name of ['Claude Desktop', 'Cursor 2.0', 'クロード', 'Zürich Client']) {
+      expect(validateRegistration(name, ['https://app.example.com/cb']), name).toBeNull();
+    }
+  });
+
   it('accepts a name that is a lie, because the consent screen owns that problem', () => {
     // A client calling itself "Veto Admin" is phishing. Nothing here can tell,
     // and pretending otherwise would put the check in the wrong place — the

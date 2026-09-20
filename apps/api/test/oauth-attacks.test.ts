@@ -105,6 +105,7 @@ beforeAll(async () => {
   // reports the same one. A previous run's bucket has an hour to live, so a
   // suite that did not clear it would fail for an hour after one flood test.
   await redis.del('veto:oauth:register:127.0.0.1');
+  await redis.del('veto:oauth:token:127.0.0.1');
 
   await app.ready();
 
@@ -136,7 +137,9 @@ describe('a code belongs to the client that asked for it', () => {
     // code's authorization.
     const stolen = await exchange({ code, client_id: rivalClientId });
     expect(stolen.statusCode).toBe(400);
-    expect(stolen.json().error.code).toBe('IDENTITY_UNRESOLVED');
+    // The same answer an unknown code gets. "Issued to another client" would
+    // confirm the code was real to whoever took it.
+    expect(stolen.json().error.code).toBe('APPROVAL_EXPIRED');
   });
 
   it('spends the code even when the exchange then fails', async () => {
