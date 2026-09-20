@@ -67,8 +67,30 @@ export type RefreshResult =
   | { readonly ok: true; readonly issued: IssuedRefresh }
   | { readonly ok: false; readonly reason: RefreshFailure };
 
-/** 256 bits, base64url. Opaque to the client; it never parses it. */
-const mintSecret = (): string => randomBytes(32).toString('base64url');
+/**
+ * `{workspaceId}.{secret}` — 256 bits of randomness with its tenant in front.
+ *
+ * The prefix is a routing hint and nothing more. `oauth_refresh_tokens` has
+ * FORCEd row-level security, so a lookup by hash returns nothing unless the
+ * transaction already names a workspace — and the workspace is not knowable
+ * from a bare random string. Putting it in the token is how the row becomes
+ * findable at all.
+ *
+ * It grants nothing. The hash covers the whole token including the prefix, so a
+ * token from one workspace re-presented with another's prefix hashes to
+ * something that exists nowhere. Editing it turns a working credential into an
+ * unknown one, which is the only thing it can do.
+ */
+const mintToken = (workspaceId: string): string =>
+  `${workspaceId}.${randomBytes(32).toString('base64url')}`;
+
+/** The workspace a token claims, or null when it claims nothing usable. */
+export function workspaceOf(token: string): string | null {
+  const dot = token.indexOf('.');
+  if (dot <= 0) return null;
+  const workspaceId = token.slice(0, dot);
+  return /^ws_[A-Za-z0-9_-]{1,64}$/.test(workspaceId) ? workspaceId : null;
+}
 
 export const hashToken = (token: string): string =>
   createHash('sha256').update(token, 'utf8').digest('hex');
@@ -95,7 +117,7 @@ interface Row {
 
 /** Write one token. Used both for a fresh chain and for each rotation. */
 async function insert(db: Db, grant: RefreshGrant): Promise<IssuedRefresh> {
-  const token = mintSecret();
+  const token = mintToken(grant.workspaceId);
   const expiresAt = new Date(Date.now() + REFRESH_TTL_MS);
 
   await db.query(
@@ -146,6 +168,10 @@ export async function rotateRefresh(
   presented: string,
   clientId: string,
 ): Promise<RefreshResult> {
+  // The caller has already opened a transaction for the workspace this token
+  // names, so row-level security scopes the lookup. A token bearing another
+  // tenant's prefix simply is not here, which is the isolation rather than a
+  // check on top of it.
   const { rows } = await db.query<Row>(
     `select id, workspace_id, user_id, agent_id, client_id, token_hash, chain_id, status,
             expires_at

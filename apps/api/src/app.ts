@@ -43,6 +43,12 @@ export interface AppDeps {
   readonly decisions: PolicyDecisions;
   /** Wraps the data keys protecting stored provider credentials. */
   readonly wrapper: KeyWrapper;
+  /**
+   * Signs the access tokens the §8 token endpoint issues. Optional so every
+   * existing test keeps constructing an app the same way; the OAuth routes
+   * refuse rather than mint with a weak key when it is absent.
+   */
+  readonly capabilitySecret?: string;
   /** Null when Google is not configured; the connect route then refuses rather than half-works. */
   readonly google?: GoogleOAuthConfig | null;
   /** Null disables the passkey routes; approvals then cannot be resolved at all. */
@@ -134,7 +140,11 @@ export function createApp(deps: AppDeps): FastifyInstance {
     // no shared instance to reach for.
     drive: deps.drive ?? createDriveReader(),
   });
-  registerOAuthRoutes(app, { pool: deps.pool, redis: deps.redis });
+  registerOAuthRoutes(app, {
+    pool: deps.pool,
+    redis: deps.redis,
+    capabilitySecret: deps.capabilitySecret ?? '',
+  });
   registerWebhookRoutes(app, { pool: deps.pool, wrapper: deps.wrapper });
   registerConnectionRoutes(app, {
     pool: deps.pool,

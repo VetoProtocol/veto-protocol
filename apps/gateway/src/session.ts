@@ -26,10 +26,13 @@ import { withWorkspace } from '@veto/db';
 import { findAgent } from '@veto/identity';
 import { verifyCapability } from '@veto/tokens';
 import { RPC, RpcError } from './jsonrpc.ts';
+import { GATEWAY_AUDIENCE, GATEWAY_SCOPE } from '@veto/tokens';
 
 /** Pinned so a control-plane token cannot be replayed at the gateway. */
-export const GATEWAY_AUDIENCE = 'veto-gateway';
-export const GATEWAY_SCOPE = 'mcp';
+// Defined in @veto/tokens and re-exported here, because the authorization
+// server mints these too and a second definition that drifted would produce
+// tokens this file silently refuses.
+export { GATEWAY_AUDIENCE, GATEWAY_SCOPE };
 
 export interface GatewaySession {
   readonly workspaceId: string;

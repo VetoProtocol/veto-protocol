@@ -87,6 +87,9 @@ const app = createApp({
   webauthn,
   exchange: google === null ? null : createGoogleExchange(google),
   authenticate: capabilityAuthenticator(required('VETO_CAPABILITY_SECRET')),
+  // The same key, used the other way round: the authenticator verifies tokens
+  // this process receives, and the §8 token endpoint signs the ones it issues.
+  capabilitySecret: required('VETO_CAPABILITY_SECRET'),
   logger: true,
 });
 

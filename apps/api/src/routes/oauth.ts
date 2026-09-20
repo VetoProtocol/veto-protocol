@@ -22,13 +22,19 @@ import type { Pool } from 'pg';
 import type Redis from 'ioredis';
 import { findAgent } from '@veto/identity';
 import { withWorkspace } from '@veto/db';
+import { GATEWAY_AUDIENCE, GATEWAY_SCOPE, mintCapability } from '@veto/tokens';
 import {
+  checkVerifier,
   findClient,
   issueCode,
+  issueRefresh,
   redeemCode,
   registerClient,
+  rotateRefresh,
   validateRegistration,
+  workspaceOf,
   type CodeGrant,
+  type RefreshGrant,
 } from '@veto/oauth';
 import { ERROR_SCHEMA, HttpError } from '../errors.ts';
 import { requireScope, SCOPE_OAUTH_SERVER } from '../scope.ts';
@@ -79,6 +85,54 @@ interface RegisterBody {
 export interface OAuthRoutesDeps {
   readonly pool: Pool;
   readonly redis: Redis;
+  /** Signs the access tokens the gateway accepts. */
+  readonly capabilitySecret: string;
+}
+
+/**
+ * How long an access token lives.
+ *
+ * Ten minutes, inside `MAX_TTL_MS`. Short because the gateway re-reads the
+ * agent's row on every request anyway — the token's lifetime is the window in
+ * which a *leaked* one works, not the window in which a revocation takes
+ * effect.
+ */
+const ACCESS_TTL_MS = 10 * 60 * 1000;
+
+const TOKEN_RESPONSE = {
+  type: 'object',
+  required: ['access_token', 'token_type', 'expires_in', 'refresh_token'],
+  properties: {
+    access_token: { type: 'string' },
+    token_type: { type: 'string' },
+    expires_in: { type: 'integer' },
+    refresh_token: { type: 'string' },
+  },
+} as const;
+
+const TOKEN_BODY = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['grant_type', 'client_id'],
+  properties: {
+    grant_type: { type: 'string', enum: ['authorization_code', 'refresh_token'] },
+    client_id: { type: 'string', pattern: '^oac_[A-Za-z0-9_-]{1,64}$' },
+    code: { type: 'string', minLength: 1, maxLength: 200 },
+    code_verifier: { type: 'string', minLength: 1, maxLength: 256 },
+    redirect_uri: { type: 'string', minLength: 1, maxLength: 2048 },
+    refresh_token: { type: 'string', minLength: 1, maxLength: 200 },
+    resource: { type: 'string', minLength: 1, maxLength: 2048 },
+  },
+} as const;
+
+interface TokenBody {
+  grant_type: 'authorization_code' | 'refresh_token';
+  client_id: string;
+  code?: string;
+  code_verifier?: string;
+  redirect_uri?: string;
+  refresh_token?: string;
+  resource?: string;
 }
 
 const GRANT_BODY = {
@@ -251,6 +305,142 @@ export function registerOAuthRoutes(app: FastifyInstance, deps: OAuthRoutesDeps)
         code_challenge: grant.codeChallenge,
         resource: grant.resource,
       };
+    },
+  );
+
+  /**
+   * The token endpoint.
+   *
+   * Every check lives here rather than in the dashboard that fronts it: this is
+   * the service holding the code, the refresh row and the signing key, and
+   * splitting the checks across a network hop would mean each half trusting the
+   * other to have done its share.
+   *
+   * The access token it mints is the ordinary capability token the gateway
+   * already accepts. A token obtained through OAuth is indistinguishable from
+   * one the bridge made, which is the point — the gateway did not have to
+   * change for any of this.
+   */
+  app.post(
+    '/v1/oauth/token',
+    {
+      schema: {
+        body: TOKEN_BODY,
+        response: { 200: TOKEN_RESPONSE, '4xx': ERROR_SCHEMA, '5xx': ERROR_SCHEMA },
+      },
+    },
+    async (request: FastifyRequest<{ Body: TokenBody }>) => {
+      requireScope(request, SCOPE_OAUTH_SERVER);
+      const body = request.body;
+
+      // Refuse rather than mint with a key too weak to sign with. A token
+      // endpoint that issued something the gateway then rejected would look
+      // like a broken client and be a broken deployment.
+      if (deps.capabilitySecret.length < 32) {
+        throw new HttpError(503, 'POLICY_UNAVAILABLE', 'This server cannot issue tokens');
+      }
+
+      const client = await findClient(deps.pool, body.client_id);
+      if (!client) throw new HttpError(401, 'CLIENT_UNKNOWN', 'No such client');
+
+      const issue = (grant: RefreshGrant, refreshToken: string) => ({
+        access_token: mintCapability(deps.capabilitySecret, {
+          aud: GATEWAY_AUDIENCE,
+          workspaceId: grant.workspaceId,
+          humanId: grant.userId,
+          agentId: grant.agentId,
+          action: GATEWAY_SCOPE,
+          resource: 'mcp',
+          ttlMs: ACCESS_TTL_MS,
+        }),
+        token_type: 'Bearer',
+        expires_in: Math.floor(ACCESS_TTL_MS / 1000),
+        refresh_token: refreshToken,
+      });
+
+      if (body.grant_type === 'authorization_code') {
+        const code = body.code ?? '';
+        const verifier = body.code_verifier ?? '';
+        if (code === '' || verifier === '') {
+          throw new HttpError(400, 'ARGUMENT_SCHEMA_INVALID', 'code and code_verifier are required');
+        }
+
+        // Spent here, once. Everything after this point fails without the code
+        // being reusable — a failed exchange must not leave a live code behind
+        // for a second attempt to guess its way through.
+        const grant = await redeemCode(deps.redis, code);
+        if (!grant) throw new HttpError(400, 'APPROVAL_EXPIRED', 'That code is not redeemable');
+
+        // The code was issued to one client. Another presenting it is either a
+        // mix-up or a theft, and neither gets a token.
+        if (grant.clientId !== client.id) {
+          throw new HttpError(400, 'IDENTITY_UNRESOLVED', 'That code was issued to another client');
+        }
+
+        // RFC 6749 §4.1.3: the redirect URI at exchange must equal the one the
+        // code was issued for. Compared whole, like everywhere else.
+        if ((body.redirect_uri ?? '') !== grant.redirectUri) {
+          throw new HttpError(400, 'ARGUMENT_SCHEMA_INVALID', 'redirect_uri does not match');
+        }
+
+        // A resource narrower or different from the approved one is not a
+        // token this server issues. Omitted means "as approved".
+        const asked = (body.resource ?? grant.resource).replace(/\/$/, '');
+        if (asked !== grant.resource) {
+          throw new HttpError(400, 'RESOURCE_OUT_OF_SCOPE', 'resource does not match the approval');
+        }
+
+        const pkce = checkVerifier(verifier, grant.codeChallenge);
+        if (pkce !== null) {
+          // The intercepted-code case: whoever has the code does not have the
+          // verifier, and this is where that stops being enough.
+          throw new HttpError(400, 'ARGUMENT_SCHEMA_INVALID', 'code_verifier does not match');
+        }
+
+        const refresh = await withWorkspace(deps.pool, grant.workspaceId, (db) =>
+          issueRefresh(db, {
+            workspaceId: grant.workspaceId,
+            userId: grant.userId,
+            agentId: grant.agentId,
+            clientId: grant.clientId,
+          }),
+        );
+
+        return issue(refresh, refresh.token);
+      }
+
+      const presented = body.refresh_token ?? '';
+      if (presented === '') {
+        throw new HttpError(400, 'ARGUMENT_SCHEMA_INVALID', 'refresh_token is required');
+      }
+
+      // The workspace comes from the token's own prefix, because the row cannot
+      // be found without it: `oauth_refresh_tokens` has FORCEd row-level
+      // security and a lookup outside a workspace returns nothing. The prefix
+      // is a routing hint and grants nothing — the hash covers it, so a token
+      // wearing another tenant's prefix hashes to something that exists nowhere.
+      const workspaceId = workspaceOf(presented);
+      if (workspaceId === null) {
+        throw new HttpError(400, 'APPROVAL_EXPIRED', 'That refresh token is not usable');
+      }
+
+      // Rotation locks the row, so two concurrent refreshes cannot both spend
+      // the same token and fork the chain.
+      const rotated = await withWorkspace(deps.pool, workspaceId, (db) =>
+        rotateRefresh(db, presented, client.id),
+      );
+
+      if (!rotated.ok) {
+        throw new HttpError(
+          400,
+          rotated.reason === 'REFRESH_REUSED' ? 'APPROVAL_REPLAYED' : 'APPROVAL_EXPIRED',
+          rotated.reason === 'REFRESH_REUSED'
+            ? 'That refresh token was already used; the session has been revoked'
+            : 'That refresh token is not usable',
+        );
+      }
+
+      return issue(rotated.issued, rotated.issued.token);
     },
   );
 

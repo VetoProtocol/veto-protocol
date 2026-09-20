@@ -521,6 +521,10 @@ importers:
       permitio:
         specifier: 2.7.6
         version: 2.7.6
+    devDependencies:
+      playwright:
+        specifier: 1.63.0
+        version: 1.63.0
 
 packages:
 

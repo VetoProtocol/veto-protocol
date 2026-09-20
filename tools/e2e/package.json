@@ -8,5 +8,8 @@
     "@veto/tokens": "workspace:*",
     "@veto/permit": "workspace:*",
     "permitio": "2.7.6"
+  },
+  "devDependencies": {
+    "playwright": "1.63.0"
   }
 }

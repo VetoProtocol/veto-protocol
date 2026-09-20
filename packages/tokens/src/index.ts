@@ -71,6 +71,21 @@ export interface MintInput {
  */
 export const MAX_TTL_MS = 15 * 60 * 1000;
 
+/**
+ * Who a gateway token is for, and what it says it is for.
+ *
+ * Here rather than in the gateway because two services now mint these: the
+ * gateway's own bridge, and the §8 authorization server's token endpoint. A
+ * second definition that drifted would produce tokens the gateway silently
+ * refuses — a failure that looks like a broken client and is not.
+ *
+ * These are labels, not authority. A token carrying them proves only who minted
+ * it and for whom; what that agent may do is decided by the pipeline, per
+ * request (invariant 8).
+ */
+export const GATEWAY_AUDIENCE = 'veto-gateway';
+export const GATEWAY_SCOPE = 'mcp';
+
 export class CapabilityError extends Error {
   readonly reason: string;
 
