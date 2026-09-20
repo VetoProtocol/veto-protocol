@@ -62,7 +62,7 @@ export const TOOLS: readonly ToolDefinition[] = [
     title: 'List a Drive folder',
     description:
       'List the files in one Google Drive folder. Listing a folder is a separate permission ' +
-      'from reading the files inside it.',
+      'from reading the files inside it. Use folder_id "root" for the top of My Drive.',
     action: 'read',
     resourceType: 'google_folder',
     inputSchema: {
@@ -70,7 +70,16 @@ export const TOOLS: readonly ToolDefinition[] = [
       additionalProperties: false,
       required: ['folder_id'],
       properties: {
-        folder_id: { type: 'string', minLength: 1, maxLength: 200 },
+        // Required, and deliberately not defaulted to "root". A default would
+        // widen a request nobody made — the same reason a calendar listing
+        // refuses a missing end rather than reaching back to the beginning of
+        // time. Named here so a caller does not have to guess the string.
+        folder_id: {
+          type: 'string',
+          minLength: 1,
+          maxLength: 200,
+          description: 'Drive folder id, or "root" for the top of My Drive.',
+        },
         page_size: { type: 'integer', minimum: 1, maximum: 100 },
         declared_intent: { type: 'string', maxLength: 500 },
       },
