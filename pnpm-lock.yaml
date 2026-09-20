@@ -460,9 +460,15 @@ importers:
       '@veto/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@veto/permit':
+        specifier: workspace:*
+        version: link:../../packages/permit
       '@veto/tokens':
         specifier: workspace:*
         version: link:../../packages/tokens
+      permitio:
+        specifier: 2.7.6
+        version: 2.7.6
 
 packages:
 

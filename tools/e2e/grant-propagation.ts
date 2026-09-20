@@ -10,6 +10,7 @@
 import { loadRepoEnv, createPool, withWorkspace } from '@veto/db';
 import { mintCapability } from '@veto/tokens';
 import { randomBytes } from 'node:crypto';
+import { deletePermitTenant } from './permit-cleanup.ts';
 
 loadRepoEnv();
 const API = 'http://127.0.0.1:4000';
@@ -92,5 +93,8 @@ try {
     await new Promise((r) => setTimeout(r, 2000));
   }
 } finally {
+  // The Permit tenant is the thing that counts against the account, so it goes
+  // whatever happened above. The Postgres rows are left for inspection.
+  await deletePermitTenant(WS);
   await pool.end();
 }

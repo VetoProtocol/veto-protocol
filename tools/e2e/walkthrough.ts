@@ -17,6 +17,7 @@
 
 import { randomBytes } from 'node:crypto';
 import { loadRepoEnv, createPool, withWorkspace } from '@veto/db';
+import { deletePermitTenant } from './permit-cleanup.ts';
 import { mintCapability } from '@veto/tokens';
 
 loadRepoEnv();
@@ -526,5 +527,9 @@ try {
   say(`workspace ${WS} — left in place for inspection`);
   if (failed > 0) process.exitCode = 1;
 } finally {
+  // Permit counts tenants against the account, and a walkthrough run per day
+  // adds up to an outage nobody traces back here. The Postgres workspace stays
+  // for inspection; the tenant does not.
+  await deletePermitTenant(WS);
   await pool.end();
 }

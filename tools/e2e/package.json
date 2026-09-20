@@ -5,6 +5,8 @@
   "type": "module",
   "dependencies": {
     "@veto/db": "workspace:*",
-    "@veto/tokens": "workspace:*"
+    "@veto/tokens": "workspace:*",
+    "@veto/permit": "workspace:*",
+    "permitio": "2.7.6"
   }
 }
