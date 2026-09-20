@@ -207,6 +207,28 @@ export const listGrants = (credential: string): Promise<{ grants: GrantView[] }>
 export const createGrant = (credential: string, body: GrantView): Promise<GrantView> =>
   request('/v1/grants', { method: 'POST', credential, body: JSON.stringify(body) });
 
+export interface HierarchyReport {
+  readonly folders: number;
+  readonly links: number;
+  readonly truncated: boolean;
+  readonly depth: number;
+}
+
+/**
+ * Teach Permit where the files under a folder live.
+ *
+ * Slow on purpose — it walks Drive and writes one containment edge per child,
+ * so a large folder is hundreds of upstream calls. The caller has to be willing
+ * to wait, which is why this is a button somebody presses rather than something
+ * that happens during a grant.
+ */
+export const syncHierarchy = (credential: string, folderId: string): Promise<HierarchyReport> =>
+  request('/v1/grants/sync', {
+    method: 'POST',
+    credential,
+    body: JSON.stringify({ folder_id: folderId }),
+  });
+
 export const revokeGrant = (credential: string, body: GrantView): Promise<{ revoked: boolean }> =>
   request('/v1/grants', { method: 'DELETE', credential, body: JSON.stringify(body) });
 

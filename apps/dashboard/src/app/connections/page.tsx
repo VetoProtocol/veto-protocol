@@ -3,7 +3,7 @@ import { Panel } from '@/components/panel';
 import { Chip, type Tone } from '@/components/chip';
 import { ApiError, listConnections, type ConnectionView } from '@/lib/api';
 import { currentSession } from '@/lib/session';
-import { RevokeConnection } from './forms';
+import { RevokeConnection, SyncHierarchy } from './forms';
 
 export const dynamic = 'force-dynamic';
 
@@ -172,6 +172,20 @@ export default async function ConnectionsPage({
           </p>
         </div>
       </Panel>
+
+      {live.length > 0 ? (
+        <Panel title="FOLDER STRUCTURE" meta="SO A GRANT REACHES WHAT IS INSIDE">
+          <div style={{ padding: 18 }}>
+            <p style={{ color: 'var(--text-dim)', fontSize: 12.5, margin: '0 0 16px', maxWidth: 620 }}>
+              Granting a folder is meant to reach the files inside it. Permit works that out from a
+              record of what contains what — and it has no way to know your Drive&rsquo;s shape
+              unless somebody looks. Until then a grant on a folder reaches the folder and nothing
+              else.
+            </p>
+            <SyncHierarchy />
+          </div>
+        </Panel>
+      ) : null}
 
       <Panel title="STORED CREDENTIALS" meta="NONE OF THEM LEAVE THE SERVER">
         {connections.length === 0 ? (
