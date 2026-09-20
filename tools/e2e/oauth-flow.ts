@@ -15,8 +15,11 @@ import { mintCapability } from '@veto/tokens';
 
 loadRepoEnv();
 
-const DASH = 'http://localhost:3000';
-/** Where a client *starts*: the gateway, with no other configuration. */
+/**
+ * The only address this script is given. Everything else — the authorization
+ * server, its registration, authorize and token endpoints, and the resource
+ * indicator — is discovered, which is the property under test.
+ */
 const GW_ENTRY = 'http://127.0.0.1:4100/mcp';
 const WS = process.argv[2] ?? '';
 const USER = process.argv[3] ?? '';
