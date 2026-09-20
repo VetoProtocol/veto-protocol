@@ -176,7 +176,19 @@ export function createGoogleExchange(config: GoogleOAuthConfig): UpstreamTokenEx
         }),
       });
 
-      if (!response.ok) throw new Error(`token refresh failed: ${response.status}`);
+      if (!response.ok) {
+        // Google's reason, not just its status. `invalid_grant` (the user
+        // revoked access, or a testing-mode token aged out) and a rate limit
+        // are the same 400 otherwise, and they need opposite responses from
+        // whoever is reading the log.
+        //
+        // The response body carries an error code and description. It does not
+        // carry the client secret or the refresh token — those are in the
+        // *request* — so including it does not put a credential in a log
+        // (invariant 5).
+        const detail = await response.text().catch(() => '');
+        throw new Error(`token refresh failed: ${response.status} ${detail.slice(0, 200)}`);
+      }
 
       const body = (await response.json()) as {
         access_token?: string;
