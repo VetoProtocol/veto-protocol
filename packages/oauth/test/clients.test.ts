@@ -37,10 +37,23 @@ describe('where a code may be delivered', () => {
     expect(redirectUriAllowed('http://169.254.169.254/cb')).toBe(false);
   });
 
-  it('refuses localhost by name, in favour of the literal address', () => {
-    // Name resolution is one more thing between the browser and the listener
-    // that was meant to receive the code.
-    expect(redirectUriAllowed('http://localhost:7777/callback')).toBe(false);
+  it('allows localhost by name, because real clients use it', () => {
+    // This was refused, on the reasoning that name resolution is one more thing
+    // between the browser and the intended listener. RFC 8252 §7.3 says the IP
+    // literal is *preferred*, not required — and `mcp-remote`, the standard
+    // shim every stdio-only MCP client uses, registers
+    // `http://localhost:PORT/oauth/callback`. The hardening refused every
+    // conforming client and bought little: an attacker who controls the user's
+    // name resolution already has more than an authorization code, and the code
+    // is worthless without the PKCE verifier that never leaves the client.
+    expect(redirectUriAllowed('http://localhost:5769/oauth/callback')).toBe(true);
+  });
+
+  it('is not fooled by a host that merely starts with localhost', () => {
+    // `localhost.evil.test` is somebody else's domain.
+    expect(redirectUriAllowed('http://localhost.evil.test/cb')).toBe(false);
+    expect(redirectUriAllowed('http://localhosts/cb')).toBe(false);
+    expect(redirectUriAllowed('http://notlocalhost/cb')).toBe(false);
   });
 
   it('allows a private-use scheme, which never leaves the device', () => {

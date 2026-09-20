@@ -13,8 +13,24 @@
  * in a way that looks unrelated to the change that caused it.
  */
 
-/** RFC 8252: a native client redirects to loopback or a private-use scheme. */
-const LOOPBACK = /^http:\/\/(127\.0\.0\.1|\[::1\])(:\d{1,5})?(\/.*)?$/;
+/**
+ * RFC 8252: a native client redirects to loopback or a private-use scheme.
+ *
+ * `localhost` is accepted alongside the IP literals. §7.3 prefers the literal,
+ * and this refused the name outright until a real client arrived: `mcp-remote`,
+ * the shim every stdio-only MCP client uses, registers
+ * `http://localhost:PORT/oauth/callback` and was turned away.
+ *
+ * The hardening was defensible and bought little. It guarded against name
+ * resolution pointing `localhost` somewhere other than loopback — which needs
+ * the user's own hosts file or resolver to be compromised, at which point an
+ * authorization code is not the thing to worry about. And the code is useless
+ * without the PKCE verifier, which never leaves the client that generated it.
+ *
+ * The host must be exactly one of these. `localhost.evil.test` is somebody
+ * else's domain, and the anchors are what keep it out.
+ */
+const LOOPBACK = /^http:\/\/(127\.0\.0\.1|\[::1\]|localhost)(:\d{1,5})?(\/.*)?$/;
 const PRIVATE_SCHEME = /^[a-z][a-z0-9+.-]*:\/(\/)?[^\s]*$/;
 
 /**
