@@ -46,6 +46,7 @@ import { assessRisk } from './risk.ts';
 import { redeemApproval } from './approvals.ts';
 import { readPresence } from '@veto/presence';
 import { currentUsage, reserve } from './volume.ts';
+import { createStepClock, type StepTimings } from './timing.ts';
 
 export interface PipelineDeps {
   readonly pool: Pool;
@@ -65,6 +66,10 @@ const challenge = (reasonCode: string): Outcome => ({ result: 'challenge', reaso
 
 export async function evaluate(deps: PipelineDeps, input: EvaluateInput): Promise<DecisionResponse> {
   const started = process.hrtime.bigint();
+  // Where the time goes, beside how much of it there was. `latency_ms` answers
+  // whether §11's budget was met; this answers which step to look at when it
+  // was not.
+  const clock = createStepClock();
   const decisionId = newId('dec_');
 
   // Step 2 — normalise, and bind the whole thing to a digest.
@@ -99,7 +104,8 @@ export async function evaluate(deps: PipelineDeps, input: EvaluateInput): Promis
     // First, and before Permit is reachable from here. A locked workspace is
     // Veto's answer alone (invariant 3), and asking Permit during a lock would
     // both waste the budget and imply the answer could matter.
-    const gate = await withWorkspace(deps.pool, input.workspaceId, async (db) => {
+    const gate = await clock.time('session', () =>
+      withWorkspace(deps.pool, input.workspaceId, async (db) => {
       const { rows } = await db.query<{ emergency_lock: boolean }>(
         `select emergency_lock from workspaces where id = $1`,
         [input.workspaceId],
@@ -114,17 +120,20 @@ export async function evaluate(deps: PipelineDeps, input: EvaluateInput): Promis
       if (agent.status !== 'active') return deny('AGENT_REVOKED');
       if (agent.owner_user_id !== input.humanId) return deny('IDENTITY_UNRESOLVED');
 
-      return null;
-    });
+        return null;
+      }),
+    );
     if (gate) return gate;
 
-    const presence = await readPresenceState(deps.pool, input.workspaceId, input.humanId);
+    const presence = await clock.time('session', () =>
+      readPresenceState(deps.pool, input.workspaceId, input.humanId),
+    );
     // §7.2: locked denies everything, whatever any policy says.
     if (presence === 'locked') return deny('WORKSPACE_LOCKED');
 
     // Step 4 — deterministic prechecks.
-    const rules = await withWorkspace(deps.pool, input.workspaceId, (db) =>
-      loadPolicies(db, input.workspaceId),
+    const rules = await clock.time('precheck', () =>
+      withWorkspace(deps.pool, input.workspaceId, (db) => loadPolicies(db, input.workspaceId)),
     );
     const verdict = matchPolicies(rules, input);
     policyVersion = verdict.version;
@@ -140,8 +149,8 @@ export async function evaluate(deps: PipelineDeps, input: EvaluateInput): Promis
     // Applied *after* the rule and only ever as an extra requirement: a label
     // never grants, so a resource nothing allows stays denied whatever it is
     // labelled.
-    const labels = await withWorkspace(deps.pool, input.workspaceId, (db) =>
-      loadLabels(db, input.workspaceId),
+    const labels = await clock.time('precheck', () =>
+      withWorkspace(deps.pool, input.workspaceId, (db) => loadLabels(db, input.workspaceId)),
     );
     const label = matchLabel(labels, input.resource.type, input.resource.id);
     sensitivity = label?.sensitivity ?? DEFAULT_SENSITIVITY;
@@ -169,12 +178,15 @@ export async function evaluate(deps: PipelineDeps, input: EvaluateInput): Promis
     // atomic reservation happens only if everything else says allow.
     const limit = verdict.rule?.conditions.maxPerDay;
     if (limit !== undefined) {
-      const used = await currentUsage(deps.redis, input.workspaceId, input.agentId, input.action);
+      const used = await clock.time('precheck', () =>
+        currentUsage(deps.redis, input.workspaceId, input.agentId, input.action),
+      );
       if (used >= limit) return deny('VOLUME_LIMIT_EXCEEDED');
     }
 
     // Step 5 — Permit, and only the relationship/attribute question.
-    permitResult = await deps.policy.check({
+    permitResult = await clock.time('policy', () =>
+      deps.policy.check({
       workspaceId: input.workspaceId,
       agentId: input.agentId,
       action: input.action,
@@ -182,18 +194,21 @@ export async function evaluate(deps: PipelineDeps, input: EvaluateInput): Promis
       resourceKey: input.resource.id,
       // Permit sees the label as an attribute (§4.3). It is a classification,
       // never the content it classifies (invariant 5).
-      attributes: { user_presence: presence, sensitivity },
-    });
+        attributes: { user_presence: presence, sensitivity },
+      }),
+    );
 
     if (permitResult === 'unavailable') return deny('POLICY_UNAVAILABLE');
     if (permitResult === 'deny') return deny('POLICY_DENIED');
 
     // Step 6 — the checks Permit cannot express. After the check, so a Permit
     // denial is never overridden, and these can only narrow (invariant 3).
-    const risk = await assessRisk(input, {
+    const risk = await clock.time('risk', () =>
+      assessRisk(input, {
       // Either the rule or the label can require a stated intent.
-      requireIntent: verdict.rule?.conditions.requireIntent === true || labelled.requireIntent,
-    });
+        requireIntent: verdict.rule?.conditions.requireIntent === true || labelled.requireIntent,
+      }),
+    );
     if (risk?.result === 'deny') return deny(risk.reasonCode);
     if (risk?.result === 'challenge') held = challenge(risk.reasonCode);
 
@@ -202,13 +217,15 @@ export async function evaluate(deps: PipelineDeps, input: EvaluateInput): Promis
       // this exact action. Without one, the challenge stands.
       if (!input.approvalId) return held;
 
-      const redeemed = await withWorkspace(deps.pool, input.workspaceId, (db) =>
-        redeemApproval(db, {
+      const redeemed = await clock.time('risk', () =>
+        withWorkspace(deps.pool, input.workspaceId, (db) =>
+          redeemApproval(db, {
           workspaceId: input.workspaceId,
           approvalId: input.approvalId ?? '',
           humanId: input.humanId,
-          actionDigest: digest,
-        }),
+            actionDigest: digest,
+          }),
+        ),
       );
 
       // A refused grant denies rather than re-challenging: replayed, expired
@@ -220,12 +237,8 @@ export async function evaluate(deps: PipelineDeps, input: EvaluateInput): Promis
 
     // Only now does an allow spend budget.
     if (limit !== undefined) {
-      const fits = await reserve(
-        deps.redis,
-        input.workspaceId,
-        input.agentId,
-        input.action,
-        limit,
+      const fits = await clock.time('precheck', () =>
+        reserve(deps.redis, input.workspaceId, input.agentId, input.action, limit),
       );
       if (!fits) return deny('VOLUME_LIMIT_EXCEEDED');
     }
@@ -239,6 +252,11 @@ export async function evaluate(deps: PipelineDeps, input: EvaluateInput): Promis
   // Steps 7 and 9 — emit, and record. The decision row and its audit event are
   // written in one transaction: a decision nobody can see happening is the
   // §7.3 audit-tampering failure arriving by accident.
+  // Step 9 is timed but cannot be *in* the map it writes — the row is inserted
+  // by the very call being measured. So it is measured here and reported on the
+  // response; the stored map covers steps 2 to 6, which is where a slow
+  // decision is diagnosed.
+  const persistStarted = process.hrtime.bigint();
   const approvalId = await persist(deps, input, {
     decisionId,
     outcome,
@@ -246,8 +264,10 @@ export async function evaluate(deps: PipelineDeps, input: EvaluateInput): Promis
     policyVersion,
     digest,
     latencyMs,
+    stepTimings: clock.read(),
     approvalTtlMs: deps.approvalTtlMs ?? 5 * 60 * 1000,
   });
+  clock.record('audit', Number(process.hrtime.bigint() - persistStarted) / 1e6);
 
   return {
     decisionId,
@@ -262,6 +282,7 @@ export async function evaluate(deps: PipelineDeps, input: EvaluateInput): Promis
     policyVersion,
     permitResult,
     latencyMs: Math.round(latencyMs * 100) / 100,
+    stepTimings: clock.read(),
     actionDigest: digest,
   };
 }
@@ -287,6 +308,7 @@ interface PersistArgs {
   policyVersion: string | null;
   digest: string;
   latencyMs: number;
+  stepTimings: StepTimings;
   approvalTtlMs: number;
 }
 
@@ -299,8 +321,8 @@ async function persist(
     await db.query(
       `insert into decisions
          (id, workspace_id, request_id, human_id, agent_id, tool, action, resource_ref,
-          policy_version, permit_result, veto_result, reason_code, latency_ms)
-       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+          policy_version, permit_result, veto_result, reason_code, latency_ms, step_timings)
+       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
       [
         args.decisionId,
         input.workspaceId,
@@ -316,6 +338,10 @@ async function persist(
         args.outcome.result,
         args.outcome.reasonCode,
         Math.round(args.latencyMs),
+        // Numbers only. The map's type has no field an argument or a resource
+        // id could occupy, which is the control — invariant 5 applies to a
+        // timing map exactly as it applies to an audit event.
+        JSON.stringify(args.stepTimings),
       ],
     );
 

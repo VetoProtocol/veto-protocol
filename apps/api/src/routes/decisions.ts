@@ -185,6 +185,10 @@ export function registerDecisionRoutes(app: FastifyInstance, deps: DecisionRoute
               reason_stage: { type: 'string' },
               reason_message: { type: 'string' },
               latency_ms: { type: 'integer', nullable: true },
+              // Milliseconds per §3.3 step, or null for a decision written
+              // before timings were recorded. Numbers only — the map has no
+              // field an argument or resource id could occupy (invariant 5).
+              step_timings: { type: 'object', nullable: true, additionalProperties: true },
               created_at: { type: 'string' },
             },
             required: [
@@ -214,7 +218,8 @@ export function registerDecisionRoutes(app: FastifyInstance, deps: DecisionRoute
       const { rows } = await withWorkspace(deps.pool, workspaceId, (db) =>
         db.query<DecisionRow>(
           `select id, request_id, human_id, agent_id, tool, action, resource_ref,
-                  policy_version, permit_result, veto_result, reason_code, latency_ms, created_at
+                  policy_version, permit_result, veto_result, reason_code, latency_ms,
+                  step_timings, created_at
              from decisions where workspace_id = $1 and id = $2`,
           [workspaceId, request.params.decisionId],
         ),
@@ -250,5 +255,6 @@ interface DecisionRow {
   veto_result: string;
   reason_code: string;
   latency_ms: number | null;
+  step_timings: Record<string, number> | null;
   created_at: Date;
 }

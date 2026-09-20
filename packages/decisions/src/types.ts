@@ -3,6 +3,7 @@
  */
 
 import type { DecisionResult } from '@veto/core';
+import type { StepTimings } from './timing.ts';
 
 export interface ResourceRef {
   readonly type: string;
@@ -52,6 +53,11 @@ export interface DecisionResponse {
   /** Recorded separately from the final result; never collapsed (invariant 3). */
   readonly permitResult: 'allow' | 'deny' | 'unavailable' | 'not_evaluated';
   readonly latencyMs: number;
+  /**
+   * Milliseconds per §3.3 step. Sparse: a decision that stopped at step 5 has
+   * nothing truthful to say about the steps after it.
+   */
+  readonly stepTimings: StepTimings;
   /** Binds an approval to this exact action (invariants 6, 7). */
   readonly actionDigest: string;
 }

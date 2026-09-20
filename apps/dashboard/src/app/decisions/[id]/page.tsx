@@ -30,11 +30,14 @@ const STEPS: ReadonlyArray<{
   title: string;
   owner: 'Veto' | 'Permit';
   stage: string | null;
+  /** Key in `step_timings`. Null where the pipeline records no duration. */
+  timing: string | null;
   detail: string;
 }> = [
   {
     n: 1,
     title: 'Identity resolved',
+    timing: null,
     owner: 'Veto',
     stage: 'identity',
     detail: 'human, agent and session bound',
@@ -42,6 +45,7 @@ const STEPS: ReadonlyArray<{
   {
     n: 2,
     title: 'Action normalised',
+    timing: null,
     owner: 'Veto',
     stage: null,
     detail: 'arguments validated against a strict schema',
@@ -49,6 +53,7 @@ const STEPS: ReadonlyArray<{
   {
     n: 3,
     title: 'Session, presence, lock',
+    timing: 'session',
     owner: 'Veto',
     stage: 'session',
     detail: 'checked before policy is consulted',
@@ -56,6 +61,7 @@ const STEPS: ReadonlyArray<{
   {
     n: 4,
     title: 'Deterministic prechecks',
+    timing: 'precheck',
     owner: 'Veto',
     stage: 'precheck',
     detail: 'tool allowlist, resource scope, volume',
@@ -63,6 +69,7 @@ const STEPS: ReadonlyArray<{
   {
     n: 5,
     title: 'permit.check',
+    timing: 'policy',
     owner: 'Permit',
     stage: 'policy',
     detail: 'relationship and attributes only',
@@ -70,6 +77,7 @@ const STEPS: ReadonlyArray<{
   {
     n: 6,
     title: 'Veto risk checks',
+    timing: 'risk',
     owner: 'Veto',
     stage: 'risk',
     detail: 'intent, sensitive arguments, destination',
@@ -77,6 +85,7 @@ const STEPS: ReadonlyArray<{
   {
     n: 7,
     title: 'Result emitted',
+    timing: null,
     owner: 'Veto',
     stage: 'approval',
     detail: 'allow, deny or challenge',
@@ -84,6 +93,7 @@ const STEPS: ReadonlyArray<{
   {
     n: 8,
     title: 'Upstream call',
+    timing: null,
     owner: 'Veto',
     stage: 'credential',
     detail: 'narrowest token, exactly what was approved',
@@ -91,6 +101,7 @@ const STEPS: ReadonlyArray<{
   {
     n: 9,
     title: 'Audit written',
+    timing: 'audit',
     owner: 'Veto',
     stage: null,
     detail: 'hash chained to its predecessor',
@@ -120,6 +131,11 @@ export default async function DecisionPage({ params }: { params: Promise<{ id: s
   const stoppedAt =
     STEPS.find((s) => s.stage !== null && s.stage === decision.reason_stage)?.n ?? null;
   const allowed = decision.veto_result === 'allow';
+
+  const timings = decision.step_timings ?? {};
+  const measured = Object.keys(timings).length > 0;
+  /** What the steps account for. Never more than the total; usually a little less. */
+  const accounted = Object.values(timings).reduce((sum, ms) => sum + ms, 0);
 
   /** What happened at a step, given where the decision came out. */
   const statusOf = (n: number): { word: string; tone: Tone } => {
@@ -211,11 +227,27 @@ export default async function DecisionPage({ params }: { params: Promise<{ id: s
                     style={{
                       fontSize: 11,
                       whiteSpace: 'nowrap',
-                      color:
-                        status.tone === 'neutral' ? 'var(--text-faint)' : `var(--${status.tone})`,
+                      display: 'flex',
+                      alignItems: 'baseline',
+                      gap: 10,
                     }}
                   >
-                    {status.word}
+                    {/* A measured duration, or nothing. A step with no number
+                        either was not reached or is not separately measured —
+                        neither is "0 ms", and printing one would be a claim. */}
+                    {step.timing !== null && timings[step.timing] !== undefined ? (
+                      <span style={{ color: 'var(--text-dim)', fontVariantNumeric: 'tabular-nums' }}>
+                        {timings[step.timing]?.toFixed(2)} ms
+                      </span>
+                    ) : null}
+                    <span
+                      style={{
+                        color:
+                          status.tone === 'neutral' ? 'var(--text-faint)' : `var(--${status.tone})`,
+                      }}
+                    >
+                      {status.word}
+                    </span>
                   </span>
                 </div>
               );
@@ -230,11 +262,22 @@ export default async function DecisionPage({ params }: { params: Promise<{ id: s
               lineHeight: 1.7,
             }}
           >
-            {/* Said plainly rather than shown as nine invented numbers. The
-                pipeline measures itself end to end; per-step timing is
-                instrumentation that does not exist yet. */}
-            Only the total is measured. Which step decided is derived from the reason code — the
-            per-step timings a full trace would show are not recorded yet.
+            {measured ? (
+              <>
+                {/* The gap between the two is real and small: the synchronous
+                    logic between the awaited calls, which is microseconds. It
+                    is shown rather than hidden, because a total that silently
+                    disagreed with its parts would be the more suspicious
+                    number. */}
+                Steps account for {accounted.toFixed(2)} ms of a {decision.latency_ms} ms decision.
+                Steps 1, 2, 7 and 8 are not separately measured — identity and normalisation happen
+                before the pipeline, and the upstream call happens after it, outside the §11 budget.
+              </>
+            ) : (
+              // A decision recorded before timings existed. Saying so beats
+              // rendering zeroes, which would read as "instant".
+              <>This decision was recorded before per-step timings existed. Only the total was kept.</>
+            )}
           </div>
         </Panel>
 

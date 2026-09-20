@@ -133,6 +133,12 @@ export interface DecisionView {
   readonly reason_stage: string;
   readonly reason_message: string;
   readonly latency_ms: number | null;
+  /**
+   * Milliseconds per §3.3 step. Null for a decision recorded before timings
+   * existed — which is not the same as a decision that took no time, and the
+   * trace screen says so rather than rendering zeroes.
+   */
+  readonly step_timings: Record<string, number> | null;
   readonly created_at: string;
 }
 
