@@ -33,6 +33,10 @@ const JUSTIFIED_EXTRAS: Readonly<Record<string, string>> = {
   webhook_endpoints: 'where §5.4 alerts are sent, and the per-endpoint signing secret',
   webhook_deliveries:
     'the §5.4 delivery queue. A table rather than a fetch, so a receiver outage cannot become an authorization outage',
+  oauth_clients:
+    'dynamically registered MCP clients (§8, RFC 7591). Deliberately not tenant-scoped — a client registers before any human is involved and holds no authority; the migration argues why that is safe',
+  oauth_refresh_tokens:
+    'the §8 authorization server\u2019s refresh tokens, stored as hashes and rotated on use. Needed because the access token is the capability token, which MAX_TTL_MS caps at fifteen minutes',
 };
 
 describe('migrations', () => {

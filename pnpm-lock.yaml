@@ -340,6 +340,34 @@ importers:
         specifier: 2.1.8
         version: 2.1.8(@types/node@22.10.2)
 
+  packages/oauth:
+    dependencies:
+      '@veto/core':
+        specifier: workspace:*
+        version: link:../core
+      '@veto/db':
+        specifier: workspace:*
+        version: link:../db
+      '@veto/tokens':
+        specifier: workspace:*
+        version: link:../tokens
+    devDependencies:
+      '@types/node':
+        specifier: 22.10.2
+        version: 22.10.2
+      '@types/pg':
+        specifier: 8.11.10
+        version: 8.11.10
+      pg:
+        specifier: 8.13.1
+        version: 8.13.1
+      typescript:
+        specifier: 5.7.2
+        version: 5.7.2
+      vitest:
+        specifier: 2.1.8
+        version: 2.1.8(@types/node@22.10.2)
+
   packages/passkeys:
     dependencies:
       '@simplewebauthn/server':
