@@ -84,6 +84,26 @@ describe('discovery', () => {
     });
   });
 
+  it('serves the same document at the RFC 9728 path-suffixed address', async () => {
+    // §3.1 puts the document for a resource at `/mcp` under
+    // `/.well-known/oauth-protected-resource/mcp`. `mcp-remote` asked for that
+    // form, got a 404 five times, and fell back to the bare path — it is
+    // forgiving, and a client that is not would fail discovery here and never
+    // reach the authorization server.
+    const suffixed = await app.inject({
+      method: 'GET',
+      url: '/.well-known/oauth-protected-resource/mcp',
+    });
+    const bare = await app.inject({
+      method: 'GET',
+      url: '/.well-known/oauth-protected-resource',
+    });
+
+    expect(suffixed.statusCode).toBe(200);
+    // One document, not two that can drift.
+    expect(suffixed.json()).toEqual(bare.json());
+  });
+
   it('returns only Veto-controlled URLs', async () => {
     // Invariant 8: the gateway must never hand a client a URL that bypasses it.
     const body = (await app.inject({ method: 'GET', url: '/.well-known/oauth-protected-resource' })).json();

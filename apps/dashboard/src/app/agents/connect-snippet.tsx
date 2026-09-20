@@ -36,39 +36,28 @@ export interface ConnectableAgent {
 
 export function ConnectSnippet({
   agents,
-  workspaceId,
-  humanId,
   gatewayUrl,
-  bridgePath,
-  nodePath,
 }: {
   agents: readonly ConnectableAgent[];
-  workspaceId: string;
-  humanId: string;
   gatewayUrl: string;
-  bridgePath: string;
-  nodePath: string;
 }) {
-  const [selected, setSelected] = useState(agents[0]?.id ?? '');
   const [copied, setCopied] = useState<'url' | 'config' | null>(null);
 
+  // Nothing to show until there is something to connect to.
   if (agents.length === 0) return null;
 
-  const agentId = selected || (agents[0]?.id ?? '');
-
+  /**
+   * For clients that only speak stdio.
+   *
+   * `mcp-remote` is the standard shim: it does the OAuth flow, opens a browser,
+   * and proxies to the remote server. It replaced a bridge written here that
+   * held the capability signing key and therefore only ran on this machine —
+   * this one holds nothing, and works from anywhere.
+   */
   const config = JSON.stringify(
     {
       mcpServers: {
-        veto: {
-          command: nodePath,
-          args: ['--experimental-strip-types', bridgePath],
-          env: {
-            VETO_WORKSPACE_ID: workspaceId,
-            VETO_HUMAN_ID: humanId,
-            VETO_AGENT_ID: agentId,
-            VETO_GATEWAY_URL: gatewayUrl,
-          },
-        },
+        veto: { command: 'npx', args: ['-y', 'mcp-remote', gatewayUrl] },
       },
     },
     null,
@@ -129,42 +118,16 @@ export function ConnectSnippet({
             marginBottom: 12,
           }}
         >
-          If your client cannot do OAuth yet
+          If your client only takes a command, not a URL
         </summary>
 
         <p style={{ color: 'var(--text-dim)', fontSize: 12.5, margin: '0 0 14px', maxWidth: 680 }}>
-          Some MCP clients still expect a local command. Replace the{' '}
-          <code style={{ fontFamily: mono }}>mcpServers</code> section of your client&rsquo;s config
-          with this &mdash; merge it into the file rather than appending, or you will end up with
-          two documents in one file and a client that will not start.
+          Some MCP clients take a command rather than a URL. `mcp-remote` does the same OAuth
+          flow and proxies it over stdio. Replace the{' '}
+          <code style={{ fontFamily: mono }}>mcpServers</code> section of your client&rsquo;s
+          config with this &mdash; merge it into the file rather than appending, or you will end up
+          with two documents in one file and a client that will not start.
         </p>
-
-        {agents.length > 1 ? (
-          <label style={{ display: 'block', marginBottom: 14 }}>
-            <span className="label" style={{ display: 'block', marginBottom: 6 }}>
-              agent
-            </span>
-            <select
-              value={agentId}
-              onChange={(event) => setSelected(event.target.value)}
-              style={{
-                background: 'var(--bg-raised)',
-                border: '1px solid var(--border-strong)',
-                color: 'var(--text)',
-                padding: '8px 10px',
-                fontSize: 12.5,
-                fontFamily: 'inherit',
-                minWidth: 320,
-              }}
-            >
-              {agents.map((agent) => (
-                <option key={agent.id} value={agent.id}>
-                  {agent.clientId} &mdash; {agent.id}
-                </option>
-              ))}
-            </select>
-          </label>
-        ) : null}
 
         <div style={{ position: 'relative' }}>
           <button
@@ -186,9 +149,9 @@ export function ConnectSnippet({
             maxWidth: 680,
           }}
         >
-          This path only works on the machine running Veto: the bridge reads the signing key from
-          this server&rsquo;s environment, which is why no key appears above. Use the address at the
-          top from anywhere else.
+          Either way you approve in a browser and Veto issues the token &mdash; there is no key to
+          copy, and nothing here is specific to this machine. Which agent it acts as is chosen on
+          the approval screen, not in this file.
         </div>
       </details>
     </div>

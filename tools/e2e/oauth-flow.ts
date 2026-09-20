@@ -145,6 +145,12 @@ async function approveInBrowser(): Promise<string> {
   });
 
   await page.goto(url, { waitUntil: 'domcontentloaded' });
+
+  // Choose an agent. The screen has no default — approving the wrong one used
+  // to produce a correct denial minutes later on a different page, so the
+  // choice is deliberate now and the form will not submit without it.
+  await page.selectOption('select[name="agent_id"]', agentId);
+
   // By text, not by type: the sidebar's Sign out is also a submit button and
   // comes first in the DOM, so `.first()` signs the tester out instead.
   await page.getByRole('button', { name: 'Approve' }).click();

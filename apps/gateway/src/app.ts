@@ -95,15 +95,33 @@ export function createGateway(deps: GatewayDeps): FastifyInstance {
    * Public and unauthenticated by design: it is how a client discovers where to
    * authenticate. It names only Veto-controlled URLs.
    */
-  app.get('/.well-known/oauth-protected-resource', async (_request, reply) =>
-    reply.header('cache-control', 'no-store').send({
-      resource: `${publicUrl}/mcp`,
-      authorization_servers: [deps.authorizationServer],
-      bearer_methods_supported: ['header'],
-      scopes_supported: ['mcp'],
-      resource_documentation: `${publicUrl}/docs`,
-    }),
-  );
+  const protectedResourceMetadata = {
+    resource: `${publicUrl}/mcp`,
+    authorization_servers: [deps.authorizationServer],
+    bearer_methods_supported: ['header'],
+    scopes_supported: ['mcp'],
+    resource_documentation: `${publicUrl}/docs`,
+  };
+
+  /**
+   * Served at both paths, because RFC 9728 §3.1 puts the document for a
+   * resource at `/mcp` under `/.well-known/oauth-protected-resource/mcp` — the
+   * resource's path inserted after the well-known segment — and the bare path
+   * is the one everybody writes first.
+   *
+   * `mcp-remote` asked for the suffixed form, got a 404 five times, and fell
+   * back to the bare one. It is forgiving; a client that is not would fail
+   * discovery here and never reach the authorization server at all. Two routes
+   * and one object is cheaper than finding out which clients are strict.
+   */
+  for (const path of [
+    '/.well-known/oauth-protected-resource',
+    '/.well-known/oauth-protected-resource/mcp',
+  ]) {
+    app.get(path, async (_request, reply) =>
+      reply.header('cache-control', 'no-store').send(protectedResourceMetadata),
+    );
+  }
 
   app.post('/mcp', async (request, reply) => {
     const body = request.body;

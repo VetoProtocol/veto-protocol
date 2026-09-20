@@ -145,19 +145,10 @@ export default async function AgentsPage() {
             agents={agents
               .filter((a) => a.status !== 'revoked')
               .map((a) => ({ id: a.id, clientId: a.client_id }))}
-            workspaceId={session.workspaceId}
-            humanId={session.userId}
-            // Defaults match a local checkout. Overridable because the paths
-            // are the one part of this that is genuinely machine-specific, and
-            // a wrong path in a copied config fails in a way nobody can read.
             // The same address the gateway publishes, so a pasted config and a
-            // discovered one point at one place.
+            // discovered one point at one place. Nothing else is needed: which
+            // agent a client acts as is chosen on the approval screen.
             gatewayUrl={`${(process.env['GATEWAY_PUBLIC_URL'] ?? 'http://localhost:4100').replace(/\/$/, '')}/mcp`}
-            bridgePath={
-              process.env['VETO_BRIDGE_PATH'] ??
-              '/home/void/vetoprotocol/apps/gateway/src/desktop-bridge.ts'
-            }
-            nodePath={process.env['VETO_NODE_PATH'] ?? 'node'}
           />
         </Panel>
       ) : null}

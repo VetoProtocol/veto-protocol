@@ -8,6 +8,8 @@ import { approveAuthorizationAction } from './actions';
 export interface AgentChoice {
   readonly id: string;
   readonly clientId: string;
+  /** Whether any policy rule names this agent. An agent with none can do nothing. */
+  readonly hasRules: boolean;
 }
 
 export function ApproveForm({
@@ -46,7 +48,11 @@ export function ApproveForm({
         <select
           name="agent_id"
           required
-          defaultValue={agents[0]?.id ?? ''}
+          // No default. The previous version selected whichever agent came
+          // first, and approving the wrong one produced a correct denial
+          // minutes later on a different screen, with nothing connecting the
+          // two. Choosing is now deliberate.
+          defaultValue=""
           style={{
             background: 'var(--bg-raised)',
             border: '1px solid var(--border-strong)',
@@ -57,13 +63,27 @@ export function ApproveForm({
             minWidth: 320,
           }}
         >
+          <option value="" disabled>
+            choose an agent…
+          </option>
           {agents.map((agent) => (
             <option key={agent.id} value={agent.id}>
               {agent.clientId} — {agent.id}
+              {agent.hasRules ? '' : '  (no rules yet — will be refused)'}
             </option>
           ))}
         </select>
       </label>
+
+      {/* Said before approving rather than discovered afterwards. Not a
+          warning against proceeding: authorizing an agent and then writing its
+          rules is a perfectly ordinary order to work in. */}
+      {agents.every((agent) => !agent.hasRules) ? (
+        <p style={{ margin: 0, color: 'var(--challenge)', fontSize: 11.5, maxWidth: 560 }}>
+          None of these agents has a policy rule yet, so every request will be refused until one
+          is written. You can approve now and add rules on the Policies screen.
+        </p>
+      ) : null}
 
       <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
         <Button type="submit" disabled={pending}>

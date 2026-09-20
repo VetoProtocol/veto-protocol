@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation';
 import { Panel } from '@/components/panel';
-import { listAgents } from '@/lib/api';
+import { listAgents, listPolicies } from '@/lib/api';
 import { currentSession } from '@/lib/session';
 import { oauthServerCredential } from '@/lib/oauth-config';
 import { ApproveForm } from './approve-form';
@@ -126,6 +126,23 @@ export default async function AuthorizePage({
     (agent) => agent.status !== 'revoked',
   );
 
+  /**
+   * Which agents any rule actually names.
+   *
+   * An agent with no rule can do nothing — deny by default, correctly. But the
+   * denial arrives minutes later, on a different screen, with nothing
+   * connecting it to the choice made here. Approving the wrong one is an easy
+   * mistake when the dropdown has a default, so the screen says which agents
+   * are ready and has no default at all.
+   *
+   * A wildcard subject covers everything, so it makes every agent ready.
+   */
+  const rules = await listPolicies(session.credential)
+    .then((r) => r.policies)
+    .catch(() => []);
+  const anyWildcard = rules.some((rule) => rule.subject === '*');
+  const withRules = new Set(rules.map((rule) => rule.subject));
+
   const { request } = checked;
 
   return (
@@ -182,7 +199,11 @@ export default async function AuthorizePage({
           </p>
         ) : (
           <ApproveForm
-            agents={agents.map((agent) => ({ id: agent.id, clientId: agent.client_id }))}
+            agents={agents.map((agent) => ({
+              id: agent.id,
+              clientId: agent.client_id,
+              hasRules: anyWildcard || withRules.has(agent.id),
+            }))}
             clientId={request.clientId}
             redirectUri={request.redirectUri}
             codeChallenge={request.codeChallenge}
