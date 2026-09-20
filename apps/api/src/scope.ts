@@ -21,6 +21,20 @@ export const SCOPE_CONTROL_PLANE = 'control-plane';
 /** Sign-in only: exchange a verified OIDC subject for a user and workspace. */
 export const SCOPE_IDENTITY_RESOLVE = 'identity-resolve';
 
+/**
+ * The §8 authorization server's own storage.
+ *
+ * Client registration is public (RFC 7591) — a desktop client arrives with no
+ * credential and no way to obtain one — so the dashboard fronts it and calls
+ * here with this scope. It carries no workspace, because at registration time
+ * there is no human and no tenant yet; the placeholders are inert, exactly as
+ * they are for a sign-in lookup.
+ *
+ * Narrow on purpose: a credential minted to register a client must not also
+ * reach the agent routes, and this is the containment that stops it.
+ */
+export const SCOPE_OAUTH_SERVER = 'oauth-server';
+
 export function requireScope(request: FastifyRequest, scope: string): void {
   if (request.principal.action !== scope) {
     // 403, not 401: the caller is authenticated, just not with this credential.

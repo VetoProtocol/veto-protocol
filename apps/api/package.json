@@ -23,7 +23,8 @@
     "@veto/presence": "workspace:*",
     "@veto/passkeys": "workspace:*",
     "@veto/webhooks": "workspace:*",
-    "@veto/health": "workspace:*"
+    "@veto/health": "workspace:*",
+    "@veto/oauth": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "22.10.2",

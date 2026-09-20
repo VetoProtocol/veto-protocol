@@ -47,6 +47,9 @@ importers:
       '@veto/identity':
         specifier: workspace:*
         version: link:../../packages/identity
+      '@veto/oauth':
+        specifier: workspace:*
+        version: link:../../packages/oauth
       '@veto/passkeys':
         specifier: workspace:*
         version: link:../../packages/passkeys
