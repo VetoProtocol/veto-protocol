@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation';
 import { Panel } from '@/components/panel';
+import { ConnectSnippet } from './connect-snippet';
 import { Chip, type Tone } from '@/components/chip';
 import { ApiError, listAgents, type Agent } from '@/lib/api';
 import { currentSession } from '@/lib/session';
@@ -137,6 +138,27 @@ export default async function AgentsPage() {
           </div>
         )}
       </Panel>
+
+      {live > 0 ? (
+        <Panel title="CONNECT" meta="POINT A CLIENT AT THIS WORKSPACE">
+          <ConnectSnippet
+            agents={agents
+              .filter((a) => a.status !== 'revoked')
+              .map((a) => ({ id: a.id, clientId: a.client_id }))}
+            workspaceId={session.workspaceId}
+            humanId={session.userId}
+            // Defaults match a local checkout. Overridable because the paths
+            // are the one part of this that is genuinely machine-specific, and
+            // a wrong path in a copied config fails in a way nobody can read.
+            gatewayUrl={process.env['VETO_GATEWAY_PUBLIC_URL'] ?? 'http://127.0.0.1:4100/mcp'}
+            bridgePath={
+              process.env['VETO_BRIDGE_PATH'] ??
+              '/home/void/vetoprotocol/apps/gateway/src/desktop-bridge.ts'
+            }
+            nodePath={process.env['VETO_NODE_PATH'] ?? 'node'}
+          />
+        </Panel>
+      ) : null}
 
       <Panel title="REGISTER" meta="NEW IDENTITY">
         <RegisterForm />
