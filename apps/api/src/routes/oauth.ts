@@ -19,7 +19,17 @@
 
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { Pool } from 'pg';
-import { findClient, registerClient, validateRegistration } from '@veto/oauth';
+import type Redis from 'ioredis';
+import { findAgent } from '@veto/identity';
+import { withWorkspace } from '@veto/db';
+import {
+  findClient,
+  issueCode,
+  redeemCode,
+  registerClient,
+  validateRegistration,
+  type CodeGrant,
+} from '@veto/oauth';
 import { ERROR_SCHEMA, HttpError } from '../errors.ts';
 import { requireScope, SCOPE_OAUTH_SERVER } from '../scope.ts';
 
@@ -68,6 +78,40 @@ interface RegisterBody {
 
 export interface OAuthRoutesDeps {
   readonly pool: Pool;
+  readonly redis: Redis;
+}
+
+const GRANT_BODY = {
+  type: 'object',
+  additionalProperties: false,
+  required: [
+    'workspace_id',
+    'user_id',
+    'agent_id',
+    'client_id',
+    'redirect_uri',
+    'code_challenge',
+    'resource',
+  ],
+  properties: {
+    workspace_id: { type: 'string', pattern: '^ws_[A-Za-z0-9_-]{1,64}$' },
+    user_id: { type: 'string', pattern: '^usr_[A-Za-z0-9_-]{1,64}$' },
+    agent_id: { type: 'string', pattern: '^agt_[A-Za-z0-9_-]{1,64}$' },
+    client_id: { type: 'string', pattern: '^oac_[A-Za-z0-9_-]{1,64}$' },
+    redirect_uri: { type: 'string', minLength: 1, maxLength: 2048 },
+    code_challenge: { type: 'string', pattern: '^[A-Za-z0-9\\-_]{43}$' },
+    resource: { type: 'string', minLength: 1, maxLength: 2048 },
+  },
+} as const;
+
+interface GrantBody {
+  workspace_id: string;
+  user_id: string;
+  agent_id: string;
+  client_id: string;
+  redirect_uri: string;
+  code_challenge: string;
+  resource: string;
 }
 
 export function registerOAuthRoutes(app: FastifyInstance, deps: OAuthRoutesDeps): void {
@@ -107,6 +151,106 @@ export function registerOAuthRoutes(app: FastifyInstance, deps: OAuthRoutesDeps)
         client_name: client.clientName,
         redirect_uris: client.redirectUris,
       });
+    },
+  );
+
+  /**
+   * Mint an authorization code for a grant a human has just approved.
+   *
+   * The agent is re-checked here rather than trusted from the caller. The
+   * dashboard has already shown a consent screen naming it, but between that
+   * screen and this call somebody may have revoked it, and an authorization
+   * server that mints a code for a revoked agent has undone a revocation
+   * (FR-08).
+   */
+  app.post(
+    '/v1/oauth/codes',
+    {
+      schema: {
+        body: GRANT_BODY,
+        response: {
+          201: {
+            type: 'object',
+            required: ['code'],
+            properties: { code: { type: 'string' } },
+          },
+          '4xx': ERROR_SCHEMA,
+          '5xx': ERROR_SCHEMA,
+        },
+      },
+    },
+    async (request: FastifyRequest<{ Body: GrantBody }>, reply) => {
+      requireScope(request, SCOPE_OAUTH_SERVER);
+      const body = request.body;
+
+      const client = await findClient(deps.pool, body.client_id);
+      if (!client) throw new HttpError(404, 'CLIENT_UNKNOWN', 'No such client');
+
+      const agent = await withWorkspace(deps.pool, body.workspace_id, (db) =>
+        findAgent(db, body.workspace_id, body.agent_id),
+      );
+      if (!agent) throw new HttpError(404, 'AGENT_UNKNOWN', 'No such agent in this workspace');
+      if (agent.status !== 'active') {
+        throw new HttpError(409, 'AGENT_REVOKED', 'That agent is not active');
+      }
+      // §7.1: the delegator is the human this token will act for, and the
+      // agent must already belong to them. A consent screen cannot grant an
+      // agent to somebody who does not own it.
+      if (agent.owner_user_id !== body.user_id) {
+        throw new HttpError(403, 'IDENTITY_UNRESOLVED', 'That agent belongs to another user');
+      }
+
+      const grant: CodeGrant = {
+        workspaceId: body.workspace_id,
+        userId: body.user_id,
+        agentId: body.agent_id,
+        clientId: body.client_id,
+        redirectUri: body.redirect_uri,
+        codeChallenge: body.code_challenge,
+        resource: body.resource,
+      };
+
+      return reply.code(201).send({ code: await issueCode(deps.redis, grant) });
+    },
+  );
+
+  /**
+   * Spend a code, once.
+   *
+   * Returns the grant exactly as it was approved. Nothing here is re-derived
+   * from what the client sent, because the client is precisely who must not get
+   * to change it between approval and exchange.
+   */
+  app.post(
+    '/v1/oauth/codes/redeem',
+    {
+      schema: {
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['code'],
+          properties: { code: { type: 'string', minLength: 1, maxLength: 200 } },
+        },
+        response: { 200: GRANT_BODY, '4xx': ERROR_SCHEMA, '5xx': ERROR_SCHEMA },
+      },
+    },
+    async (request: FastifyRequest<{ Body: { code: string } }>) => {
+      requireScope(request, SCOPE_OAUTH_SERVER);
+
+      const grant = await redeemCode(deps.redis, request.body.code);
+      // Unknown, expired and already spent are one answer. Telling them apart
+      // would say whether a code was ever real.
+      if (!grant) throw new HttpError(400, 'APPROVAL_EXPIRED', 'That code is not redeemable');
+
+      return {
+        workspace_id: grant.workspaceId,
+        user_id: grant.userId,
+        agent_id: grant.agentId,
+        client_id: grant.clientId,
+        redirect_uri: grant.redirectUri,
+        code_challenge: grant.codeChallenge,
+        resource: grant.resource,
+      };
     },
   );
 

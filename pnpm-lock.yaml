@@ -96,6 +96,9 @@ importers:
       '@simplewebauthn/browser':
         specifier: 13.2.2
         version: 13.2.2
+      '@veto/oauth':
+        specifier: workspace:*
+        version: link:../../packages/oauth
       '@veto/tokens':
         specifier: workspace:*
         version: link:../../packages/tokens

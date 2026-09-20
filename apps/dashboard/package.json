@@ -18,7 +18,8 @@
     "react": "19.0.0",
     "react-dom": "19.0.0",
     "server-only": "0.0.1",
-    "undici": "8.10.2"
+    "undici": "8.10.2",
+    "@veto/oauth": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "22.10.2",

@@ -134,7 +134,7 @@ export function createApp(deps: AppDeps): FastifyInstance {
     // no shared instance to reach for.
     drive: deps.drive ?? createDriveReader(),
   });
-  registerOAuthRoutes(app, { pool: deps.pool });
+  registerOAuthRoutes(app, { pool: deps.pool, redis: deps.redis });
   registerWebhookRoutes(app, { pool: deps.pool, wrapper: deps.wrapper });
   registerConnectionRoutes(app, {
     pool: deps.pool,
