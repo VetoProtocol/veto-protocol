@@ -232,6 +232,75 @@ describe('revocation between consent and exchange', () => {
   });
 });
 
+describe('revoking an agent reaches its OAuth session', () => {
+  it('kills the refresh chain, not just the access token', async () => {
+    const short = await registerAgent(WS, ALICE, `revoke-${s}`);
+    const code = (await mintCode({ agent_id: short })).json().code as string;
+    const refresh = (await exchange({ code })).json().refresh_token as string;
+
+    // It works while the agent is live.
+    const before = await post('/v1/oauth/token', {
+      grant_type: 'refresh_token',
+      client_id: clientId,
+      refresh_token: refresh,
+    });
+    expect(before.statusCode).toBe(200);
+    const rotated = before.json().refresh_token as string;
+
+    await app.inject({ method: 'DELETE', url: `/v1/agents/${short}`, headers: as(WS, ALICE) });
+
+    // §13 stage 4's exit is revocation across all sessions, and a refresh chain
+    // is a session: it outlives every access token it issued. The gateway would
+    // refuse what it mints — the agent's row says revoked — so this is not an
+    // access hole. It is authority outliving its withdrawal, which
+    // "a grant must not outlive the authority it was granted under" forbids.
+    const after = await post('/v1/oauth/token', {
+      grant_type: 'refresh_token',
+      client_id: clientId,
+      refresh_token: rotated,
+    });
+    expect(after.statusCode).toBe(400);
+  });
+});
+
+describe('an emergency lock reaches OAuth sessions too', () => {
+  it('kills every refresh chain in the workspace', async () => {
+    const code = (await mintCode()).json().code as string;
+    const refresh = (await exchange({ code })).json().refresh_token as string;
+
+    await app.inject({
+      method: 'POST',
+      url: '/v1/emergency-lock',
+      headers: as(WS, ALICE),
+      payload: { locked: true },
+    });
+
+    // A lock that leaves a way to keep minting credentials is not a lock. The
+    // pipeline would deny every request while locked anyway — this is about
+    // the chain not surviving the switch, the same way grants do not.
+    const after = await post('/v1/oauth/token', {
+      grant_type: 'refresh_token',
+      client_id: clientId,
+      refresh_token: refresh,
+    });
+    expect(after.statusCode).toBe(400);
+
+    // Unlocking does not hand it back.
+    await app.inject({
+      method: 'POST',
+      url: '/v1/emergency-lock',
+      headers: as(WS, ALICE),
+      payload: { locked: false },
+    });
+    const afterUnlock = await post('/v1/oauth/token', {
+      grant_type: 'refresh_token',
+      client_id: clientId,
+      refresh_token: refresh,
+    });
+    expect(afterUnlock.statusCode).toBe(400);
+  });
+});
+
 describe('the token it issues', () => {
   it('is audience-pinned to the gateway', async () => {
     const code = (await mintCode()).json().code as string;

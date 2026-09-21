@@ -212,6 +212,48 @@ export interface RevokeGrantsInput {
   readonly agentId?: string | null;
 }
 
+/**
+ * Kill the OAuth refresh chains belonging to an agent, or to a whole workspace.
+ *
+ * ## Why this sits beside `revokeLiveApprovals`
+ *
+ * A refresh chain is a session. It outlives every access token it issued, and
+ * it is the one thing in the product that can keep producing credentials after
+ * somebody withdrew the authority behind them.
+ *
+ * It was never an access hole: the gateway reads the agent's row on every
+ * request, so a token minted from a revoked agent's chain is refused. But §13's
+ * stage-4 exit is *revocation across all sessions*, and this repo's own rule is
+ * that a grant must not outlive the authority it was granted under. A chain
+ * that keeps rotating after a revocation breaks both, and would become an
+ * access hole the moment anything un-revoked the agent.
+ *
+ * Raw SQL rather than `@veto/oauth`'s own helper, for the same reason approvals
+ * are handled here: revocation reaches *into* the tables it must clear, and a
+ * dependency on the OAuth package would put the authorization server below the
+ * decision package in the graph.
+ *
+ * Returns the chains it killed, so a caller can report a number rather than
+ * claim an effect.
+ */
+export async function revokeRefreshChains(
+  db: Db,
+  input: RevokeGrantsInput,
+): Promise<readonly string[]> {
+  // Plain RETURNING, deduplicated here: Postgres has no `RETURNING DISTINCT`,
+  // and a chain has as many rows as it has rotations.
+  const { rows } = await db.query<{ chain_id: string }>(
+    `update oauth_refresh_tokens
+        set status = 'revoked', used_at = coalesce(used_at, now())
+      where workspace_id = $1
+        and status <> 'revoked'
+        and ($2::text is null or agent_id = $2)
+      returning chain_id`,
+    [input.workspaceId, input.agentId ?? null],
+  );
+  return [...new Set(rows.map((row) => row.chain_id))];
+}
+
 export async function revokeLiveApprovals(
   db: Db,
   input: RevokeGrantsInput,

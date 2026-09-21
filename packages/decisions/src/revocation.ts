@@ -44,7 +44,7 @@ import {
 } from '@veto/identity';
 import { setEmergencyLock } from '@veto/presence';
 import { enqueue } from '@veto/webhooks';
-import { revokeLiveApprovals } from './approvals.ts';
+import { revokeLiveApprovals, revokeRefreshChains } from './approvals.ts';
 
 export interface RevokeAgentEverywhereResult extends RevokeAgentResult {
   /** Outstanding grants that this revocation killed. */
@@ -73,6 +73,12 @@ export async function revokeAgentEverywhere(
       agentId: input.agentId,
     });
 
+    // The agent's OAuth sessions, which outlive every access token they issued.
+    const chains = await revokeRefreshChains(db, {
+      workspaceId: input.workspaceId,
+      agentId: input.agentId,
+    });
+
     // §5.4. Enqueued in the same transaction as the grants it describes, so an
     // alert cannot exist for a rollback and cannot be missing after a commit.
     // Nothing is sent from here — a receiver that hangs must not be able to
@@ -85,6 +91,7 @@ export async function revokeAgentEverywhere(
         agent_id: input.agentId,
         grants_revoked: revoked.length,
         sessions_dropped: result.sessionsDropped,
+        oauth_chains_revoked: chains.length,
       },
     });
 
@@ -150,8 +157,27 @@ export async function lockWorkspace(
 
   // Step 2 — the grants. Runs even when the workspace was already locked, so a
   // retry after a partial failure converges rather than leaving grants behind.
-  const grantsRevoked = await withWorkspace(pool, input.workspaceId, (db) =>
-    revokeLiveApprovals(db, { workspaceId: input.workspaceId, agentId: null }),
+  const { grantsRevoked, chainsRevoked } = await withWorkspace(
+    pool,
+    input.workspaceId,
+    async (db) => ({
+      grantsRevoked: await revokeLiveApprovals(db, {
+        workspaceId: input.workspaceId,
+        agentId: null,
+      }),
+
+      // Every OAuth session in the workspace, for the same reason the lock kills
+      // grants rather than only setting a column: the reason somebody throws
+      // this switch is that they believe something is going wrong right now,
+      // and a refresh chain is a way for work to continue afterwards.
+      //
+      // Unlocking does not restore them. A killed chain stays killed, and a
+      // client that should resume re-authorizes, which is the premise (§1.1).
+      chainsRevoked: await revokeRefreshChains(db, {
+        workspaceId: input.workspaceId,
+        agentId: null,
+      }),
+    }),
   );
 
   // Step 3 — the sessions, for every agent in the workspace. An agent with no
@@ -181,7 +207,12 @@ export async function lockWorkspace(
       workspaceId: input.workspaceId,
       type: 'workspace.locked',
       correlationId: input.correlationId ?? null,
-      data: { human_id: input.actorUserId, grants_revoked: grantsRevoked.length, sessions_dropped: sessionsDropped },
+      data: {
+        human_id: input.actorUserId,
+        grants_revoked: grantsRevoked.length,
+        sessions_dropped: sessionsDropped,
+        oauth_chains_revoked: chainsRevoked.length,
+      },
     }),
   );
 

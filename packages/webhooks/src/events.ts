@@ -91,4 +91,6 @@ export interface WebhookEventData {
   /** Counts, for events that describe a sweep — how much a lock stopped. */
   readonly grants_revoked?: number | null;
   readonly sessions_dropped?: number | null;
+  /** OAuth refresh chains killed. A chain outlives every token it issued. */
+  readonly oauth_chains_revoked?: number | null;
 }

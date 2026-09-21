@@ -267,6 +267,14 @@ since migration 0001 and nothing created the first kind until stage 4.
   risks on 2026-09-18, which lifted the §16 gate on storing credentials. Acceptance
   covers those four as written; a new trust boundary or a second cross-tenant read
   brings the document back for review.
+- **§9 is reviewed and not yet accepted.** The §8 authorization server added
+  Boundary 6 — an anonymous caller who can register a client and begin an
+  authorization — which is exactly the trigger above. The technical review is done
+  (T18–T27, each naming its test) and four further residual risks are written up.
+  **The owner's acceptance is outstanding**, and the four are: registration is open
+  by necessity, a client may call itself anything, `oauth-server` is a
+  tenant-unbounded credential inside T6, and nothing has been established outside
+  this machine.
 - **The local key wrapper is not a KMS.** `VAULT_MASTER_KEY` sits in the process
   environment, so anything that can read the environment can unwrap every data key.
   Production swaps the `KeyWrapper` implementation, not its callers.

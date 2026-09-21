@@ -41,6 +41,7 @@ aspirational.
 ```
 ┌─ UNTRUSTED ─────────────────────────────────────────────────┐
 │  Human user  →  AI client / agent  →  retrieved content      │
+│                  └─ anonymous, unregistered ◄── BOUNDARY 6   │
 └──────────┬───────────────────────────────┬───────────────────┘
            │  browser        BOUNDARY 4 ►  │  MCP / HTTPS  ◄── BOUNDARY 1
 ┌─ VETO CONTROL PLANE ─────────────────────┴───────────────────┐
@@ -60,6 +61,47 @@ an id token proves identity, never membership or authority.
 **Boundary 2 (gateway → Permit)** must fail closed and must never carry secrets or
 protected content. **Boundary 3 (gateway → upstream)** is where the narrowest possible
 token is minted per allowed action.
+**Boundary 6 (anonymous caller → authorization server)** is new in the §8 OAuth work
+and is the only boundary reachable by somebody with no account, no invitation and no
+credential: `POST /register` and `GET /authorize` on the dashboard. See §3.3.
+
+### 3.3 Boundary 6 — the anonymous caller
+
+Added 2026-09-20 with the §8 authorization server. It did not exist at the
+2026-09-18 sign-off, when the only way to attach a client was a configuration file
+on the server's own disk.
+
+**What an anonymous caller can now do:** register an OAuth client (RFC 7591, no
+authentication — a desktop client arrives with no credential and no way to obtain
+one), fetch two discovery documents, and begin an authorization.
+
+**What that gets them:** a name and a list of redirect URIs. Nothing else. A
+registered client cannot read, cannot decide, and cannot be granted anything. It can
+ask a human to approve it, and the human sees what they are approving.
+
+Three properties carry that claim:
+
+1. **Registration confers no authority.** `oauth_clients` holds a name and redirect
+   URIs and has no tenant, no role and no grant. It is deliberately outside
+   invariant 4's tenant scoping for that reason, and migration 0015 states that any
+   future column which grants, narrows or identifies a tenant re-opens the argument.
+2. **The human is the gate.** A code is minted only by an approval made in a
+   signed-in session, and the workspace, human and agent come from that session —
+   never from the client. §7.1's "only the original delegator" holds by construction
+   and is re-checked on the control plane, because a property that holds only by
+   construction stops holding when somebody restructures the construction.
+3. **The token it ends with is the token the gateway already accepted.** Nothing
+   about OAuth widens what a token can do; it changes only how one is obtained. The
+   gateway re-reads the agent's row on every request regardless.
+
+**What a registered client can still do that is worth naming:** call itself anything.
+`client_name` is self-declared and shown to the person deciding. No check can
+distinguish a client honestly called "Veto Sync" from one dishonestly called "Veto
+Admin", so the consent screen says the name is self-declared and shows the redirect
+address instead. Characters that change how text *reads* rather than what it says —
+bidirectional overrides, zero-width marks, control characters — are refused at
+registration, because those are not a naming choice, they are a way to make the
+screen say something it does not contain.
 
 ### 3.1 Principals and how far each is trusted
 
@@ -120,6 +162,24 @@ Three consequences that constrain every design decision downstream:
 | T12 | SSRF / metadata access | Destination allowlist; private and link-local ranges denied | §12.1 "request targets a private / metadata network address" |
 | T13 | Bulk-splitting | Cumulative volume as an *authorization* limit, not a rate limit; digest covers arguments | §12.1 "blocked bulk request split into many small requests" |
 | T14 | Emergency lock race | Lock checked at step 3 of every request, before policy | §12.1 "emergency lock during an active session" |
+
+### 4.1b Threats introduced by the §8 authorization server
+
+Added 2026-09-20. Every one of these was found by testing rather than reasoning, and
+each names the test that holds it.
+
+| # | Threat | Mitigation | Held by |
+|---|---|---|---|
+| T18 | Authorization code intercepted in the browser redirect | PKCE S256 required; `plain` refused by name, and an *absent* method refused with it because the RFC's default is `plain` | `packages/oauth/test/pkce.test.ts` |
+| T19 | Code delivered to an attacker's address | Redirect URI compared whole against registration, at render *and* at mint — the screen and the mint are different trust domains | `oauth-attacks.test.ts` |
+| T20 | Error redirected to an unvalidated address (open redirect) | An unknown client or unregistered URI is refused **on the page**; only a validated target is ever redirected to | verified live, `/authorize` |
+| T21 | Code replayed after exchange | Single use via Redis `getdel`; spent before the later checks, so a failed exchange leaves nothing to grind against | `codes.test.ts` |
+| T22 | Code redeemed by a different client | Refused, with the same wording an unknown code gets — "issued to another client" would confirm it was real to whoever took it | `oauth-attacks.test.ts` |
+| T23 | Refresh token stolen and used alongside the honest client | Rotation with reuse detection: a second use revokes the whole chain. One re-authorization for the honest client; an account for the other outcome | `refresh.test.ts` |
+| T24 | Refresh token replayed against another tenant | Hash covers the workspace prefix, so a repointed token hashes to something that exists nowhere; RLS scopes the lookup | `oauth-attacks.test.ts` |
+| T25 | Consent screen made to read misleadingly | Bidirectional overrides, zero-width and control characters refused at registration; the screen states the name is self-declared and shows the redirect address | `clients.test.ts` |
+| T26 | Registration or token endpoint flooded | Per-address bounds — 60 registrations/hour, 60 token calls/minute. An availability control and never a substitute for authorization | `oauth-attacks.test.ts` |
+| T27 | OAuth session outliving the authority behind it | Agent revocation and emergency lock both kill the refresh chains. Never an access hole — the gateway re-reads the agent's row — but §13 stage 4's exit is revocation across *all* sessions | `oauth-attacks.test.ts` |
 
 ### 4.2 Two distinctions that are easy to collapse, and must not be
 
@@ -222,6 +282,24 @@ Also accepted for v1.0:
 - **The dashboard holds the capability signing key.** It is inside the control plane,
   so its compromise is control-plane compromise (T6), not a lesser event. Scoping and
   the 15-minute ceiling limit blast radius; they do not change the classification.
+- **Anyone who can reach the dashboard can register a client** (Boundary 6). This is
+  required: a desktop client arrives with no credential and no way to obtain one, and
+  requiring authentication would mean issuing client ids by hand to every customer's
+  machine. What bounds it is that registration confers no authority and a human is
+  the gate. What it costs is rows in a table and noise in a log, bounded per address.
+- **A client may call itself anything.** No check distinguishes an honest name from a
+  dishonest one, so the consent screen states the name is self-declared and shows the
+  redirect address, which is the fact a person can actually check. Characters that
+  change how text reads are refused; names that merely lie are not.
+- **The `oauth-server` credential is not tenant-bound.** It carries placeholder ids
+  and the routes take the workspace from the request body. This adds nothing to T6 —
+  the dashboard already holds the signing key and can mint any token — but it means
+  the credential's blast radius is every tenant, not one, and should be read as part
+  of T6 rather than as a separate smaller risk.
+- **Deployment is not a deployment.** Local Postgres, local Redis, a
+  `VAULT_MASTER_KEY` in a file, and HTTP rather than HTTPS. Every measurement and
+  every control in this document was verified on one machine. None of it transfers
+  to a hosted environment without being re-established there.
 
 ---
 
@@ -260,3 +338,47 @@ storing production credentials is lifted, and the credential vault may be built.
 Acceptance is of these four as written. It is not a standing waiver: a change
 that alters any of them — a new trust boundary, a second cross-tenant read, a
 credential held somewhere new — brings this document back for review.
+
+---
+
+## 9 Review — 2026-09-21, the §8 authorization server
+
+Brought back by the rule above: Boundary 6 is a new trust boundary, and the
+2026-09-18 acceptance covered a system whose only front door was a configuration
+file on the server's own disk.
+
+The owner chose on 2026-09-20 to ship the boundary and review afterwards. That was
+a decision, not an omission, and this is the review it deferred — not a
+ratification of it.
+
+| Item | Status |
+|---|---|
+| Boundary 6 described, with what an anonymous caller can and cannot do | ✅ §3.3 |
+| Threats introduced by §8 mapped | ✅ T18–T27, each naming the test that holds it |
+| Every claimed control actually runs | ✅ 644 tests; two independent clients completed the flow |
+| Reviewed by the implementer | ✅ |
+| **Residual risk accepted by the project owner** | ⬜ **outstanding** |
+
+### 9.1 What the owner is being asked to accept, in addition to the four
+
+5. **Registration is open, and must be.** The bound is that a registered client
+   holds no authority and a human is the gate — not that registration is hard.
+6. **A client may call itself anything.** The consent screen's wording is the
+   mitigation, and wording is weaker than a check. There is no check available.
+7. **`oauth-server` is a tenant-unbounded credential**, inside T6 rather than beside
+   it.
+8. **Nothing here has been established outside this machine.** The controls are
+   real; the environment is not a production environment.
+
+### 9.2 Found by this review, and fixed before it was written
+
+An agent revocation and an emergency lock both left OAuth refresh chains alive. It
+was never an access hole — the gateway re-reads the agent's row on every request, so
+a token minted from a dead agent's chain is refused — but §13 stage 4's exit
+condition is *revocation across all sessions*, and a refresh chain is a session that
+outlives every token it issued. Both paths now revoke the chains, and two tests hold
+it.
+
+Worth recording how it was found: not by reading the code, but by asking what
+`revokeAgentEverywhere` reaches and checking the answer against a table that did not
+exist when it was written. Every other finding in this review arrived the same way.
