@@ -41,6 +41,23 @@ function describeConditions(conditions: PolicyView['conditions']): string[] {
   }
   if (conditions.maxPerDay !== undefined) parts.push(`max ${conditions.maxPerDay}/day`);
   if (conditions.requireIntent === true) parts.push('must state a purpose');
+
+  const schedule = conditions.schedule;
+  if (schedule !== undefined) {
+    // 0 is Sunday, as the API stores it. Written out in reading order, because
+    // "1,2,3,4,5" is not something anybody should have to decode on a screen
+    // that exists to say what a rule does.
+    const names = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const order = [1, 2, 3, 4, 5, 6, 0];
+    const days =
+      schedule.days === undefined || schedule.days.length === 7
+        ? ''
+        : ` ${order
+            .filter((day) => schedule.days?.includes(day))
+            .map((day) => names[day])
+            .join(' ')}`;
+    parts.push(`${schedule.from}–${schedule.to}${days}`);
+  }
   return parts;
 }
 

@@ -46,7 +46,12 @@ export async function createPolicyAction(
     .filter((p) => p !== '');
   const rawMax = String(form.get('max_per_day') ?? '').trim();
 
-  const conditions: { presence?: string[]; maxPerDay?: number; requireIntent?: boolean } = {};
+  const conditions: {
+    presence?: string[];
+    maxPerDay?: number;
+    requireIntent?: boolean;
+    schedule?: { from: string; to: string; days?: number[] };
+  } = {};
   if (presence.length > 0) conditions.presence = presence;
   if (rawMax !== '') {
     const max = Number(rawMax);
@@ -57,6 +62,30 @@ export async function createPolicyAction(
     conditions.maxPerDay = max;
   }
   if (form.get('require_intent') === 'on') conditions.requireIntent = true;
+
+  const from = String(form.get('schedule_from') ?? '').trim();
+  const to = String(form.get('schedule_to') ?? '').trim();
+
+  // One without the other is somebody who started typing a window and stopped.
+  // Dropping it silently would store a rule that applies at all hours while
+  // its author believes it does not.
+  if ((from === '') !== (to === '')) {
+    return { error: 'A window needs both a start and an end.', notice: null };
+  }
+  if (from !== '' && from === to) {
+    // Passes every pattern and matches nothing, ever.
+    return { error: 'A window that starts when it ends never applies.', notice: null };
+  }
+  if (from !== '') {
+    const days = form
+      .getAll('schedule_days')
+      .map((value) => Number(String(value)))
+      .filter((day) => Number.isInteger(day) && day >= 0 && day <= 6);
+
+    // Empty means every day, which is what the API takes — so the key is left
+    // off rather than sent as an empty list, which would mean *no* days.
+    conditions.schedule = days.length > 0 ? { from, to, days } : { from, to };
+  }
 
   try {
     const rule = await createPolicy(session.credential, {

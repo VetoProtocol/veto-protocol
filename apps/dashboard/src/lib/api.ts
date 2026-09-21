@@ -239,7 +239,13 @@ export interface PolicyView {
   readonly action: string;
   readonly effect: 'allow' | 'deny' | 'challenge';
   readonly resource_filter: { type?: string; ids?: string[]; prefix?: string };
-  readonly conditions: { presence?: string[]; maxPerDay?: number; requireIntent?: boolean };
+  readonly conditions: {
+    presence?: string[];
+    maxPerDay?: number;
+    requireIntent?: boolean;
+    /** FR-06's time window, read in the workspace's own timezone. */
+    schedule?: { from: string; to: string; days?: number[] };
+  };
 }
 
 export const listPolicies = (credential: string): Promise<{ policies: PolicyView[] }> =>
@@ -252,7 +258,12 @@ export const createPolicy = (
     action: string;
     effect: string;
     resource_filter: { type: string; ids?: string[]; prefix?: string };
-    conditions?: { presence?: string[]; maxPerDay?: number; requireIntent?: boolean };
+    conditions?: {
+      presence?: string[];
+      maxPerDay?: number;
+      requireIntent?: boolean;
+      schedule?: { from: string; to: string; days?: number[] };
+    };
   },
 ): Promise<PolicyView> =>
   request('/v1/policies', { method: 'POST', credential, body: JSON.stringify(body) });

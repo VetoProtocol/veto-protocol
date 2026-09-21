@@ -210,6 +210,42 @@ export function CreatePolicyForm({ agents }: { agents: readonly AgentChoice[] })
             </span>
           </label>
 
+          <label style={label}>
+            <span className="label">
+              hours <span style={{ color: 'var(--text-faint)' }}>optional</span>
+            </span>
+            <span style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <input name="schedule_from" type="time" style={{ ...field, minWidth: 0 }} />
+              <span style={{ color: 'var(--text-faint)', fontSize: 11.5 }}>to</span>
+              <input name="schedule_to" type="time" style={{ ...field, minWidth: 0 }} />
+            </span>
+            <span
+              style={{ display: 'flex', gap: 10, flexWrap: 'wrap', fontSize: 11.5, marginTop: 2 }}
+            >
+              {/* 0 is Sunday, which is what the API takes. Shown in the order a
+                  week is read rather than the order the numbers run. */}
+              {[
+                ['Mon', 1],
+                ['Tue', 2],
+                ['Wed', 3],
+                ['Thu', 4],
+                ['Fri', 5],
+                ['Sat', 6],
+                ['Sun', 0],
+              ].map(([name, value]) => (
+                <span key={String(value)} style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                  <input type="checkbox" name="schedule_days" value={String(value)} />
+                  <span>{name}</span>
+                </span>
+              ))}
+            </span>
+            <span style={{ color: 'var(--text-faint)', fontSize: 11 }}>
+              Outside these hours the rule does not apply &mdash; it does not refuse, it stops
+              being one of the rules in play. Read in this workspace&rsquo;s timezone. An end
+              before the start means overnight. No days ticked means every day.
+            </span>
+          </label>
+
           <label style={{ ...label, alignSelf: 'start' }}>
             <span className="label">stated purpose</span>
             <span style={{ display: 'flex', gap: 8, alignItems: 'baseline', fontSize: 12 }}>
