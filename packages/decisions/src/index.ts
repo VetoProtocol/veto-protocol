@@ -8,3 +8,4 @@ export * from './volume.ts';
 export * from './labels.ts';
 export * from './revocation.ts';
 export * from './timing.ts';
+export * from './schedule.ts';

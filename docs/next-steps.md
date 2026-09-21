@@ -127,6 +127,12 @@ were checked on 2026-09-21; two turned out to be real and are fixed.
 
 ---
 
+## Closed on 2026-09-21
+
+FR-06's time dimension. A rule can now carry a `schedule` — working hours, a
+night shift, named days — read in the workspace's own zone. It was the only
+**Must** in §2's table that was not met.
+
 ## What is deliberately not here
 
 Writes and CRUD. `docs/writes-plan.md` stands, and so does the reason it is

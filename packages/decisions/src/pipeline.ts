@@ -93,6 +93,10 @@ export async function evaluate(deps: PipelineDeps, input: EvaluateInput): Promis
     destination: input.destination,
   });
 
+  // UTC until step 3 reads the workspace's own. A rule with a window is treated
+  // as shut while this is unknown, so a failure to read it narrows rather than
+  // widens.
+  let timeZone = 'UTC';
   let permitResult: PermitOutcome | 'not_evaluated' = 'not_evaluated';
   let held: Outcome | null = null;
   let policyVersion: string | null = null;
@@ -106,13 +110,17 @@ export async function evaluate(deps: PipelineDeps, input: EvaluateInput): Promis
     // both waste the budget and imply the answer could matter.
     const gate = await clock.time('session', () =>
       withWorkspace(deps.pool, input.workspaceId, async (db) => {
-      const { rows } = await db.query<{ emergency_lock: boolean }>(
-        `select emergency_lock from workspaces where id = $1`,
+      // The zone comes from the same row as the lock, on the same round trip.
+      // A rule saying "09:00" means nine where the workspace is, and step 4
+      // cannot read that without it.
+      const { rows } = await db.query<{ emergency_lock: boolean; timezone: string }>(
+        `select emergency_lock, timezone from workspaces where id = $1`,
         [input.workspaceId],
       );
       const workspace = rows[0];
       if (!workspace) return deny('IDENTITY_UNRESOLVED');
       if (workspace.emergency_lock) return deny('WORKSPACE_LOCKED');
+      timeZone = workspace.timezone;
 
       const agent = await findAgent(db, input.workspaceId, input.agentId);
       if (!agent) return deny('AGENT_UNKNOWN');
@@ -135,7 +143,7 @@ export async function evaluate(deps: PipelineDeps, input: EvaluateInput): Promis
     const rules = await clock.time('precheck', () =>
       withWorkspace(deps.pool, input.workspaceId, (db) => loadPolicies(db, input.workspaceId)),
     );
-    const verdict = matchPolicies(rules, input);
+    const verdict = matchPolicies(rules, input, { at: new Date(), timeZone });
     policyVersion = verdict.version;
 
     if (verdict.effect === 'deny') {

@@ -269,3 +269,66 @@ describe('reading and removing', () => {
     expect(response.statusCode).toBe(403);
   });
 });
+
+describe('a rule with a time window (FR-06)', () => {
+  it('accepts working hours', async () => {
+    const response = await post({
+      subject: AGENT,
+      action: 'read',
+      effect: 'allow',
+      resource_filter: { type: 'google_folder' },
+      conditions: { schedule: { from: '09:00', to: '17:00', days: [1, 2, 3, 4, 5] } },
+    });
+    expect(response.statusCode).toBe(201);
+    expect(response.json().conditions.schedule.from).toBe('09:00');
+  });
+
+  it('accepts a window that crosses midnight', async () => {
+    // A night shift is not a mistake.
+    const response = await post({
+      subject: AGENT,
+      action: 'read',
+      effect: 'allow',
+      resource_filter: { type: 'google_folder' },
+      conditions: { schedule: { from: '22:00', to: '06:00' } },
+    });
+    expect(response.statusCode).toBe(201);
+  });
+
+  it('refuses a window that starts when it ends', async () => {
+    // Passes every pattern in the schema and matches nothing, ever. Storing it
+    // would mean an operator wrote a rule that silently does nothing.
+    const response = await post({
+      subject: AGENT,
+      action: 'read',
+      effect: 'allow',
+      resource_filter: { type: 'google_folder' },
+      conditions: { schedule: { from: '09:00', to: '09:00' } },
+    });
+    expect(response.statusCode).toBe(400);
+  });
+
+  it('refuses a time that is not a time', async () => {
+    for (const bad of ['25:00', '9:00', 'morning', '']) {
+      const response = await post({
+        subject: AGENT,
+        action: 'read',
+        effect: 'allow',
+        resource_filter: { type: 'google_folder' },
+        conditions: { schedule: { from: bad, to: '17:00' } },
+      });
+      expect(response.statusCode, bad).toBe(400);
+    }
+  });
+
+  it('refuses a day outside the week', async () => {
+    const response = await post({
+      subject: AGENT,
+      action: 'read',
+      effect: 'allow',
+      resource_filter: { type: 'google_folder' },
+      conditions: { schedule: { from: '09:00', to: '17:00', days: [7] } },
+    });
+    expect(response.statusCode).toBe(400);
+  });
+});

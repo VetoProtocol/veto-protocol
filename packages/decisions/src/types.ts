@@ -4,6 +4,7 @@
 
 import type { DecisionResult } from '@veto/core';
 import type { StepTimings } from './timing.ts';
+import type { Schedule } from './schedule.ts';
 
 export interface ResourceRef {
   readonly type: string;
@@ -82,5 +83,12 @@ export interface PolicyRule {
     readonly maxPerDay?: number;
     /** Requires a stated intent before a sensitive resource is touched. */
     readonly requireIntent?: boolean;
+    /**
+     * When this rule applies at all (FR-06's time dimension).
+     *
+     * Read in the workspace's zone. Outside it the rule simply does not match,
+     * so it narrows by absence rather than by denying — see `schedule.ts`.
+     */
+    readonly schedule?: Schedule;
   };
 }

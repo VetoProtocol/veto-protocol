@@ -17,6 +17,7 @@ import type { Db } from '@veto/db';
 import { writeAuditEvent } from '@veto/identity';
 import type { PolicyRule } from './types.ts';
 import type { EvaluateInput } from './types.ts';
+import { scheduleIsOpen } from './schedule.ts';
 
 /**
  * The actions a rule may name.
@@ -62,7 +63,25 @@ export async function loadPolicies(db: Db, workspaceId: string): Promise<PolicyR
   }));
 }
 
-export function ruleMatches(rule: PolicyRule, input: EvaluateInput): boolean {
+/**
+ * Where and when a rule is being read.
+ *
+ * Optional so every existing caller and test keeps working: absent means "no
+ * clock", and a rule with a window is then treated as shut rather than open. A
+ * time condition that stopped applying because somebody forgot to pass a clock
+ * would widen access by omission.
+ */
+export interface EvaluationClock {
+  readonly at: Date;
+  /** The workspace's IANA zone. "09:00" means nine where the people are. */
+  readonly timeZone: string;
+}
+
+export function ruleMatches(
+  rule: PolicyRule,
+  input: EvaluateInput,
+  clock?: EvaluationClock,
+): boolean {
   if (rule.subject !== '*' && rule.subject !== input.agentId) return false;
   if (rule.action !== '*' && rule.action !== input.action) return false;
 
@@ -72,6 +91,16 @@ export function ruleMatches(rule: PolicyRule, input: EvaluateInput): boolean {
   if (filter.ids !== undefined && !filter.ids.includes(input.resource.id)) return false;
 
   if (filter.prefix !== undefined && !input.resource.id.startsWith(filter.prefix)) return false;
+
+  // A rule outside its window does not apply — it does not deny and it does not
+  // challenge. "No rule said yes" then handles the rest (invariant 2), which is
+  // what makes this compose with precedence: a windowed `deny` still outranks
+  // an `allow` while its window is open, and stops mattering when it shuts.
+  const schedule = rule.conditions.schedule;
+  if (schedule !== undefined) {
+    if (clock === undefined) return false;
+    if (!scheduleIsOpen(schedule, clock.at, clock.timeZone)) return false;
+  }
 
   return true;
 }
@@ -90,8 +119,12 @@ export interface PolicyVerdict {
  * first, and an operator adding a deny should never have to audit the ordering
  * of everything already there.
  */
-export function matchPolicies(rules: readonly PolicyRule[], input: EvaluateInput): PolicyVerdict {
-  const matching = rules.filter((rule) => ruleMatches(rule, input));
+export function matchPolicies(
+  rules: readonly PolicyRule[],
+  input: EvaluateInput,
+  clock?: EvaluationClock,
+): PolicyVerdict {
+  const matching = rules.filter((rule) => ruleMatches(rule, input, clock));
 
   if (matching.length === 0) {
     // No rule said yes. That is a denial, not an absence (invariant 2).

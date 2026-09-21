@@ -222,6 +222,14 @@ since migration 0001 and nothing created the first kind until stage 4.
   paths do not. `/v1/grants` enforces it so the failure is a 400 that explains
   itself rather than an upstream 422. Same shape of surprise as `agent|` in
   `model.ts` — the API's grammar is narrower than §4.2's examples.
+- **A rule outside its time window does not match; it does not deny.** FR-06's
+  time dimension is a `schedule` condition read in the workspace's own IANA zone
+  (`workspaces.timezone`, migration 0020). Narrowing by non-match is what makes
+  it compose with precedence — a windowed `deny` still outranks an `allow` while
+  open, and stops mattering when shut — and it needs no twenty-sixth reason
+  code, because "every rule's window is shut" genuinely is `TOOL_NOT_ALLOWED`.
+  A malformed or unreadable window is treated as shut: a broken rule must
+  narrow, never widen.
 - **Policy rules are created and deleted, never edited.** Every decision records
   the `policy_version` that produced it, so editing a rule in place would leave
   old decisions pointing at a version whose text has since changed. Each rule

@@ -19,7 +19,13 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { Pool } from 'pg';
 import { withWorkspace } from '@veto/db';
-import { createPolicy, deletePolicy, loadPolicies, POLICY_ACTIONS } from '@veto/decisions';
+import {
+  createPolicy,
+  deletePolicy,
+  isValidSchedule,
+  loadPolicies,
+  POLICY_ACTIONS,
+} from '@veto/decisions';
 import { PRESENCE_STATES } from '@veto/presence';
 import { ERROR_SCHEMA, HttpError } from '../errors.ts';
 import { requireScope, SCOPE_CONTROL_PLANE } from '../scope.ts';
@@ -46,6 +52,18 @@ const POLICY_SCHEMA = {
         presence: { type: 'array', items: { type: 'string' } },
         maxPerDay: { type: 'integer' },
         requireIntent: { type: 'boolean' },
+        // Listed here as well as on the request. Fastify serialises a response
+        // against this schema and drops what it does not name — so a rule with
+        // a window would have been stored, and then invisible everywhere that
+        // reads one back, including the screen that has to show it.
+        schedule: {
+          type: 'object',
+          properties: {
+            from: { type: 'string' },
+            to: { type: 'string' },
+            days: { type: 'array', items: { type: 'integer' } },
+          },
+        },
       },
     },
   },
@@ -93,6 +111,25 @@ const CREATE_BODY = {
         // A cumulative authorization limit, never a rate limit (§7.1).
         maxPerDay: { type: 'integer', minimum: 1, maximum: 100000 },
         requireIntent: { type: 'boolean' },
+        // FR-06's time dimension. Read in the workspace's own zone, so "09:00"
+        // means nine where the people are — see packages/decisions/schedule.ts.
+        schedule: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['from', 'to'],
+          properties: {
+            from: { type: 'string', pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$' },
+            to: { type: 'string', pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$' },
+            // 0 is Sunday. Omitted means every day; naming "weekdays" here
+            // would bake in an assumption about which days those are.
+            days: {
+              type: 'array',
+              minItems: 1,
+              maxItems: 7,
+              items: { type: 'integer', minimum: 0, maximum: 6 },
+            },
+          },
+        },
       },
     },
   },
@@ -103,7 +140,12 @@ interface CreateBody {
   action: string;
   effect: 'allow' | 'deny' | 'challenge';
   resource_filter: { type: string; ids?: string[]; prefix?: string };
-  conditions?: { presence?: string[]; maxPerDay?: number; requireIntent?: boolean };
+  conditions?: {
+    presence?: string[];
+    maxPerDay?: number;
+    requireIntent?: boolean;
+    schedule?: { from: string; to: string; days?: number[] };
+  };
 }
 
 export function registerPolicyRoutes(app: FastifyInstance, deps: { pool: Pool }): void {
@@ -165,6 +207,19 @@ export function registerPolicyRoutes(app: FastifyInstance, deps: { pool: Pool })
           400,
           'ARGUMENT_SCHEMA_INVALID',
           'Give either a list of ids or a prefix, not both',
+        );
+      }
+
+      // Shape is the schema's job; meaning is this one's. A window whose start
+      // equals its end passes every pattern above and matches nothing ever —
+      // an operator would have written a rule that silently does nothing, and
+      // found out as a denial somewhere else entirely.
+      const schedule = body.conditions?.schedule;
+      if (schedule !== undefined && !isValidSchedule(schedule)) {
+        throw new HttpError(
+          400,
+          'ARGUMENT_SCHEMA_INVALID',
+          'A schedule needs a start and end that differ, and days between 0 and 6',
         );
       }
 
