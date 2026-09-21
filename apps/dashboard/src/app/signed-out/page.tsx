@@ -1,4 +1,5 @@
 import { Mark } from '@/components/mark';
+import { WalletSignIn } from './wallet-button';
 
 /**
  * Where every unsuccessful sign-in lands, and where signing out ends.
@@ -94,6 +95,11 @@ export default async function SignedOut({
           >
             Continue with Google
           </a>
+
+          {/* Second, and second for a reason: one of these can be recovered
+              and the other cannot. The dialog behind it says so before a
+              wallet is ever asked to connect. */}
+          <WalletSignIn />
         </div>
 
         <p

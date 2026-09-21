@@ -58,6 +58,13 @@ aspirational.
 holds the capability signing key and is inside the control plane, not outside it.
 **Boundary 5 (dashboard → OIDC provider)** decides who a person is and nothing else:
 an id token proves identity, never membership or authority.
+**Boundary 5b (dashboard → a wallet)** is a *different* claim wearing the same
+shape. A signature proves somebody controls a private key; it does not say who
+they are, because there is no issuer, no directory and nobody to ask. Two
+consequences: a wallet identity cannot be recovered — nobody can attest that a
+new key belongs to the same person — and it cannot be revoked by anyone but its
+holder. The sign-in screen states the first before a wallet is asked to connect,
+because a person who did not know it should not find out by losing a workspace.
 **Boundary 2 (gateway → Permit)** must fail closed and must never carry secrets or
 protected content. **Boundary 3 (gateway → upstream)** is where the narrowest possible
 token is minted per allowed action.
@@ -113,6 +120,7 @@ screen say something it does not contain.
 | Retrieved content | — | **Hostile input** | See 3.2 |
 | Permit PDP | Server-side API key | Trusted for its one answer | Not trusted to be available |
 | OIDC provider | TLS + JWKS signature | Trusted to say *who*, nothing more | A valid id token confers no membership; see T15 |
+| Wallet signature | EIP-4361 over a server-composed message | Trusted to say *which key*, not who | No issuer, no recovery, no revocation but the holder's |
 | Dashboard | Holds the capability key | Inside the control plane | Compromise equals control-plane compromise, not a lesser event |
 | Google APIs | OAuth | Trusted as data source | Not trusted for availability or latency |
 
