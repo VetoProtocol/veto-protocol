@@ -108,10 +108,12 @@ were checked on 2026-09-21; two turned out to be real and are fixed.
   quota, which surfaced as a 500 from Permit's tenants API and a
   `POLICY_UNAVAILABLE` on agent registration — a failure with no obvious
   connection to its cause. The suite should clean up after itself.
-- **Passkey enrolment has no browser half.** Using a passkey works; registering
-  one needs curl. Approvals are therefore undemoable to a new user, and a user
-  with no enrolled passkey cannot resolve a challenge at all — which is a
-  refusal, not a fallback, and correct, and useless.
+- ~~**Passkey enrolment has no browser half.**~~ **Wrong — it always had one.**
+  `EnrolPasskey` sits on `/approvals` beside `ResolveApproval`, and
+  `tools/e2e/passkey-enrol.ts` now proves both with a virtual authenticator:
+  enrol a device, be challenged by an away-state read, resolve it with a
+  signature. The claim survived three separate write-ups of this list because
+  nobody opened the page.
 - **Webhook delivery has no scheduler.** `/alerts` has a "deliver now" button,
   which is honest about there being no cron rather than draining on render.
 - **Per-step timings are recorded and shown, not exported.** The decision trace

@@ -63,7 +63,14 @@ Gmail and Calendar are read-only and live. Four tools —
 create or update tool, and no scope for either. §12.1's first scenario is now
 tested with an actual poisoned email rather than a Drive file standing in.
 
-What is **not** built: the browser half of passkey *enrolment*, and a scheduler
+**Passkeys work in the browser, enrolment included.** `EnrolPasskey` and
+`ResolveApproval` are both on `/approvals`, and `tools/e2e/passkey-enrol.ts`
+drives them with a Chromium virtual authenticator: enrol, get challenged by an
+away-state read, resolve with a signature over that approval's own challenge.
+§13 stage 3's exit condition, verified end to end rather than in parts. Three
+earlier notes here said enrolment had no browser half; it had one all along.
+
+What is **not** built: a scheduler
 for webhook delivery — `/alerts` has a "deliver now" button instead, which is
 honest about there being no cron here rather than draining silently on render.
 
