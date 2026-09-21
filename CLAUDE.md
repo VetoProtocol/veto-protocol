@@ -70,9 +70,14 @@ away-state read, resolve with a signature over that approval's own challenge.
 §13 stage 3's exit condition, verified end to end rather than in parts. Three
 earlier notes here said enrolment had no browser half; it had one all along.
 
-What is **not** built: a scheduler
-for webhook delivery — `/alerts` has a "deliver now" button instead, which is
-honest about there being no cron here rather than draining silently on render.
+**Webhook delivery is scheduled.** The API starts a five-second loop
+(`@veto/webhooks/scheduler`, off with `WEBHOOK_SCHEDULER=off`). Every instance
+runs one: `drainDeliveries` claims rows `for update skip locked`, so two split
+the queue rather than both sending an event. The `/alerts` button stays as an
+explicit trigger. Finding which workspaces have work is the **second**
+deliberate cross-tenant read — `due_delivery_workspaces()`, migrations 0018 and
+0019 — and `security definer` alone was not enough, because `FORCE` row-level
+security applies to the table owner too.
 
 **Folder grants inherit.** `POST /v1/grants/sync` walks a folder with the
 workspace's own Google credential and writes a `parent` tuple per child, so one

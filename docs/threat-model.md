@@ -193,6 +193,36 @@ each names the test that holds it.
   around the check (invariant 3). A component that treats `permit.check === true` as
   an allow is a defect regardless of its tests.
 
+### 4.3b The second deliberate exception to tenant isolation
+
+Added 2026-09-21 with the §5.4 delivery scheduler. §8.1 says a second
+cross-tenant read brings this document back; this is that read, recorded rather
+than slipped in.
+
+`due_delivery_workspaces()` answers "which workspaces have a webhook delivery
+due". A scheduler cannot ask any other way: `webhook_deliveries` has FORCEd
+row-level security, so nothing sees across tenants, and without this, delivery
+stays a button somebody presses per workspace by hand.
+
+Built to the same shape as `resolve_identity_subject()` and for the same
+reasons:
+
+- **One column.** A workspace id. No payload, no endpoint, no event type —
+  nothing that says what is being delivered or to whom.
+- **No argument**, so there is no input to smuggle a filter through.
+- **SELECT-only**, through two `for select` policies that open only while a
+  transaction-local flag is set, which only this function sets.
+- **Existence, not contents.** "There is work here" is the least a scheduler can
+  be told and still function. Draining still enters each workspace normally, and
+  row-level security governs every row read after that.
+
+Worth recording how it was built wrong first: the function was originally
+`security definer` and nothing else, on the assumption that definer rights read
+past RLS. They do not — `FORCE` applies to the table owner too, so it returned
+nothing, silently, and the scheduler looked like it was running while delivering
+nothing. Silence is the worst way for a sweep to fail, and the existing
+exception already had the answer.
+
 ### 4.3 The deliberate exception to tenant isolation
 
 Invariant 4 says every query is scoped by `workspace_id`. Migration 0007 makes one
@@ -328,7 +358,9 @@ implementer's to make. Four residual risks, each unfixable within v1.0's scope:
    plainly rather than imply otherwise.
 2. **Gateway compromise is catastrophic**, and the defence is operational — KMS,
    least privilege, segmentation, rotation — not architectural.
-3. **The identity-resolution read spans tenants** (§4.3), narrowly and deliberately.
+3. **Two reads span tenants** (§4.3, §4.3b), narrowly and deliberately: the
+   identity resolution that precedes knowing a tenant, and the delivery sweep
+   that finds which tenants have work waiting.
 4. **Presence and intent are signals, never proof.** Both can be wrong; only fresh
    passkey verification is strong, and it is required exactly where policy says so.
 

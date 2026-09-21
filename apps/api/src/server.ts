@@ -19,6 +19,8 @@ import { createPermitPolicyDecisions, createPermitPolicyFacts, permitConfigFromE
 import Redis from 'ioredis';
 import { createApp } from './app.ts';
 import { capabilityAuthenticator } from './capability-auth.ts';
+import { startScheduler } from '@veto/webhooks';
+import { checkDestination } from '@veto/decisions';
 import {
   bootable,
   formatReport,
@@ -125,6 +127,47 @@ if (!bootable(health)) {
   app.log.error('health  a required dependency is unreachable; refusing to start');
   process.exit(1);
 }
+
+/**
+ * Deliver webhooks on a schedule (§5.4).
+ *
+ * `/alerts` has always had a "deliver now" button, which was honest about there
+ * being no cron rather than draining silently when somebody loaded a page. This
+ * is the cron.
+ *
+ * Every instance runs one. `drainDeliveries` claims rows `for update skip
+ * locked`, so two of them split the queue instead of both sending the same
+ * event — no leader election, and a receiver that would survive a duplicate
+ * anyway does not get one.
+ *
+ * `WEBHOOK_SCHEDULER=off` stops it, for a deployment that would rather drive
+ * delivery from outside.
+ */
+const scheduler =
+  (process.env['WEBHOOK_SCHEDULER'] ?? 'on').trim() === 'off'
+    ? null
+    : startScheduler({
+        pool,
+        wrapper,
+        // Same adapter the drain route uses: `checkDestination` answers `why`
+        // and the worker wants `reason`, and the shapes stay apart so the
+        // worker does not depend on the pipeline's type.
+        checkDestination: async (url) => {
+          const verdict = await checkDestination(url);
+          return verdict.ok ? { ok: true } : { ok: false, reason: verdict.why };
+        },
+        log: app.log,
+      });
+
+for (const signal of ['SIGINT', 'SIGTERM'] as const) {
+  process.once(signal, () => {
+    // Stop ticking before the process goes, so a drain in flight is not left
+    // holding claimed rows until their lock expires.
+    scheduler?.stop();
+  });
+}
+
+if (scheduler) app.log.info('webhook scheduler started');
 
 await app.listen({ port, host });
 
