@@ -136,6 +136,15 @@ async function insert(db: Db, grant: RefreshGrant): Promise<IssuedRefresh> {
     ],
   );
 
+  // Stamp the client it belongs to.
+  //
+  // `oauth_clients` has no row-level security, so this write works from inside
+  // a workspace transaction — and recording "something descended from this
+  // registration" on the row is what lets a prune recognise an abandoned client
+  // without reading a tenant-scoped table it cannot see from an untenanted
+  // sweep.
+  await db.query(`update oauth_clients set last_used_at = now() where id = $1`, [grant.clientId]);
+
   return { ...grant, token, expiresAt };
 }
 

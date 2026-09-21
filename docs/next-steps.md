@@ -79,6 +79,28 @@ because that is the half the spec argued for and the half that is differentiated
 
 ---
 
+## 2b. Availability, which §9 barely covered
+
+The threat model reads confidentiality well and disruption badly. Three things
+were checked on 2026-09-21; two turned out to be real and are fixed.
+
+- **Unbounded tables.** Nothing removed a spent refresh token, a revoked chain
+  or a client that registered once and never returned — 1,648 client rows after
+  one day of testing, on a table an anonymous caller can add to.
+  `POST /v1/oauth/prune` now clears both, conservatively: a spent token survives
+  seven days because a rotated token is what makes a *reuse* recognisable, and a
+  client is only removed if nothing ever descended from it.
+- **Redis was a hard dependency of the token endpoint.** The rate-limit counter
+  was unguarded, so a Redis blip meant a 500 and nobody could authenticate. It
+  now fails **open**: a rate limit is an availability control and never
+  authorization, and refusing everybody because the counter is unavailable is
+  the flood winning without anybody flooding.
+- **The Permit tenant ceiling was a guess, and the guess was wrong.** Yesterday's
+  500s at 93 tenants were read as a quota because deleting 91 coincided with
+  recovery. Probing found no ceiling below 43 with the account at 3, so the
+  cause is unknown and "quota" should not be planned around. Worth settling with
+  Permit directly before customer count depends on it.
+
 ## 3. Smaller, and found the same day
 
 - **The live Permit suite leaks a tenant per run.** `permit-facts.live.test.ts`

@@ -512,6 +512,9 @@ importers:
       '@veto/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@veto/oauth':
+        specifier: workspace:*
+        version: link:../../packages/oauth
       '@veto/permit':
         specifier: workspace:*
         version: link:../../packages/permit

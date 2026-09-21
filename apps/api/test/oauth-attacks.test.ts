@@ -428,3 +428,114 @@ describe('registration is open, and bounded', () => {
     expect(listed.json()).not.toHaveProperty('client_secret');
   });
 });
+
+describe('pruning what is finished with', () => {
+  it('keeps a live refresh token', async () => {
+    const code = (await mintCode()).json().code as string;
+    const refresh = (await exchange({ code })).json().refresh_token as string;
+
+    await app.inject({ method: 'POST', url: '/v1/oauth/prune', headers: as(WS, ALICE), payload: {} });
+
+    const still = await post('/v1/oauth/token', {
+      grant_type: 'refresh_token',
+      client_id: clientId,
+      refresh_token: refresh,
+    });
+    expect(still.statusCode).toBe(200);
+  });
+
+  it('keeps a spent token until the grace period is up', async () => {
+    const code = (await mintCode()).json().code as string;
+    const refresh = (await exchange({ code })).json().refresh_token as string;
+    await post('/v1/oauth/token', {
+      grant_type: 'refresh_token',
+      client_id: clientId,
+      refresh_token: refresh,
+    });
+
+    const pruneResponse = await app.inject({
+      method: 'POST',
+      url: '/v1/oauth/prune',
+      headers: as(WS, ALICE),
+      payload: {},
+    });
+    expect(pruneResponse.statusCode).toBe(200);
+    const pruned = pruneResponse.json();
+    // A rotated token is what makes a *reuse* detectable. Deleting it the
+    // moment it is spent would turn the strongest signal in the flow into
+    // "unknown token", which says nothing.
+    const replay = await post('/v1/oauth/token', {
+      grant_type: 'refresh_token',
+      client_id: clientId,
+      refresh_token: refresh,
+    });
+    expect(replay.json().error.code).toBe('APPROVAL_REPLAYED');
+    expect(pruned.refresh_tokens).toBe(0);
+  });
+
+  it('deletes a spent token once it is old', async () => {
+    const code = (await mintCode()).json().code as string;
+    const refresh = (await exchange({ code })).json().refresh_token as string;
+    await post('/v1/oauth/token', {
+      grant_type: 'refresh_token',
+      client_id: clientId,
+      refresh_token: refresh,
+    });
+
+    await withWorkspace(pool, WS, (db) =>
+      db.query(
+        `update oauth_refresh_tokens set used_at = now() - interval '30 days'
+          where workspace_id = $1 and status <> 'active'`,
+        [WS],
+      ),
+    );
+
+    const pruned = (
+      await app.inject({ method: 'POST', url: '/v1/oauth/prune', headers: as(WS, ALICE), payload: {} })
+    ).json();
+    expect(pruned.refresh_tokens).toBeGreaterThan(0);
+  });
+
+  it('never deletes a client that was ever used', async () => {
+    const code = (await mintCode()).json().code as string;
+    await exchange({ code });
+
+    await withWorkspace(pool, WS, (db) =>
+      db.query(`update oauth_clients set created_at = now() - interval '90 days' where id = $1`, [
+        clientId,
+      ]),
+    );
+
+    await app.inject({ method: 'POST', url: '/v1/oauth/prune', headers: as(WS, ALICE), payload: {} });
+
+    // Old, but something descended from it. Its name is part of what an audit
+    // reads.
+    const found = await app.inject({
+      method: 'GET',
+      url: `/v1/oauth/clients/${clientId}`,
+      headers: oauth(),
+    });
+    expect(found.statusCode).toBe(200);
+  });
+
+  it('deletes an old registration nothing ever used', async () => {
+    const orphan = (
+      await post('/v1/oauth/clients', { client_name: 'Abandoned', redirect_uris: [REDIRECT] })
+    ).json().client_id as string;
+
+    await withWorkspace(pool, WS, (db) =>
+      db.query(`update oauth_clients set created_at = now() - interval '90 days' where id = $1`, [
+        orphan,
+      ]),
+    );
+
+    await app.inject({ method: 'POST', url: '/v1/oauth/prune', headers: as(WS, ALICE), payload: {} });
+
+    const gone = await app.inject({
+      method: 'GET',
+      url: `/v1/oauth/clients/${orphan}`,
+      headers: oauth(),
+    });
+    expect(gone.statusCode).toBe(404);
+  });
+});

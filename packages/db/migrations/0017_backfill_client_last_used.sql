@@ -1,0 +1,22 @@
+-- Treat every client that existed before `last_used_at` as used.
+--
+-- 0016 added the column so a prune could recognise an abandoned registration
+-- without reading `oauth_refresh_tokens`, which is tenant-scoped and invisible
+-- to an untenanted sweep. It did not answer what to do about the rows already
+-- there, whose stamp is null because the column is new — not because nothing
+-- ever descended from them.
+--
+-- The sweep would have deleted those, and the foreign key refused, which is the
+-- constraint earning its keep twice in one afternoon.
+--
+-- Backfilling from the token table is not available for the same reason the
+-- subquery was not: row-level security is FORCEd and applies to the owner. So
+-- this assumes the conservative thing instead — every pre-existing client is
+-- marked used, and therefore never pruned automatically. The cost is that old
+-- junk has to be cleared by hand once; the alternative is a sweep that deletes
+-- a live customer's registration because a column was added after they
+-- registered.
+--
+-- Rows created from here on carry an accurate stamp, written when a token is
+-- issued for them.
+update oauth_clients set last_used_at = created_at where last_used_at is null;

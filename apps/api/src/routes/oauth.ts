@@ -17,7 +17,7 @@
  * register a client cannot reach the agent routes.
  */
 
-import type { FastifyInstance, FastifyRequest } from 'fastify';
+import type { FastifyBaseLogger, FastifyInstance, FastifyRequest } from 'fastify';
 import type { Pool } from 'pg';
 import type Redis from 'ioredis';
 import { findAgent } from '@veto/identity';
@@ -28,6 +28,8 @@ import {
   findClient,
   issueCode,
   issueRefresh,
+  pruneRefreshTokens,
+  pruneUnusedClients,
   redeemCode,
   redirectUriMatches,
   registerClient,
@@ -38,7 +40,7 @@ import {
   type RefreshGrant,
 } from '@veto/oauth';
 import { ERROR_SCHEMA, HttpError } from '../errors.ts';
-import { requireScope, SCOPE_OAUTH_SERVER } from '../scope.ts';
+import { requireScope, SCOPE_CONTROL_PLANE, SCOPE_OAUTH_SERVER } from '../scope.ts';
 
 const CLIENT_SCHEMA = {
   type: 'object',
@@ -152,10 +154,30 @@ async function overLimit(
   bucket: string,
   limit: number,
   windowSeconds: number,
+  log: FastifyBaseLogger,
 ): Promise<boolean> {
-  const used = await redis.incr(bucket);
-  if (used === 1) await redis.expire(bucket, windowSeconds);
-  return used > limit;
+  try {
+    const used = await redis.incr(bucket);
+    if (used === 1) await redis.expire(bucket, windowSeconds);
+    return used > limit;
+  } catch (error) {
+    // Redis is gone. **Fail open, deliberately.**
+    //
+    // A rate limit is an availability control and never authorization — this
+    // repo's own rule. Refusing everybody because the counter is unavailable
+    // would turn a Redis blip into an outage of the thing the counter exists to
+    // keep available, which is the flood winning without anybody flooding.
+    //
+    // Nothing is granted by this path: the authorization checks downstream are
+    // untouched, and an authorization_code exchange still fails on its own
+    // because the code itself lives in Redis. What is lost is the bound, and
+    // losing a bound is survivable in a way losing the endpoint is not.
+    log.error(
+      { bucket, err: String(error).slice(0, 160) },
+      'rate limit unavailable; allowing the request',
+    );
+    return false;
+  }
 }
 
 const TOKEN_RESPONSE = {
@@ -266,6 +288,7 @@ export function registerOAuthRoutes(app: FastifyInstance, deps: OAuthRoutesDeps)
         `veto:oauth:register:${request.ip}`,
         REGISTRATIONS_PER_HOUR,
         REGISTRATION_WINDOW_SECONDS,
+        request.log,
       );
       if (over) {
         throw new HttpError(
@@ -446,6 +469,7 @@ export function registerOAuthRoutes(app: FastifyInstance, deps: OAuthRoutesDeps)
           `veto:oauth:token:${request.ip}`,
           TOKEN_CALLS_PER_MINUTE,
           TOKEN_WINDOW_SECONDS,
+          request.log,
         )
       ) {
         throw new HttpError(
@@ -567,6 +591,49 @@ export function registerOAuthRoutes(app: FastifyInstance, deps: OAuthRoutesDeps)
       }
 
       return issue(rotated.issued, rotated.issued.token);
+    },
+  );
+
+  /**
+   * Delete what is finished with.
+   *
+   * A route somebody runs, like `/v1/webhooks/drain`, rather than a sweep that
+   * happens quietly during a request. There is no scheduler here, and a
+   * deletion that runs as a side effect of somebody reading a page is a
+   * deletion nobody decided to make.
+   *
+   * Scoped to the caller's workspace for tokens. Unused client registrations
+   * are not tenant-scoped because the table is not — see migration 0015 — and
+   * only rows nothing ever descended from are touched.
+   */
+  app.post(
+    '/v1/oauth/prune',
+    {
+      schema: {
+        response: {
+          200: {
+            type: 'object',
+            required: ['refresh_tokens', 'clients'],
+            properties: {
+              refresh_tokens: { type: 'integer' },
+              clients: { type: 'integer' },
+            },
+          },
+          '4xx': ERROR_SCHEMA,
+          '5xx': ERROR_SCHEMA,
+        },
+      },
+    },
+    async (request) => {
+      requireScope(request, SCOPE_CONTROL_PLANE);
+      const { workspaceId } = request.principal;
+
+      const refreshTokens = await withWorkspace(deps.pool, workspaceId, (db) =>
+        pruneRefreshTokens(db, workspaceId),
+      );
+      const clients = await pruneUnusedClients(deps.pool);
+
+      return { refresh_tokens: refreshTokens, clients };
     },
   );
 
