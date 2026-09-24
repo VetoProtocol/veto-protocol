@@ -27,6 +27,8 @@ const ERRORS: Record<string, string> = {
   mismatch: 'That response did not match the attempt that started here, so it was rejected.',
   nocode: 'Google sent no authorization code back. Nothing was connected.',
   exchange: 'That authorization could not be completed. Start again, and grant offline access.',
+  unknownservice:
+    'That is not a service this dashboard knows how to connect. Nothing was connected — and nothing else was connected in its place.',
 };
 
 const STATUS_TONE: Record<string, Tone> = {

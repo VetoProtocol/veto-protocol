@@ -34,10 +34,24 @@ export async function GET(request: NextRequest) {
   const state = client.randomState();
 
   // One service per consent screen (§9.1). Read from the query because the
-  // button names it, and checked against a closed set here — an unknown value
-  // falls back to Drive rather than being forwarded to Google.
+  // button names it, and checked against a closed set here so nothing
+  // unrecognised is forwarded to Google.
+  //
+  // This set is a hand-kept copy of `GOOGLE_SERVICES`. The guard that owns that
+  // list — `isGoogleService` — cannot be imported here: `@veto/connections`
+  // re-exports six relative `.ts` files and the dashboard builds with
+  // `allowImportingTsExtensions` off. The copy drifted, `calendar` was missing,
+  // and because the fallback was Drive, asking to connect Calendar silently
+  // connected Drive instead.
+  //
+  // So the fallback is gone. Substituting one service for another is the one
+  // thing a consent screen must never do — the user approves what they were
+  // shown, and a grant they did not ask for is a wrong `allow`. An
+  // unrecognised service is refused; only a missing one still defaults.
+  const GOOGLE_SERVICES: ReadonlySet<string> = new Set(['drive', 'gmail', 'calendar']);
   const asked = request.nextUrl.searchParams.get('service') ?? 'drive';
-  const service = asked === 'gmail' ? 'gmail' : 'drive';
+  if (!GOOGLE_SERVICES.has(asked)) return back(request, 'unknownservice');
+  const service = asked;
 
   let url: string;
   try {

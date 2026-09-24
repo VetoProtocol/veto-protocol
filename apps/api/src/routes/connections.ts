@@ -183,9 +183,10 @@ export function registerConnectionRoutes(app: FastifyInstance, deps: ConnectionR
         throw new HttpError(503, 'CONNECTION_EXPIRED', 'Google is not configured on this server');
       }
 
-      // Exactly one service's scopes. Calendar is absent from GOOGLE_SERVICES
-      // until that integration exists (§9.1) — asking early would collect a
-      // grant the product has no way to enforce against yet.
+      // Exactly one service's scopes (§9.1). Drive, Gmail and Calendar are all
+      // present in GOOGLE_SERVICES now that each has tools behind it; an
+      // earlier note here said Calendar was deliberately absent, which stopped
+      // being true when the Calendar tools shipped.
       const service = request.query.service ?? 'drive';
       const scopes = [...(GOOGLE_SERVICES[service as keyof typeof GOOGLE_SERVICES] ?? [])];
 
