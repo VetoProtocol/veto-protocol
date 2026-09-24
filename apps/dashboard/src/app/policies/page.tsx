@@ -11,6 +11,7 @@ import {
 } from '@/lib/api';
 import { currentSession } from '@/lib/session';
 import { CreateGrantForm, CreatePolicyForm, DeletePolicy, RevokeGrant } from './forms';
+import { kindLabel } from './resource-kinds';
 
 export const dynamic = 'force-dynamic';
 
@@ -287,7 +288,7 @@ export default async function PoliciesPage() {
                       {g.agent_id}
                     </th>
                     <td style={{ padding: '12px 14px', color: 'var(--text-dim)' }}>
-                      {g.resource_type === 'google_folder' ? 'folder' : 'file'}
+                      {kindLabel(g.resource_type)}
                     </td>
                     <td
                       style={{

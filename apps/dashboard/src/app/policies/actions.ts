@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { ApiError, createGrant, createPolicy, deletePolicy, revokeGrant } from '@/lib/api';
 import { currentSession } from '@/lib/session';
 import type { ActionState } from '../agents/action-state';
+import { kindReach } from './resource-kinds';
 
 export async function createPolicyAction(
   _previous: ActionState,
@@ -184,10 +185,7 @@ export async function createGrantAction(
     revalidatePath('/policies');
     return {
       error: null,
-      notice:
-        resourceType === 'google_folder'
-          ? 'Connected. The agent can reach that folder — a rule still decides when.'
-          : 'Connected. The agent can reach that file — a rule still decides when.',
+      notice: `Connected. The agent can reach ${kindReach(resourceType)} — a rule still decides when.`,
     };
   } catch (error) {
     return { error: describe(error), notice: null };
