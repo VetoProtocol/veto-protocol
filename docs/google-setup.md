@@ -27,15 +27,27 @@ subsequent call returns 403, which is a confusing place to discover it.
 
 | Scope | For | Google's class |
 | --- | --- | --- |
-| `.../auth/drive.readonly` | Drive | sensitive |
+| `.../auth/drive.readonly` | Drive | **restricted** |
 | `.../auth/gmail.readonly` | Gmail | **restricted** |
 | `.../auth/calendar.readonly` | Calendar | sensitive |
 
-On an **Internal** consent screen both cost nothing. On an **External** one, an
+On an **Internal** consent screen they cost nothing. On an **External** one, an
 app in *Testing* works for the users listed as testers; publishing needs
-verification, and `gmail.readonly` is *restricted*, which is the heavier review
-— Google may ask for a security assessment. For a pilot, Internal or Testing is
-the right answer.
+verification.
+
+Two of the three are **restricted**, which is Google's heaviest class and
+carries a mandatory third-party security assessment (CASA), renewed annually.
+Drive is one of them — `drive.readonly` is restricted, not sensitive, so
+dropping Gmail does not lower the tier. `drive.file` would, but it only reaches
+files the user picks individually, which is not a model folder inheritance can
+be built on.
+
+**Testing is not a quiet place to sit.** An app in *Testing* that asks for a
+sensitive or restricted scope gets refresh tokens that expire after **seven
+days**. The vault holds those tokens, so every connected account breaks about
+weekly and surfaces as `CONNECTION_EXPIRED` — which reads as a revoked
+credential and is not one. Fine while somebody is watching it; not a state to
+deploy in. Internal has no such limit.
 
 Add only the scopes for the services you will actually use. §9.1 is explicit
 that scopes are requested when a feature activates, and a grant Veto cannot

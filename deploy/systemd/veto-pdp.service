@@ -1,0 +1,38 @@
+# The Permit decision point, as a container.
+#
+# This must run on the same machine as the gateway, and that is not a
+# preference. Hosted was measured at min 211 ms, p50 ~225 ms, p95 293-739 ms per
+# check — the fastest single check exceeded the whole §11 200 ms P95 budget on
+# its own — and roughly one call in four hit the 5 s ceiling and failed closed
+# with POLICY_UNAVAILABLE. Local measures p50 6.8 ms / p95 8.9 ms, and
+# authorization overhead on a real gateway call went from ~1967 ms to ~11 ms.
+#
+# Bound to 127.0.0.1. The PDP answers policy questions with no authentication of
+# its own and must never be reachable from the internet.
+
+[Unit]
+Description=Permit PDP for Veto
+Documentation=file:///srv/veto/docs/permit-setup.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=veto
+Group=veto
+Restart=always
+RestartSec=10
+TimeoutStartSec=180
+
+# PERMIT_API_KEY only. Do not hand this container the rest of the environment.
+EnvironmentFile=/srv/veto/.env.pdp
+
+ExecStartPre=-/usr/bin/podman rm -f veto-pdp
+ExecStart=/usr/bin/podman run --rm --name veto-pdp \
+  --publish 127.0.0.1:7766:7000 \
+  --env PDP_API_KEY=${PERMIT_API_KEY} \
+  docker.io/permitio/pdp-v2:latest
+ExecStop=/usr/bin/podman stop -t 10 veto-pdp
+
+[Install]
+WantedBy=multi-user.target

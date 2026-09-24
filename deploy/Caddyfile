@@ -1,0 +1,49 @@
+# Veto, behind Caddy on one host.
+#
+# TLS is not decoration here: session cookies are Secure in production,
+# WebAuthn requires a secure context, and Google refuses a plaintext redirect
+# URI. Caddy obtains and renews the certificate itself.
+#
+# Replace veto.example.com throughout. It must match, exactly:
+#   WEBAUTHN_RP_ID, WEBAUTHN_ORIGINS, OIDC_REDIRECT_URI, GOOGLE_REDIRECT_URI,
+#   VETO_GATEWAY_PUBLIC_URL
+# A passkey is bound to the domain, and a passkey assertion is the only way to
+# resolve a challenge. Get the domain wrong and approvals do not degrade, they
+# stop.
+
+veto.example.com {
+	encode gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		X-Frame-Options "DENY"
+	}
+
+	# The MCP enforcement point. Streamable HTTP, so buffering must be off —
+	# flush_interval -1 sends each chunk as it arrives instead of holding the
+	# response until it completes.
+	handle /mcp* {
+		reverse_proxy 127.0.0.1:4100 {
+			flush_interval -1
+		}
+	}
+
+	# RFC 9728 protected-resource metadata, served by the gateway. Both the
+	# plain and the path-suffixed form; clients probe either.
+	handle /.well-known/oauth-protected-resource* {
+		reverse_proxy 127.0.0.1:4100
+	}
+
+	# Everything else is the dashboard, which also serves the RFC 8414
+	# authorization-server metadata and the /authorize, /token and /register
+	# endpoints.
+	handle {
+		reverse_proxy 127.0.0.1:3000
+	}
+}
+
+# The control plane on :4000 is deliberately absent. It manages objects, is not
+# an enforcement point, and nothing outside this machine talks to it. If you
+# find yourself adding it here, ask what is calling it and why.

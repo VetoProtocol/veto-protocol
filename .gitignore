@@ -12,6 +12,7 @@ build/
 .env
 .env.*
 !.env.example
+!.env.production.example
 *.pem
 *.key
 
@@ -35,3 +36,6 @@ coverage/
 # Next.js
 .next/
 next-env.d.ts
+
+# generated video output (see the /brag skill); not source
+brag-output/

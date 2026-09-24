@@ -1,0 +1,49 @@
+# The MCP gateway. THE enforcement point (invariant 8): every protected tool
+# call is authorized here, in process, by the nine-step pipeline.
+#
+# ExecStart calls `pnpm ... start`, never `node` directly. The package's start
+# script carries --dns-result-order=ipv4first --no-network-family-autoselection,
+# and a unit that invokes node itself silently drops them. Node then races IPv4
+# and IPv6; on a host whose IPv6 route to Google is black-holed it keeps picking
+# the dead one and roughly two calls in three fail with ETIMEDOUT. What reaches
+# the user is CONNECTION_EXPIRED — "the connected account could not be used" —
+# which reads as a credential problem and is not one. curl does not race, so
+# every hand-run check looks healthy while the product is broken.
+
+[Unit]
+Description=Veto MCP gateway — the enforcement point (§3.1)
+Documentation=file:///srv/veto/docs/deploy.md
+After=network-online.target postgresql.service redis-server.service veto-pdp.service
+Wants=network-online.target
+# Postgres is the only fatal dependency (invariant 1 is fail closed at request
+# time, not refuse to boot). Requires= on the others would stop the API coming
+# back during a recovery.
+Requires=postgresql.service
+
+[Service]
+Type=simple
+User=veto
+Group=veto
+WorkingDirectory=/srv/veto
+ExecStart=/usr/bin/pnpm --filter @veto/gateway start
+Restart=always
+RestartSec=5
+# The health probes need a moment; do not count a slow PDP as a failed start.
+TimeoutStartSec=60
+
+# Secrets come from a root-owned file, not from this unit. Anything readable
+# here is readable by `systemctl cat`.
+EnvironmentFile=/srv/veto/.env
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/srv/veto/apps/dashboard/.next
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target
