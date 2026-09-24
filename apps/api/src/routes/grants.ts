@@ -34,7 +34,7 @@ import type { KeyWrapper } from '@veto/vault';
 import {
   BrokerError,
   DRIVE_READONLY_SCOPE,
-  listConnections,
+  findConnectionForScope,
   mintUpstreamToken,
   type DriveReader,
   type UpstreamTokenExchange,
@@ -244,11 +244,11 @@ export function registerGrantRoutes(app: FastifyInstance, deps: GrantRoutesDeps)
       // another tenant's Drive by naming a folder id (invariant 4). Drive ids
       // are globally unique and unguessable, which is not the same as being a
       // boundary.
-      const connections = await withWorkspace(deps.pool, workspaceId, (db) =>
-        listConnections(db, workspaceId),
-      );
-      const connection = connections.find(
-        (c) => c.provider === 'google' && c.status === 'active',
+      // Must be a connection that actually carries Drive. Consent is per
+      // service, so the newest Google connection is often a Gmail or Calendar
+      // one, and a walk asking it for Drive fails as an expired credential.
+      const connection = await withWorkspace(deps.pool, workspaceId, (db) =>
+        findConnectionForScope(db, workspaceId, 'google', DRIVE_READONLY_SCOPE),
       );
       if (!connection) {
         throw new HttpError(409, 'CONNECTION_UNKNOWN', 'No active Google connection');

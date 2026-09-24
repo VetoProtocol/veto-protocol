@@ -25,7 +25,7 @@ import {
   BrokerError,
   CalendarError,
   DriveError,
-  findActiveConnection,
+  findConnectionForScope,
   mintUpstreamToken,
   CALENDAR_READONLY_SCOPE,
   DRIVE_READONLY_SCOPE,
@@ -106,8 +106,13 @@ export async function executeAllowed(
     };
   }
 
+  // The connection that holds this tool's scope, not merely the newest one.
+  // Consent is per service (§9.1), so an account that activated Drive, Gmail
+  // and Calendar has three single-scope connections; asking for "the newest
+  // Google connection" makes whichever was activated last the only one that
+  // works and silently breaks the rest.
   const connection = await withWorkspace(deps.pool, input.workspaceId, (db) =>
-    findActiveConnection(db, input.workspaceId, input.humanId, 'google'),
+    findConnectionForScope(db, input.workspaceId, 'google', requiredScope, input.humanId),
   );
 
   if (!connection) {

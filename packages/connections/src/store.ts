@@ -170,6 +170,48 @@ export async function findActiveConnection(
   return rows[0] ? toConnection(rows[0]) : null;
 }
 
+/**
+ * The active connection that actually holds `scope`.
+ *
+ * `findActiveConnection` returns the newest connection for a provider, which is
+ * only ever right when a provider has one connection. It does not: §9.1 asks
+ * for consent per service, Google returns exactly the scope that was asked for,
+ * and the callback stores what came back — so activating Drive, then Gmail,
+ * then Calendar leaves *three* active Google rows holding one scope each.
+ *
+ * Picking the newest then means only the most recently activated service works,
+ * and every earlier one silently stops. Drive worked, Calendar was activated,
+ * and Drive began answering CONNECTION_EXPIRED — "the connected account could
+ * not be used" — for a credential that was never touched.
+ *
+ * So the scope is part of the question. `$4 = any(scopes)` is the whole fix:
+ * ask for the connection that can do this job, not the one that arrived last.
+ * Still newest-first among those that qualify, so re-activating a service
+ * prefers the freshest grant of it.
+ *
+ * `userId` is optional because the two callers differ: the gateway wants *this
+ * human's* credential, while a workspace-level folder walk wants any active one
+ * in the tenant. Both stay inside `withWorkspace`, so neither leaves the tenant.
+ */
+export async function findConnectionForScope(
+  db: Db,
+  workspaceId: string,
+  provider: string,
+  scope: string,
+  userId?: string,
+): Promise<Connection | null> {
+  const { rows } = await db.query<ConnectionRow>(
+    `select id, workspace_id, user_id, provider, scopes, status, expires_at, created_at
+       from connections
+      where workspace_id = $1 and provider = $2 and status = 'active' and $3 = any (scopes)
+        and ($4::text is null or user_id = $4)
+      order by created_at desc
+      limit 1`,
+    [workspaceId, provider, scope, userId ?? null],
+  );
+  return rows[0] ? toConnection(rows[0]) : null;
+}
+
 export async function listConnections(db: Db, workspaceId: string): Promise<Connection[]> {
   const { rows } = await db.query<ConnectionRow>(
     `select id, workspace_id, user_id, provider, scopes, status, expires_at, created_at
