@@ -310,6 +310,29 @@ export function Sidebar({ workspaceId, userId }: { workspaceId: string; userId: 
           {icons['help']}
           <span>Get Help</span>
         </a>
+        {/* The two public pages. Out of the section list above because they are
+            not part of a workspace, and small because they are reference rather
+            than navigation. Not `--text-faint`: at 11px that grey falls under
+            4.5:1 on this ground, and these are the pages people read when they
+            want to know what happens to their mail. */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            padding: '2px 16px 11px',
+            fontSize: 11,
+            color: '#8a8a8a',
+          }}
+        >
+          <a href="/privacy" style={{ color: 'inherit' }}>
+            Privacy
+          </a>
+          <span aria-hidden="true">·</span>
+          <a href="/terms" style={{ color: 'inherit' }}>
+            Terms
+          </a>
+        </div>
         <div
           style={{
             borderTop: '1px solid var(--border)',
