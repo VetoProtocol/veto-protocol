@@ -37,6 +37,8 @@ const JUSTIFIED_EXTRAS: Readonly<Record<string, string>> = {
     'dynamically registered MCP clients (§8, RFC 7591). Deliberately not tenant-scoped — a client registers before any human is involved and holds no authority; the migration argues why that is safe',
   oauth_refresh_tokens:
     'the §8 authorization server\u2019s refresh tokens, stored as hashes and rotated on use. Needed because the access token is the capability token, which MAX_TTL_MS caps at fifteen minutes',
+  legal_acceptances:
+    'which published version of the terms and the privacy policy each user agreed to. Append-only, because acceptance is an event and the question asked later is what somebody agreed to at the time. Read at §3.3 step 3 — an agent acting for a human who has not agreed is denied CONSENT_REQUIRED',
 };
 
 describe('migrations', () => {

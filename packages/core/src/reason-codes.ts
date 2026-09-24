@@ -89,6 +89,13 @@ const CODES = {
     message: 'Approval is required because you are away and this action changes data.',
     source: '§7.2 away',
   },
+  CONSENT_REQUIRED: {
+    result: 'deny',
+    stage: 'session',
+    message:
+      'The person this agent acts for has not accepted the current terms of service and privacy policy.',
+    source: 'Google API Services User Data Policy; §3.3.3 session standing',
+  },
   AUTOMATION_WINDOW_VIOLATION: {
     result: 'deny',
     stage: 'session',

@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import Redis from 'ioredis';
 import type { Pool } from 'pg';
 import { createPool } from '@veto/db';
+import { CURRENT_LEGAL_VERSIONS, LEGAL_DOCUMENTS, newId } from '@veto/core';
 import { mintCapability } from '@veto/tokens';
 import { GATEWAY_AUDIENCE, GATEWAY_SCOPE } from '../src/session.ts';
 
@@ -57,6 +58,18 @@ export async function seedAgent(
        values ($1,$2,'mcp',$3,$4,$5,$6)`,
       [agent, ws, clientId, user, status, status === 'revoked' ? new Date() : null],
     );
+    // The delegating human has agreed to the published documents. Step 3 denies
+    // CONSENT_REQUIRED without this, so every test below would be a test of the
+    // consent gate instead of the thing it is named after. A real user cannot
+    // register an agent without agreeing — the dashboard blocks every screen
+    // until they do — so this is the ordinary state, not a convenience.
+    for (const document of LEGAL_DOCUMENTS) {
+      await c.query(
+        `insert into legal_acceptances (id, workspace_id, user_id, document, version)
+         values ($1,$2,$3,$4,$5) on conflict do nothing`,
+        [newId('lac_'), ws, user, document, CURRENT_LEGAL_VERSIONS[document]],
+      );
+    }
     await c.query('commit');
   } catch (e) {
     await c.query('rollback').catch(() => {});

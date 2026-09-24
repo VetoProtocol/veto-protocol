@@ -3,7 +3,9 @@ import { Inter, JetBrains_Mono } from 'next/font/google';
 import { Mark } from '@/components/mark';
 import { StatusDot } from '@/components/chip';
 import { Sidebar } from '@/components/sidebar';
+import { LegalGate } from '@/components/legal-gate';
 import { currentSession } from '@/lib/session';
+import { getLegalAcceptance } from '@/lib/api';
 import './globals.css';
 
 // Self-hosted by next/font, so the page pulls no stylesheet from a third party
@@ -23,6 +25,29 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   // Read once, here, rather than in every page. The rail needs the workspace
   // and the person; the pages already read it for their own data.
   const session = await currentSession();
+
+  // What this person still has to agree to. Read here because the gate has to
+  // cover every screen, and a page that forgot to check would be a page that
+  // let somebody work without agreeing.
+  //
+  // A failure is swallowed on purpose: if the control plane cannot answer, the
+  // right outcome is a dashboard that works and a dialogue that appears on the
+  // next render, not a product that will not load because a legal check timed
+  // out. The records themselves are written by the API, which fails closed.
+  let outstanding: readonly string[] = [];
+  if (session) {
+    try {
+      ({ outstanding } = await getLegalAcceptance(session.credential));
+    } catch (error) {
+      // Swallowed on purpose — a legal check that cannot reach the control
+      // plane must not take the dashboard down with it — but never silently.
+      // An unlogged catch here means "no dialogue appeared" and "the API said
+      // there is nothing to agree to" look identical, and the first one is a
+      // bug you cannot see.
+      console.warn('[legal] could not read acceptance; gate suppressed this render:', error);
+      outstanding = [];
+    }
+  }
 
   return (
     <html lang="en" className={`${mono.variable} ${sans.variable}`}>
@@ -49,6 +74,8 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             <StatusDot tone="allow">systems operational</StatusDot>
           </span>
         </header>
+
+        {session ? <LegalGate outstanding={outstanding} /> : null}
 
         {session ? (
           // Signed in: the rail, and the working surface beside it.

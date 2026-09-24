@@ -455,3 +455,15 @@ export const revokeAgent = (
   agentId: string,
 ): Promise<{ agent_id: string; revoked: boolean; already_revoked: boolean; sessions_dropped: number }> =>
   request(`/v1/agents/${encodeURIComponent(agentId)}`, { method: 'DELETE', credential });
+
+export interface LegalAcceptance {
+  readonly current: { readonly terms: string; readonly privacy: string };
+  /** Documents whose current version this user has not accepted. Empty means settled. */
+  readonly outstanding: readonly string[];
+}
+
+export const getLegalAcceptance = (credential: string): Promise<LegalAcceptance> =>
+  request('/v1/legal/acceptance', { method: 'GET', credential });
+
+export const acceptLegal = (credential: string): Promise<LegalAcceptance> =>
+  request('/v1/legal/acceptance', { method: 'POST', credential, body: JSON.stringify({}) });

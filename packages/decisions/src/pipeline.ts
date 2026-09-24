@@ -25,7 +25,14 @@
  */
 
 import { randomBytes } from 'node:crypto';
-import { actionDigest, newId, describeReason, type DigestibleValue } from '@veto/core';
+import {
+  actionDigest,
+  newId,
+  describeReason,
+  CURRENT_LEGAL_VERSIONS,
+  LEGAL_DOCUMENTS,
+  type DigestibleValue,
+} from '@veto/core';
 import type { Db } from '@veto/db';
 import { enqueue } from '@veto/webhooks';
 import { withWorkspace } from '@veto/db';
@@ -127,6 +134,40 @@ export async function evaluate(deps: PipelineDeps, input: EvaluateInput): Promis
       if (agent.status === 'revoked') return deny('AGENT_REVOKED');
       if (agent.status !== 'active') return deny('AGENT_REVOKED');
       if (agent.owner_user_id !== input.humanId) return deny('IDENTITY_UNRESOLVED');
+
+      // Has the person this agent acts for agreed to the current terms?
+      //
+      // Step 3 because this is a fact about the human's standing, like the
+      // emergency lock and session expiry — not a policy question. Putting it
+      // in step 4 or 5 would mean Permit is consulted about an account that is
+      // not permitted to be acting at all, and a control that runs at the wrong
+      // step is a defect however well it tests.
+      //
+      // Counted rather than fetched: this runs on every protected call and the
+      // §11 budget is 200 ms. One indexed count on (workspace_id, user_id) is
+      // the cheapest true answer.
+      //
+      // It fails closed by arithmetic — a row that is missing, a version that
+      // moved on, a workspace that was never asked — all produce a count below
+      // the required one, and all deny. There is no branch here that can decide
+      // to let somebody through.
+      // Placeholders are generated from the document list; the values stay
+      // parameters. The list is a compile-time constant, but building SQL by
+      // interpolation is a habit this codebase does not keep.
+      const pairs = LEGAL_DOCUMENTS.map(
+        (_, i) => `($${i * 2 + 3}, $${i * 2 + 4})`,
+      ).join(', ');
+      const consent = await db.query<{ n: number }>(
+        `select count(*)::int as n from legal_acceptances
+          where workspace_id = $1 and user_id = $2
+            and (document, version) in (${pairs})`,
+        [
+          input.workspaceId,
+          input.humanId,
+          ...LEGAL_DOCUMENTS.flatMap((d) => [d, CURRENT_LEGAL_VERSIONS[d]]),
+        ],
+      );
+      if ((consent.rows[0]?.n ?? 0) < LEGAL_DOCUMENTS.length) return deny('CONSENT_REQUIRED');
 
         return null;
       }),

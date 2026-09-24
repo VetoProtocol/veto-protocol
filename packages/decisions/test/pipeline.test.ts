@@ -12,7 +12,18 @@ import type Redis from 'ioredis';
 import { withWorkspace } from '@veto/db';
 import { createFakePolicyDecisions, type FakePolicyDecisions } from '@veto/permit';
 import { evaluate } from '../src/pipeline.ts';
-import { addPolicy, request, seed, setLock, setPresence, suffix, testPool, testRedis } from './helpers.ts';
+import {
+  addPolicy,
+  request,
+  seed,
+  setLock,
+  setPresence,
+  suffix,
+  testPool,
+  testRedis,
+  grantConsent,
+  withdrawConsent,
+} from './helpers.ts';
 
 let pool: Pool;
 let redis: Redis;
@@ -98,6 +109,31 @@ describe('the three results', () => {
     expect(rows[0]?.approver_id).toBe(USER);
     expect(rows[0]?.action_digest).toBe(d.actionDigest);
     expect(rows[0]?.status).toBe('pending');
+  });
+});
+
+describe('acting for somebody who has not accepted the terms', () => {
+  it('denies at step 3, before Permit is consulted', async () => {
+    await withdrawConsent(pool, WS, USER);
+    const before = policy.calls.length;
+    try {
+      const d = await evaluate(deps(), base());
+
+      expect(d.result).toBe('deny');
+      expect(d.reasonCode).toBe('CONSENT_REQUIRED');
+      // Same reasoning as the lock: whether this account may act at all is
+      // Veto's answer, and asking Permit about it would imply the reply could
+      // change the outcome.
+      expect(policy.calls.length).toBe(before);
+      expect(d.permitResult).toBe('not_evaluated');
+    } finally {
+      await grantConsent(pool, WS, USER);
+    }
+  });
+
+  it('allows again once the agreement is recorded', async () => {
+    const d = await evaluate(deps(), base());
+    expect(d.reasonCode).not.toBe('CONSENT_REQUIRED');
   });
 });
 

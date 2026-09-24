@@ -1,8 +1,9 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import Redis from 'ioredis';
-import type { Pool } from 'pg';
+import type { Pool, PoolClient } from 'pg';
 import { createPool, withWorkspace } from '@veto/db';
+import { CURRENT_LEGAL_VERSIONS, LEGAL_DOCUMENTS, newId } from '@veto/core';
 import type { EvaluateInput } from '../src/types.ts';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -29,6 +30,42 @@ export function testRedis(): Redis {
 
 export const suffix = (): string => Math.random().toString(36).slice(2, 10);
 
+/** Record agreement to every document currently in force. */
+async function acceptLegal(c: PoolClient, ws: string, user: string): Promise<void> {
+  for (const document of LEGAL_DOCUMENTS) {
+    await c.query(
+      `insert into legal_acceptances (id, workspace_id, user_id, document, version)
+       values ($1,$2,$3,$4,$5)`,
+      [newId('lac_'), ws, user, document, CURRENT_LEGAL_VERSIONS[document]],
+    );
+  }
+}
+
+/** Re-record agreement, for a test that took it away and wants it back. */
+export async function grantConsent(pool: Pool, ws: string, user: string): Promise<void> {
+  const c = await pool.connect();
+  try {
+    await c.query('begin');
+    await c.query('select set_config($1,$2,true)', ['veto.workspace_id', ws]);
+    await acceptLegal(c, ws, user);
+    await c.query('commit');
+  } finally {
+    c.release();
+  }
+}
+
+/**
+ * Take the human's agreement away again.
+ *
+ * For the tests that assert step 3 refuses to act for somebody who has not
+ * accepted the current terms.
+ */
+export async function withdrawConsent(pool: Pool, ws: string, user: string): Promise<void> {
+  await withWorkspace(pool, ws, (db) =>
+    db.query(`delete from legal_acceptances where workspace_id = $1 and user_id = $2`, [ws, user]),
+  );
+}
+
 export async function seed(
   pool: Pool,
   ws: string,
@@ -47,6 +84,13 @@ export async function seed(
       `insert into agents (id,workspace_id,provider,client_id,owner_user_id) values ($1,$2,'mcp',$3,$4)`,
       [agent, ws, `client-${suffix()}`, user],
     );
+    // A seeded user has agreed to the current documents, because a real one
+    // cannot reach the point of having an agent without doing so — the
+    // dashboard gate blocks every screen until they do. Step 3 denies
+    // CONSENT_REQUIRED otherwise, so leaving this out would turn every test
+    // here into a test of the consent gate rather than of the thing it names.
+    // `withdrawConsent` exists for the tests that do want that.
+    await acceptLegal(c, ws, user);
     await c.query('commit');
   } catch (e) {
     await c.query('rollback').catch(() => {});
