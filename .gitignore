@@ -15,6 +15,9 @@ build/
 !.env.production.example
 *.pem
 *.key
+# Google OAuth client JSON — downloaded from the console, holds the client secret
+client_secret_*.json
+vetoprotocol_secerts.txt
 
 # test/coverage
 coverage/

@@ -33,6 +33,10 @@ trap 'die "aborted on line $LINENO"' ERR
 DATABASE_URL="$(grep -m1 '^DATABASE_URL=' "$ENV_FILE" | cut -d= -f2-)"
 [ -n "${DATABASE_URL:-}" ] || die "DATABASE_URL not set in $ENV_FILE"
 
+# The database name, for the superuser path below.
+DB_NAME="$(printf '%s' "$DATABASE_URL" | sed -E 's#^.*/([^/?]+)(\?.*)?$#\1#')"
+[ -n "$DB_NAME" ] || die "could not read a database name out of DATABASE_URL"
+
 mkdir -p "$LOCAL_DIR"
 chmod 700 "$LOCAL_DIR"
 
@@ -40,9 +44,29 @@ STAMP="$(date -u +%Y-%m-%dT%H%M%SZ)"
 OUT="$LOCAL_DIR/veto-$STAMP.sql.gz"
 
 log "dumping to $OUT"
+# Dumped as the superuser, not as the application role.
+#
+# Every tenant table is FORCE row-level security, and FORCE applies to the table
+# **owner** — so `pg_dump` connecting as `veto` is refused on the first COPY:
+#   ERROR: query would be affected by row-level security policy for table "agents"
+# That is the isolation working; the role genuinely cannot see rows outside a
+# workspace context, and a backup needs all of them. A superuser bypasses RLS,
+# which is exactly the privilege separation that makes this safe to automate:
+# the dump runs as root on the host, not as anything the application can reach.
+#
+# `ALTER TABLE ... NO FORCE ROW LEVEL SECURITY`, which the error helpfully
+# suggests, would turn tenant isolation off for the owner permanently. Never do
+# that to fix a backup.
+#
 # --no-owner so the dump restores under whatever role the target uses. Written
 # to a .partial first so an interrupted run never leaves a file that looks whole.
-pg_dump --no-owner --format=plain "$DATABASE_URL" | gzip -9 > "$OUT.partial"
+if [ "$(id -u)" = "0" ] && id postgres >/dev/null 2>&1; then
+  sudo -u postgres pg_dump --no-owner --format=plain "$DB_NAME" | gzip -9 > "$OUT.partial"
+else
+  # Not root: fall back to the URL and let it fail loudly rather than silently
+  # producing an empty dump.
+  pg_dump --no-owner --format=plain "$DATABASE_URL" | gzip -9 > "$OUT.partial"
+fi
 mv "$OUT.partial" "$OUT"
 chmod 600 "$OUT"
 
