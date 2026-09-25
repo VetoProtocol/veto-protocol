@@ -12,11 +12,12 @@
 
 import { NextResponse, type NextRequest } from 'next/server';
 import { SESSION_COOKIE } from '@/lib/session';
+import { publicOrigin } from '@/lib/public-url';
 
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: NextRequest) {
-  const response = NextResponse.redirect(new URL('/signed-out', request.url), { status: 303 });
+  const response = NextResponse.redirect(new URL('/signed-out', publicOrigin(request)), { status: 303 });
   response.cookies.delete(SESSION_COOKIE);
   return response;
 }

@@ -38,6 +38,7 @@ import { cookieOptions } from '@/lib/cookie-options';
 import { resolveCredential, sessionCredential, SESSION_TTL_MS } from '@/lib/credential';
 import { resolveIdentity } from '@/lib/api';
 import { SESSION_COOKIE, signSession } from '@/lib/session';
+import { publicOrigin, publicRequestUrl } from '@/lib/public-url';
 
 export const dynamic = 'force-dynamic';
 
@@ -51,16 +52,22 @@ export async function GET(request: NextRequest) {
   let subject: string;
   try {
     const config = await discover(settings);
-    const tokens = await client.authorizationCodeGrant(config, new URL(request.url), {
+    const tokens = await client.authorizationCodeGrant(config, publicRequestUrl(request), {
       pkceCodeVerifier: flow.verifier,
       expectedState: flow.state,
       expectedNonce: flow.nonce,
     });
     subject = tokens.claims()?.sub ?? '';
-  } catch {
-    // The detail stays server-side. A callback failure is either a
+  } catch (error) {
+    // The detail stays out of the *response*: a callback failure is either a
     // misconfiguration or an attack, and neither is helped by telling the
-    // browser which.
+    // browser which. It does not stay out of the log — an earlier version of
+    // this comment said "server-side" while discarding the error entirely, so
+    // the first real deployment failure produced a sentence for the user and
+    // nothing at all for the operator. The request URL is logged beside it
+    // because behind a reverse proxy the scheme it carries is the thing most
+    // likely to disagree with the registered redirect URI.
+    console.error('[auth] callback rejected:', request.url, error);
     return failed('rejected');
   }
 
@@ -75,7 +82,7 @@ export async function GET(request: NextRequest) {
     // needs to know *which verified human* this is, and a query parameter would
     // let a visitor answer that question themselves.
     const response = NextResponse.redirect(
-      new URL(identities.length === 0 ? '/welcome' : '/choose', request.url),
+      new URL(identities.length === 0 ? '/welcome' : '/choose', publicOrigin(request)),
       { status: 303 },
     );
 
@@ -99,7 +106,7 @@ export async function GET(request: NextRequest) {
   if (!identity) return failed('unknown');
 
   const expiresAt = Date.now() + SESSION_TTL_MS;
-  const response = NextResponse.redirect(new URL('/agents', request.url), { status: 303 });
+  const response = NextResponse.redirect(new URL('/agents', publicOrigin(request)), { status: 303 });
 
   response.cookies.set(
     SESSION_COOKIE,

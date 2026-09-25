@@ -22,6 +22,7 @@ import { cookieOptions } from '@/lib/cookie-options';
 import { CONNECT_COOKIE, CONNECT_TTL_MS, sealConnect } from '@/lib/connect-cookie';
 import { ApiError, googleAuthorizeUrl } from '@/lib/api';
 import { currentSession } from '@/lib/session';
+import { publicOrigin } from '@/lib/public-url';
 
 export const dynamic = 'force-dynamic';
 
@@ -94,7 +95,7 @@ export async function GET(request: NextRequest) {
 }
 
 function back(request: NextRequest, reason: string): NextResponse {
-  const target = new URL('/connections', request.url);
+  const target = new URL('/connections', publicOrigin(request));
   target.searchParams.set('error', reason);
   return NextResponse.redirect(target, { status: 303 });
 }

@@ -25,6 +25,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { ApiError, connectGoogle } from '@/lib/api';
 import { CONNECT_COOKIE, openConnect } from '@/lib/connect-cookie';
 import { currentSession } from '@/lib/session';
+import { publicOrigin } from '@/lib/public-url';
 
 export const dynamic = 'force-dynamic';
 
@@ -67,7 +68,7 @@ export async function GET(request: NextRequest) {
 }
 
 function done(request: NextRequest, key: 'connected' | 'error', reason: string): NextResponse {
-  const target = new URL('/connections', request.url);
+  const target = new URL('/connections', publicOrigin(request));
   target.searchParams.set(key, reason);
   const response = NextResponse.redirect(target, { status: 303 });
   response.cookies.delete(CONNECT_COOKIE);
