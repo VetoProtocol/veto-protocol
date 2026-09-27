@@ -128,6 +128,62 @@ export type RedeemOutcome =
  * retries cannot both succeed — the second updates zero rows. Read-then-write
  * would leave a window in which a replay is a legitimate read.
  */
+/**
+ * The approval this human already granted for this exact action, if there is one.
+ *
+ * ## Why a lookup by digest exists at all
+ *
+ * A challenge tells the client an `approval_id` and expects it back on the
+ * retry. That is a Veto-specific parameter sitting beside `name` and
+ * `arguments` in a `tools/call`, and no ordinary MCP client knows to echo it —
+ * so the observed behaviour was: the agent is challenged, the human approves
+ * with a passkey, the agent retries, and is challenged again. Forever. The
+ * approval was real, correct, and unreachable.
+ *
+ * The `approval_id` was only ever a way to name the grant. What *binds* a grant
+ * to an action is the action digest (invariant 6), and a retry of the identical
+ * call produces the identical digest by construction. So the grant can be found
+ * by the thing that identifies it rather than by a token the client has to
+ * carry.
+ *
+ * ## This grants nothing extra
+ *
+ * Every refusal in `redeemApproval` still runs, on the row this returns:
+ * approver must be the delegator, digest must match, must be unexpired, must be
+ * `approved`, and consuming it is what makes it single-use. The filters here
+ * are deliberately the same ones — `approver_id` and `action_digest` — so a row
+ * this finds is a row `redeemApproval` would have accepted anyway.
+ *
+ * What it cannot do is find a grant for a *different* action: a changed
+ * argument set is a different digest and matches nothing. That is the whole
+ * property invariant 6 asks for, and it is doing the work here rather than
+ * being checked after the fact.
+ *
+ * Newest first, for the case where a human was challenged twice for the same
+ * action and approved both; the older one stays unspent and expires.
+ */
+export async function findApprovedForDigest(
+  db: Db,
+  input: {
+    readonly workspaceId: string;
+    readonly humanId: string;
+    readonly actionDigest: string;
+  },
+): Promise<string | null> {
+  const { rows } = await db.query<{ id: string }>(
+    `select id from approvals
+      where workspace_id = $1
+        and approver_id = $2
+        and action_digest = $3
+        and status = 'approved'
+        and expires_at > now()
+      order by created_at desc
+      limit 1`,
+    [input.workspaceId, input.humanId, input.actionDigest],
+  );
+  return rows[0]?.id ?? null;
+}
+
 export async function redeemApproval(
   db: Db,
   input: {

@@ -50,7 +50,7 @@ import {
   type Sensitivity,
 } from './labels.ts';
 import { assessRisk } from './risk.ts';
-import { redeemApproval } from './approvals.ts';
+import { findApprovedForDigest, redeemApproval } from './approvals.ts';
 import { readPresence } from '@veto/presence';
 import { currentUsage, reserve } from './volume.ts';
 import { createStepClock, type StepTimings } from './timing.ts';
@@ -263,15 +263,37 @@ export async function evaluate(deps: PipelineDeps, input: EvaluateInput): Promis
 
     if (held) {
       // A challenge resumes only with an unexpired, single-use grant that names
-      // this exact action. Without one, the challenge stands.
-      if (!input.approvalId) return held;
+      // this exact action.
+      //
+      // The client may name the grant with `approval_id`. If it does not — and
+      // no ordinary MCP client does, because that parameter is ours — the grant
+      // is looked up by the thing that actually binds it: the action digest.
+      // Without this the loop never closes; the human approves, the agent
+      // retries the identical call, and is challenged again.
+      //
+      // Both paths redeem through `redeemApproval` below, so both get every
+      // refusal it makes. Nothing here decides an approval is valid.
+      const named = await clock.time('risk', () =>
+        input.approvalId
+          ? Promise.resolve(input.approvalId)
+          : withWorkspace(deps.pool, input.workspaceId, (db) =>
+              findApprovedForDigest(db, {
+                workspaceId: input.workspaceId,
+                humanId: input.humanId,
+                actionDigest: digest,
+              }),
+            ),
+      );
+
+      // Still nothing to redeem: the challenge stands, exactly as before.
+      if (!named) return held;
 
       const redeemed = await clock.time('risk', () =>
         withWorkspace(deps.pool, input.workspaceId, (db) =>
           redeemApproval(db, {
-          workspaceId: input.workspaceId,
-          approvalId: input.approvalId ?? '',
-          humanId: input.humanId,
+            workspaceId: input.workspaceId,
+            approvalId: named,
+            humanId: input.humanId,
             actionDigest: digest,
           }),
         ),
@@ -423,11 +445,36 @@ async function persist(
         return approvalId;
       }
 
-      approvalId = newId('apr_');
+      // Retire anything that lapsed without being resolved, first.
+      //
+      // The unique index is on `status = 'pending'` alone, while the reuse
+      // query above also requires `expires_at > now()`. An approval nobody
+      // answered keeps `status = 'pending'` past its expiry, so it is invisible
+      // to that lookup and still occupies the index — and the insert below
+      // collided with it. The database raised a duplicate-key error, nothing
+      // caught it, and the client was handed a bare internal error on every
+      // subsequent challenge for that action. A human who let one challenge
+      // time out could not be challenged for the same thing again.
+      //
+      // Sweeping it to `expired` is the same transition `resolveApproval`
+      // already makes when it meets a lapsed row; doing it here keeps the
+      // index's meaning ("one live grant") true rather than "one row that was
+      // once live".
       await db.query(
+        `update approvals set status = 'expired'
+          where workspace_id = $1 and approver_id = $2 and action_digest = $3
+            and status = 'pending' and expires_at <= now()`,
+        [input.workspaceId, input.humanId, args.digest],
+      );
+
+      approvalId = newId('apr_');
+      const inserted = await db.query<{ id: string }>(
         `insert into approvals
            (id, workspace_id, decision_id, approver_id, action_digest, challenge, expires_at)
-         values ($1,$2,$3,$4,$5,$6, now() + ($7 || ' milliseconds')::interval)`,
+         values ($1,$2,$3,$4,$5,$6, now() + ($7 || ' milliseconds')::interval)
+         on conflict (workspace_id, approver_id, action_digest) where status = 'pending'
+         do nothing
+         returning id`,
         [
           approvalId,
           input.workspaceId,
@@ -439,6 +486,22 @@ async function persist(
           String(args.approvalTtlMs),
         ],
       );
+
+      // Nothing inserted means somebody else opened the grant between the
+      // lookup and here — two calls for the same action arriving together.
+      // Reuse theirs rather than failing: a challenge is not the place to
+      // surface a race, and two pending grants for one action would mean
+      // redeeming either satisfies it.
+      if (!inserted.rows[0]) {
+        const raced = await db.query<{ id: string }>(
+          `select id from approvals
+            where workspace_id = $1 and approver_id = $2 and action_digest = $3
+              and status = 'pending'
+            limit 1`,
+          [input.workspaceId, input.humanId, args.digest],
+        );
+        approvalId = raced.rows[0]?.id ?? approvalId;
+      }
     }
 
     await writeAuditEvent(db, {
