@@ -194,6 +194,18 @@ into the previous version and debug a fix that is not running:
 pnpm --filter @veto/dashboard build && systemctl restart veto-dashboard
 ```
 
+**After editing `.env`, restart all three.** `EnvironmentFile` is read when a
+unit starts, so a service that was not restarted keeps the environment it had —
+and every one of these values has a localhost default that makes the omission
+silent. Restarting two of the three cost an hour: the control plane went on
+expecting `http://localhost:4100/mcp` while the gateway and the dashboard had
+moved to the real domain, and a conforming client was told its perfectly correct
+request was for the wrong audience.
+
+```bash
+systemctl restart veto-api veto-gateway veto-dashboard
+```
+
 Each service logs one line per dependency at boot — Postgres, Redis, the PDP and
 Google's token endpoint. Read them. Only Postgres is fatal; a service that
 cannot reach Permit denies every protected request, which is correct, while one
