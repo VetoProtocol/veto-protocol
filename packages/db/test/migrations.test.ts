@@ -37,6 +37,10 @@ const JUSTIFIED_EXTRAS: Readonly<Record<string, string>> = {
     'dynamically registered MCP clients (§8, RFC 7591). Deliberately not tenant-scoped — a client registers before any human is involved and holds no authority; the migration argues why that is safe',
   oauth_refresh_tokens:
     'the §8 authorization server\u2019s refresh tokens, stored as hashes and rotated on use. Needed because the access token is the capability token, which MAX_TTL_MS caps at fifteen minutes',
+  hierarchy_edges:
+    'containment edges already sent to Permit, so a repeat walk does not re-state them. On a real deployment 648 of 676 upstream calls were duplicates and the rest were rate limits; a cache of what was written, never consulted at decision time',
+  hierarchy_syncs:
+    'one folder walk, and what it found. The walk writes a parent fact per entry to Permit\u2019s cloud API and outlives the request that started it, so its outcome needs somewhere to live; counts only, never file names (invariant 5)',
   legal_acceptances:
     'which published version of the terms and the privacy policy each user agreed to. Append-only, because acceptance is an event and the question asked later is what somebody agreed to at the time. Read at §3.3 step 3 — an agent acting for a human who has not agreed is denied CONSENT_REQUIRED',
 };

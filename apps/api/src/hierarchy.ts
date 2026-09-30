@@ -56,10 +56,131 @@ export const MAX_SYNC_ENTRIES = 500;
 /** Children requested per folder. `listFolder` clamps to 100 of its own accord. */
 const PAGE_SIZE = 100;
 
+/**
+ * How many parent writes are in flight at once.
+ *
+ * The walk reads from Drive and writes to Permit's **Cloud API** — not the
+ * local PDP, which only answers decisions. Measured from a deployed host, one
+ * such write takes about 1.7 s, and the writes were sequential: a 200-entry
+ * folder took six minutes and a 500-entry one would have taken fourteen. No
+ * browser, proxy or fetch survives that, so the request died while the server
+ * was still working and the operator saw only that something went wrong.
+ *
+ * Eight at a time, which is the difference between minutes and seconds. Kept
+ * modest on purpose: this is somebody else's rate limit, and a sync that
+ * finishes in a minute is worth more than one that finishes in twenty seconds
+ * and sometimes gets throttled instead.
+ */
+export const SYNC_WRITE_CONCURRENCY = 4;
+
+/** How many times a rate-limited write is retried before the walk gives up. */
+export const SYNC_RETRY_ATTEMPTS = 5;
+
+/** First backoff. Doubles each attempt, with jitter, so retries spread out. */
+const RETRY_BASE_MS = 750;
+
+/**
+ * Did Permit refuse this because we are going too fast?
+ *
+ * Worth telling apart from every other failure. A rate limit is temporary and
+ * the right response is to wait; anything else is a reason to stop, and
+ * retrying it would just be slower.
+ *
+ * Walks the `cause` chain because the adapter wraps upstream errors in
+ * `PolicyUnavailableError` — the status lives underneath. Status first, message
+ * second: a number is a contract and a sentence is not, but this SDK does not
+ * always surface one.
+ */
+function isRateLimited(error: unknown): boolean {
+  const seen = new Set<unknown>();
+  let cursor: unknown = error;
+  while (cursor !== null && cursor !== undefined && typeof cursor === 'object' && !seen.has(cursor)) {
+    seen.add(cursor);
+    const e = cursor as {
+      status?: unknown;
+      statusCode?: unknown;
+      message?: unknown;
+      cause?: unknown;
+    };
+    if (e.status === 429 || e.statusCode === 429) return true;
+    if (typeof e.message === 'string' && /rate limit|too many requests/i.test(e.message)) {
+      return true;
+    }
+    cursor = e.cause;
+  }
+  return false;
+}
+
+const wait = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * One write, retried while Permit is asking us to slow down.
+ *
+ * Concurrency alone was not enough: eight at a time exceeded Permit's rate
+ * limit and the whole walk failed, which is a worse outcome than being slow.
+ * Lowering the number helps and does not fix it — a large enough folder meets a
+ * limit at any concurrency — so the limit is handled rather than avoided.
+ *
+ * Jittered, because four workers backing off in lockstep would arrive together
+ * and be refused together.
+ */
+async function writeWithRetry(
+  attempt: () => Promise<void>,
+  sleep: (ms: number) => Promise<void>,
+): Promise<void> {
+  for (let tries = 0; ; tries += 1) {
+    try {
+      await attempt();
+      return;
+    } catch (error) {
+      if (tries >= SYNC_RETRY_ATTEMPTS - 1 || !isRateLimited(error)) throw error;
+      const backoff = RETRY_BASE_MS * 2 ** tries;
+      await sleep(backoff + Math.floor(Math.random() * RETRY_BASE_MS));
+    }
+  }
+}
+
+/**
+ * Run tasks with at most `limit` in flight.
+ *
+ * A rejection propagates, exactly as an awaited call in the loop used to: a
+ * parent link that cannot be written is a hierarchy that does not reach where
+ * the caller will be told it reaches.
+ */
+async function runBounded(tasks: ReadonlyArray<() => Promise<void>>, limit: number): Promise<void> {
+  let cursor = 0;
+  const worker = async (): Promise<void> => {
+    for (;;) {
+      const task = tasks[cursor];
+      cursor += 1;
+      if (task === undefined) return;
+      await task();
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, tasks.length) }, worker));
+}
+
 export interface HierarchyDeps {
   readonly drive: DriveReader;
   readonly facts: PolicyFacts;
+  /** Overridable so a test can exercise the backoff without waiting for it. */
+  readonly sleep?: (ms: number) => Promise<void>;
+  /**
+   * Edges Permit has already been told about, as `edgeKey` strings.
+   *
+   * A second walk of the same Drive otherwise re-states everything: on a real
+   * deployment 648 of 676 upstream calls were duplicates, and the rate budget
+   * they spent is why the remaining 28 were refused. Skipping them is what
+   * makes a repeat walk cheap enough to be worth running.
+   */
+  readonly known?: ReadonlySet<string>;
+  /** Called for each edge actually written, so the caller can remember it. */
+  readonly onWritten?: (childType: string, childKey: string, parentKey: string) => void;
 }
+
+/** How an edge is named in `known`. One shape, one place. */
+export const edgeKey = (childType: string, childKey: string, parentKey: string): string =>
+  `${childType}|${childKey}|${parentKey}`;
 
 export interface HierarchyInput {
   readonly workspaceId: string;
@@ -70,6 +191,8 @@ export interface HierarchyInput {
 }
 
 export interface HierarchyReport {
+  /** Edges Permit already had, so no call was made. */
+  readonly skipped: number;
   /** Folders whose contents were listed. */
   readonly folders: number;
   /** Containment edges written. Idempotent, so a re-run reports the same number. */
@@ -95,11 +218,16 @@ export async function syncFolderHierarchy(
   let queue: Array<{ id: string; depth: number }> = [{ id: input.folderId, depth: 0 }];
   let folders = 0;
   let links = 0;
+  let skipped = 0;
   let examined = 0;
   let truncated = false;
 
   while (queue.length > 0) {
     const next: Array<{ id: string; depth: number }> = [];
+    // Collected while walking this level, then run together. The walk itself
+    // stays sequential and its bounds are unchanged — only the waiting is
+    // shared out.
+    const writes: Array<() => Promise<void>> = [];
 
     for (const folder of queue) {
       if (examined >= MAX_SYNC_ENTRIES) {
@@ -129,13 +257,31 @@ export async function syncFolderHierarchy(
 
         const isFolder = entry.mimeType === FOLDER_MIME;
 
-        await deps.facts.recordParent({
-          workspaceId: input.workspaceId,
-          childType: isFolder ? FOLDER_RESOURCE : FILE_RESOURCE,
-          childKey: entry.id,
-          parentKey: folder.id,
+        const childType = isFolder ? FOLDER_RESOURCE : FILE_RESOURCE;
+        const childKey = entry.id;
+        const parentKey = folder.id;
+
+        // Already sent. The walk still descends through it — where a file sits
+        // has not changed — it simply does not say so again.
+        if (deps.known?.has(edgeKey(childType, childKey, parentKey))) {
+          skipped += 1;
+        } else {
+        writes.push(async () => {
+          await writeWithRetry(
+            () =>
+              deps.facts.recordParent({
+                workspaceId: input.workspaceId,
+                childType,
+                childKey,
+                parentKey,
+              }),
+            deps.sleep ?? wait,
+          );
+          // Counted on success, so a reported link is one that exists.
+          links += 1;
+          deps.onWritten?.(childType, childKey, parentKey);
         });
-        links += 1;
+        }
 
         if (!isFolder) continue;
         if (folder.depth + 1 >= MAX_SYNC_DEPTH) {
@@ -151,6 +297,11 @@ export async function syncFolderHierarchy(
       }
     }
 
+    // Every parent this level found, written before descending — so a failure
+    // stops the walk rather than leaving a deeper level recorded above a
+    // shallower one that is not.
+    await runBounded(writes, SYNC_WRITE_CONCURRENCY);
+
     if (examined >= MAX_SYNC_ENTRIES) {
       truncated = true;
       break;
@@ -158,5 +309,5 @@ export async function syncFolderHierarchy(
     queue = next;
   }
 
-  return { folders, links, truncated };
+  return { folders, links, skipped, truncated };
 }

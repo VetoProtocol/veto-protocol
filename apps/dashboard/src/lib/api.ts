@@ -207,27 +207,45 @@ export const listGrants = (credential: string): Promise<{ grants: GrantView[] }>
 export const createGrant = (credential: string, body: GrantView): Promise<GrantView> =>
   request('/v1/grants', { method: 'POST', credential, body: JSON.stringify(body) });
 
-export interface HierarchyReport {
+/**
+ * One folder walk. The same shape while it runs and after it finishes, so one
+ * screen reads one thing and `status` decides whether the numbers are final.
+ */
+export interface HierarchyJob {
+  readonly id: string;
+  readonly status: 'running' | 'done' | 'failed';
+  readonly folder_id: string;
   readonly folders: number;
   readonly links: number;
   readonly truncated: boolean;
+  readonly error: string | null;
   readonly depth: number;
+  readonly started_at: string;
+  readonly finished_at: string | null;
 }
 
 /**
  * Teach Permit where the files under a folder live.
  *
- * Slow on purpose — it walks Drive and writes one containment edge per child,
- * so a large folder is hundreds of upstream calls. The caller has to be willing
- * to wait, which is why this is a button somebody presses rather than something
- * that happens during a grant.
+ * Returns as soon as the walk has started, not when it has finished. It writes
+ * one containment edge per child to Permit's cloud API — about 1.7 s each from
+ * a deployed host, eight at a time — so a large folder is a minute's work and
+ * used to be fourteen. Waiting for it meant the request died while the server
+ * was still working, and the person who pressed the button was told only that
+ * something went wrong.
+ *
+ * Read the outcome with `getHierarchyJob`.
  */
-export const syncHierarchy = (credential: string, folderId: string): Promise<HierarchyReport> =>
+export const syncHierarchy = (credential: string, folderId: string): Promise<HierarchyJob> =>
   request('/v1/grants/sync', {
     method: 'POST',
     credential,
     body: JSON.stringify({ folder_id: folderId }),
   });
+
+/** The most recent walk for this workspace, running or finished. */
+export const getHierarchyJob = (credential: string): Promise<HierarchyJob> =>
+  request('/v1/grants/sync', { method: 'GET', credential });
 
 export const revokeGrant = (credential: string, body: GrantView): Promise<{ revoked: boolean }> =>
   request('/v1/grants', { method: 'DELETE', credential, body: JSON.stringify(body) });

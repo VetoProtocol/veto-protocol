@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { ApiError, revokeConnection, syncHierarchy } from '@/lib/api';
+import { describeWalk } from './walk-state';
 import { currentSession } from '@/lib/session';
 import type { ActionState } from '../agents/action-state';
 
@@ -74,19 +75,24 @@ export async function syncHierarchyAction(
   const folderId = String(form.get('folder_id') ?? 'root').trim() || 'root';
 
   try {
-    const report = await syncHierarchy(session.credential, folderId);
+    const job = await syncHierarchy(session.credential, folderId);
     revalidatePath('/connections');
 
-    // `truncated` is reported rather than buried. A walk that stopped early and
-    // said it finished would leave somebody believing a grant reaches files it
-    // does not — the failure this whole feature exists to remove.
-    const found = `${report.links} item${report.links === 1 ? '' : 's'} across ${report.folders} folder${report.folders === 1 ? '' : 's'}`;
-    return {
-      error: null,
-      notice: report.truncated
-        ? `Recorded ${found}. Stopped at the ${report.depth}-level limit — anything deeper is not reachable yet, so run it again on a subfolder if you need it.`
-        : `Recorded ${found}. A grant on that folder now reaches everything inside it.`,
-    };
+    // Started, not finished. Saying "recorded N items" here would be a number
+    // invented before the work happened — the walk has barely begun.
+    if (job.status === 'running') {
+      return {
+        error: null,
+        notice:
+          'Walking that folder now. It writes one entry at a time to the policy ' +
+          'engine, so a large folder takes a minute — reload this page to see how it went.',
+      };
+    }
+
+    // Fast enough to finish inside the request, which happens on a small
+    // folder. Report it properly rather than telling somebody to wait for
+    // something already done.
+    return { error: null, notice: describeWalk(job) };
   } catch (error) {
     return {
       error:

@@ -1,9 +1,16 @@
 import { redirect } from 'next/navigation';
 import { Panel } from '@/components/panel';
 import { Chip, type Tone } from '@/components/chip';
-import { ApiError, listConnections, type ConnectionView } from '@/lib/api';
+import {
+  ApiError,
+  getHierarchyJob,
+  listConnections,
+  type ConnectionView,
+  type HierarchyJob,
+} from '@/lib/api';
 import { currentSession } from '@/lib/session';
 import { RevokeConnection, SyncHierarchy } from './forms';
+import { describeWalk } from './walk-state';
 
 export const dynamic = 'force-dynamic';
 
@@ -78,6 +85,10 @@ export default async function ConnectionsPage({
   const { connected, error } = await searchParams;
 
   let connections: ConnectionView[];
+  // The most recent folder walk, if there has been one. A 404 means there has
+  // not; anything else is not worth failing the page over, because this panel
+  // is a progress note rather than the point of the screen.
+  let walk: HierarchyJob | null = null;
   try {
     connections = (await listConnections(session.credential)).connections;
   } catch (failure) {
@@ -90,6 +101,12 @@ export default async function ConnectionsPage({
         </Panel>
       </>
     );
+  }
+
+  try {
+    walk = await getHierarchyJob(session.credential);
+  } catch {
+    walk = null;
   }
 
   const live = connections.filter((c) => c.status === 'active');
@@ -184,6 +201,26 @@ export default async function ConnectionsPage({
               unless somebody looks. Until then a grant on a folder reaches the folder and nothing
               else.
             </p>
+            {walk ? (
+              <div
+                style={{
+                  margin: '0 0 16px',
+                  padding: '11px 13px',
+                  border: '1px solid var(--border-strong)',
+                  background: 'var(--bg-raised)',
+                  fontSize: 12.5,
+                  color: walk.status === 'failed' ? 'var(--deny)' : 'var(--text-dim)',
+                }}
+                // Announced, because on a slow walk this is the only thing that
+                // changes when somebody reloads to find out what happened.
+                role="status"
+              >
+                <span className="label" style={{ marginRight: 8, color: 'var(--text-faint)' }}>
+                  {walk.status === 'running' ? 'RUNNING' : walk.status === 'done' ? 'LAST WALK' : 'FAILED'}
+                </span>
+                {describeWalk(walk)}
+              </div>
+            ) : null}
             <SyncHierarchy />
           </div>
         </Panel>
