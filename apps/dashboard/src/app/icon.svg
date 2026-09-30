@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
+  <!--
+    The wireframe V from components/mark.tsx, made to survive 16 pixels.
+
+    Two differences from the mark on screen, both forced by the size: the stroke
+    is 1.8 rather than 1.1, because a hairline disappears in a browser tab, and
+    the faint inner stroke is gone, because at this scale it reads as mud rather
+    than as depth.
+
+    The ground is drawn rather than left transparent. The product is dark-only
+    and a transparent glyph in #ededed vanishes against a light tab strip.
+  -->
+  <rect width="24" height="24" rx="5" fill="#0a0a0a"/>
+  <path d="M4 5.5h4.4l3.6 11.4 3.6-11.4H20l-5.8 13.8H9.8L4 5.5z"
+        fill="none" stroke="#ededed" stroke-width="1.8" stroke-linejoin="round"/>
+</svg>

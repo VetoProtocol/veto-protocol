@@ -80,25 +80,57 @@ export default async function SignedOut({
         ) : null}
 
         <div style={{ marginTop: message ? 28 : 44, display: 'grid', gap: 12 }}>
-          <a
-            href="/login"
+          {/* Not an anchor, and not focusable.
+              Google sign-in works, but the app is still in Google's
+              verification queue: until that clears, anyone arriving this way
+              meets an unverified-app warning and counts against a user cap. So
+              the door is shut deliberately rather than left ajar.
+
+              Rendered as plain content for the same reason the enterprise rows
+              in the rail are: a disabled-looking link that Tab lands on and
+              Enter ignores promises an action it will not perform. There is
+              nothing here to click, so there is nothing here to focus. */}
+          <div
+            aria-disabled="true"
             style={{
               fontSize: 13.5,
               padding: '15px 22px',
-              background: 'var(--text)',
-              color: 'var(--bg)',
-              border: '1px solid var(--text)',
+              background: 'transparent',
+              color: 'var(--text-faint)',
+              border: '1px solid var(--border-strong)',
               textAlign: 'center',
               letterSpacing: '0.01em',
               fontWeight: 500,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 10,
+              cursor: 'default',
+              userSelect: 'none',
             }}
           >
-            Continue with Google
-          </a>
+            <span>Continue with Google</span>
+            <span
+              style={{
+                fontFamily: 'var(--font-mono)',
+                fontSize: 9.5,
+                letterSpacing: '0.16em',
+                textTransform: 'uppercase',
+                color: 'var(--accent)',
+                border: '1px solid var(--accent)',
+                background: 'var(--accent-bg)',
+                padding: '2px 7px',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              Coming soon
+            </span>
+          </div>
 
-          {/* Second, and second for a reason: one of these can be recovered
-              and the other cannot. The dialog behind it says so before a
-              wallet is ever asked to connect. */}
+          {/* Was second for a reason — one of these can be recovered and the
+              other cannot, and the dialog behind it says so before a wallet is
+              ever asked to connect. With Google shut it is also the only way
+              in, which makes that warning matter more rather than less. */}
           <WalletSignIn />
         </div>
 
