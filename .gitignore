@@ -45,3 +45,6 @@ brag-output/
 
 # Client deliverables — not for a public repo
 Veto-Protocol-*.pdf
+
+# The v1.0 specification is not distributed with this repository
+veto-protocol-spec.md

@@ -179,7 +179,6 @@ first-class, not optional.
 
 | Document | Covers |
 | --- | --- |
-| `veto-protocol-spec.md` | The authoritative v1.0 specification. Where this README and the code disagree with it, **the spec wins**. |
 | `CLAUDE.md` | Repository state, conventions, and the reasoning behind decisions that look arbitrary |
 | `docs/deploy.md` | Deploying to a server |
 | `docs/permit-setup.md` | The policy decision point, and why it runs locally |

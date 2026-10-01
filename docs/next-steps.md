@@ -50,7 +50,7 @@ should then be deleted rather than left as a second way in.
 
 **Possible, cheap, and pointing the opposite way to the spec.**
 
-Every mention of wallets in `veto-protocol-spec.md` treats a wallet as something
+Every mention of wallets in the specification treats a wallet as something
 Veto *protects*: "restrict automated wallet actions" (§1.3), "enforce wallet
 limits through a smart-account integration" (FR-12), `wallet` and `contract` as
 resource types (§4.2). Signing *in* with one is not in the spec at all — it is a

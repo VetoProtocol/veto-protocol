@@ -17,7 +17,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository state — read this first
 
-`veto-protocol-spec.md` is the authoritative v1.0 developer specification. Everything
+The v1.0 developer specification is authoritative and is **not kept in this
+repository**. Section references (§3.3, §12.1) point into it. Everything
 below is derived from it; when this file and the spec disagree, **the spec wins**.
 Section references (§3.3, §12.1) point there. An older version of this file called it
 `SPEC.md` — that filename does not exist.
@@ -479,5 +480,5 @@ Security tests are first-class, not optional.
 ## When in doubt
 
 Prefer the more restrictive behavior, surface the ambiguity in a comment or PR note, and
-do not invent policy semantics that aren't in `veto-protocol-spec.md`. External API
+do not invent policy semantics that aren't in the specification. External API
 references live in §15 — use them rather than recalling API shapes from memory.
