@@ -42,3 +42,6 @@ next-env.d.ts
 
 # generated video output (see the /brag skill); not source
 brag-output/
+
+# Client deliverables — not for a public repo
+Veto-Protocol-*.pdf
