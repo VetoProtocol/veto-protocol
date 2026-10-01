@@ -51,3 +51,9 @@ veto-protocol-spec.md
 
 # Design mock-ups — reference material, not source
 MockUpp/
+
+# Local session launcher — holds a machine-specific session id
+claude.cmd
+
+# One-off operator script, not source
+scrub-and-republish.sh
