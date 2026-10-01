@@ -48,3 +48,6 @@ Veto-Protocol-*.pdf
 
 # The v1.0 specification is not distributed with this repository
 veto-protocol-spec.md
+
+# Design mock-ups — reference material, not source
+MockUpp/
