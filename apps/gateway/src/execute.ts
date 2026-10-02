@@ -37,11 +37,48 @@ import {
   type GmailReader,
   type UpstreamTokenExchange,
 } from '@veto/connections';
+import { REASON_CODES, type ReasonCode } from '@veto/core';
 import { withWorkspace } from '@veto/db';
 import { enqueue } from '@veto/webhooks';
 import type { KeyWrapper } from '@veto/vault';
 import type { EvaluateInput } from '@veto/decisions';
 import type { Pool } from 'pg';
+
+/**
+ * A refusal raised by step 8 itself, before anything is sent upstream.
+ *
+ * These are *our* bounds, not the connected account failing: a window wider
+ * than `MAX_WINDOW_DAYS`, a message id that is not a string. They used to be
+ * thrown as `CalendarError(400)` / `GmailError(400)` and then swept up by the
+ * same handler that maps a real upstream failure, which had two consequences,
+ * both wrong:
+ *
+ *  - the caller was told `CONNECTION_EXPIRED` — "reconnect to continue" — for
+ *    an account that was working perfectly, which is the same shape of
+ *    misdirection the IPv4 note in CLAUDE.md warns about; and
+ *  - a `connection.expired` webhook fired, so an operator was alerted that
+ *    their Google account had stopped working because an agent asked for
+ *    ninety-one days instead of ninety.
+ *
+ * Carrying the reason code on the error keeps the decision at the place that
+ * knows what was violated, rather than inferring it from an HTTP status that
+ * cannot tell our 400 from Google's.
+ */
+class PrecheckError extends Error {
+  readonly reasonCode: ReasonCode;
+
+  constructor(reasonCode: ReasonCode) {
+    super(REASON_CODES[reasonCode].message);
+    this.name = 'PrecheckError';
+    this.reasonCode = reasonCode;
+  }
+}
+
+/** The request never left this machine, so it is an argument problem. */
+const badArgument = (): PrecheckError => new PrecheckError('ARGUMENT_SCHEMA_INVALID');
+
+/** Asking for more than the agent may have at once is a volume limit. */
+const tooMuch = (): PrecheckError => new PrecheckError('VOLUME_LIMIT_EXCEEDED');
 
 export interface ExecuteDeps {
   readonly pool: Pool;
@@ -179,6 +216,14 @@ export async function executeAllowed(
     const payload = await carryOut(deps, input, accessToken, fields);
     return { ok: true, content: [{ type: 'text', text: JSON.stringify(payload) }] };
   } catch (error) {
+    if (error instanceof PrecheckError) {
+      // Our own bound, checked before the call was made. Nothing reached
+      // Google, so the credential is not in question and no `connection.expired`
+      // alert fires — an operator should not be paged because an agent asked
+      // for a wider window than it may have.
+      return { ok: false, reasonCode: error.reasonCode, message: error.message };
+    }
+
     const status =
       error instanceof DriveError || error instanceof GmailError || error instanceof CalendarError
         ? error.status
@@ -245,7 +290,7 @@ async function carryOut(
       const timeMax = input.arguments['time_max'];
       const pageSize = input.arguments['page_size'];
       if (typeof timeMin !== 'string' || typeof timeMax !== 'string') {
-        throw new CalendarError(400);
+        throw badArgument();
       }
 
       // The window is bounded *here*, not only in the schema. A schema can
@@ -253,8 +298,8 @@ async function carryOut(
       // are not two years apart, which is the difference between "my week" and
       // "everything I have ever done".
       const span = Date.parse(timeMax) - Date.parse(timeMin);
-      if (!Number.isFinite(span) || span <= 0) throw new CalendarError(400);
-      if (span > MAX_WINDOW_DAYS * 24 * 60 * 60 * 1000) throw new CalendarError(400);
+      if (!Number.isFinite(span) || span <= 0) throw badArgument();
+      if (span > MAX_WINDOW_DAYS * 24 * 60 * 60 * 1000) throw tooMuch();
 
       const events = await calendar.listEvents(
         accessToken,
@@ -265,7 +310,7 @@ async function carryOut(
     }
 
     const eventId = input.arguments['event_id'];
-    if (typeof eventId !== 'string') throw new CalendarError(400);
+    if (typeof eventId !== 'string') throw badArgument();
     return calendar.readEvent(accessToken, eventId, fields);
   }
 
@@ -275,7 +320,7 @@ async function carryOut(
   if (input.tool === 'google_gmail.search_messages') {
     const query = input.arguments['query'];
     const pageSize = input.arguments['page_size'];
-    if (typeof query !== 'string') throw new GmailError(400);
+    if (typeof query !== 'string') throw badArgument();
 
     // A search returns headers only. The tool's own description promises no
     // bodies, and `searchMessages` cannot return one — it asks Gmail for
@@ -292,7 +337,7 @@ async function carryOut(
   // an argument, so it is covered by the digest and an approval stays bound to
   // one exact message.
   const messageId = input.arguments['message_id'];
-  if (typeof messageId !== 'string') throw new GmailError(400);
+  if (typeof messageId !== 'string') throw badArgument();
 
   return gmail.readMessage(accessToken, messageId, fields);
 }

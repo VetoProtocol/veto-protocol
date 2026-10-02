@@ -209,6 +209,36 @@ describe('the calendar tools', () => {
   });
 });
 
+/**
+ * A receiver subscribed to `connection.expired`, so that a false alert has
+ * somewhere to land.
+ *
+ * `enqueue` returns early when nothing subscribes, so counting deliveries
+ * without this would pass whether or not the bug was present — the test would
+ * assert zero against zero and prove nothing.
+ */
+async function subscribeToExpiry(): Promise<void> {
+  await withWorkspace(pool, WS, (db) =>
+    db.query(
+      `insert into webhook_endpoints
+         (id, workspace_id, url, secret_sealed, secret_key_id, events, created_by)
+       values ($1, $2, $3, $4, 'test-key', array['connection.expired'], $5)
+       on conflict (workspace_id, url) do nothing`,
+      [`whe_cal${s}`, WS, `https://receiver.example/cal${s}`, Buffer.from('not-a-real-secret'), USER],
+    ),
+  );
+}
+
+async function countExpiryAlerts(): Promise<number> {
+  const { rows } = await withWorkspace(pool, WS, (db) =>
+    db.query<{ n: string }>(
+      `select count(*) as n from webhook_deliveries where workspace_id = $1`,
+      [WS],
+    ),
+  );
+  return Number(rows[0]?.n ?? 0);
+}
+
 describe('the window is bounded', () => {
   it('refuses a window wider than the limit', async () => {
     const body = (
@@ -221,6 +251,42 @@ describe('the window is bounded', () => {
     // "Everything I have ever done" and "my week" are the same request shape.
     // The schema cannot tell them apart; step 8 can.
     expect(body.error.code).toBe(RPC.DENIED);
+
+    // And it must say *why*. This assertion is the one that was missing: the
+    // refusal was right and its reason was wrong, which is worse than a plain
+    // bug, because it sent the user to reconnect a working Google account. The
+    // window is a volume limit — MAX_WINDOW_DAYS is the calendar's version of
+    // §4.2 maximum_volume — so that is the code it has to carry.
+    expect(body.error.data.reason_code).toBe('VOLUME_LIMIT_EXCEEDED');
+  });
+
+  it('does not announce a connection failure for a window that was never sent', async () => {
+    // The oversized window is refused before anything leaves the machine, so
+    // the credential is not in question. Emitting `connection.expired` here
+    // told the operator their account had stopped working because an agent
+    // asked for too much.
+    await subscribeToExpiry();
+    const before = await countExpiryAlerts();
+    await call('google_calendar.list_events', {
+      time_min: iso(0),
+      time_max: iso(MAX_WINDOW_DAYS + 1),
+    });
+    expect(await countExpiryAlerts()).toBe(before);
+  });
+
+  it('calls a malformed window an argument problem, not a credential one', async () => {
+    for (const args of [
+      { time_min: iso(7), time_max: iso(0) },
+      { time_min: 'yesterday', time_max: iso(1) },
+    ]) {
+      const body = (await call('google_calendar.list_events', args)).json();
+      const code = body.error.data?.reason_code as string | undefined;
+      // Either the schema catches it first (INVALID_PARAMS, which carries no
+      // reason code) or step 8 does. Step 8 must never call it a credential
+      // failure.
+      expect(code === undefined || code === 'ARGUMENT_SCHEMA_INVALID').toBe(true);
+      expect(code).not.toBe('CONNECTION_EXPIRED');
+    }
   });
 
   it('accepts a window exactly at the limit', async () => {
