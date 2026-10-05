@@ -5,3 +5,5 @@ export * from './drive.ts';
 export * from './gmail.ts';
 export * from './calendar.ts';
 export * from './github.ts';
+export * from './repos.ts';
+export * from './issues.ts';
