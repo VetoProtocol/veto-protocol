@@ -11,9 +11,15 @@
  * in" is far harder to diagnose than one that refuses to start.
  */
 
+import { readFileSync } from 'node:fs';
 import { createPool, loadRepoEnv } from '@veto/db';
 import { createLocalKeyWrapper } from '@veto/vault';
-import { createGoogleExchange, type GoogleOAuthConfig } from '@veto/connections';
+import {
+  createGitHubExchange,
+  createGoogleExchange,
+  type GitHubAppConfig,
+  type GoogleOAuthConfig,
+} from '@veto/connections';
 import type { WebAuthnConfig } from '@veto/passkeys';
 import { createPermitPolicyDecisions, createPermitPolicyFacts, permitConfigFromEnv } from '@veto/permit';
 import Redis from 'ioredis';
@@ -59,6 +65,20 @@ const google: GoogleOAuthConfig | null =
         redirectUri: required('GOOGLE_REDIRECT_URI'),
       };
 
+// GitHub is optional on the same terms as Google. The private key is read from
+// a file rather than an environment variable: a PEM is multi-line, and the
+// shapes that survive `.env` round-tripping are the ones that invite someone to
+// paste it with the newlines mangled.
+const githubAppId = (process.env['GITHUB_APP_ID'] ?? '').trim();
+const github: GitHubAppConfig | null =
+  githubAppId === ''
+    ? null
+    : {
+        appId: githubAppId,
+        appSlug: required('GITHUB_APP_SLUG'),
+        privateKeyPem: readFileSync(required('GITHUB_PRIVATE_KEY_PATH'), 'utf8'),
+      };
+
 // Origin and RP id are configuration, never derived from a request: a caller
 // that could name its own origin could satisfy the ceremony from a site it
 // controls.
@@ -86,8 +106,10 @@ const app = createApp({
   decisions,
   wrapper,
   google,
+  github,
   webauthn,
   exchange: google === null ? null : createGoogleExchange(google),
+  githubExchange: github === null ? null : createGitHubExchange(github),
   authenticate: capabilityAuthenticator(required('VETO_CAPABILITY_SECRET')),
   // The same key, used the other way round: the authenticator verifies tokens
   // this process receives, and the §8 token endpoint signs the ones it issues.

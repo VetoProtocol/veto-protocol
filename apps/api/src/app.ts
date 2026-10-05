@@ -15,7 +15,12 @@ import type { Pool } from 'pg';
 import type Redis from 'ioredis';
 import { PolicyUnavailableError, type PolicyDecisions, type PolicyFacts } from '@veto/permit';
 import { createDriveReader } from '@veto/connections';
-import type { DriveReader, GoogleOAuthConfig, UpstreamTokenExchange } from '@veto/connections';
+import type {
+  DriveReader,
+  GitHubAppConfig,
+  GoogleOAuthConfig,
+  UpstreamTokenExchange,
+} from '@veto/connections';
 import type { KeyWrapper } from '@veto/vault';
 import type { WebAuthnConfig } from '@veto/passkeys';
 import { DuplicateLiveAgentError } from '@veto/identity';
@@ -52,6 +57,9 @@ export interface AppDeps {
   readonly capabilitySecret?: string;
   /** Null when Google is not configured; the connect route then refuses rather than half-works. */
   readonly google?: GoogleOAuthConfig | null;
+  /** Null when the GitHub App is not configured. Same rule. */
+  readonly github?: GitHubAppConfig | null;
+  readonly githubExchange?: UpstreamTokenExchange | null;
   /** Null disables the passkey routes; approvals then cannot be resolved at all. */
   readonly webauthn?: WebAuthnConfig | null;
   readonly exchange?: UpstreamTokenExchange | null;
@@ -152,7 +160,9 @@ export function createApp(deps: AppDeps): FastifyInstance {
     pool: deps.pool,
     wrapper: deps.wrapper,
     google: deps.google ?? null,
+    github: deps.github ?? null,
     exchange: deps.exchange ?? null,
+    githubExchange: deps.githubExchange ?? null,
   });
 
   return app;

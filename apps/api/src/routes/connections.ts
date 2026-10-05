@@ -22,14 +22,18 @@ import type { Pool } from 'pg';
 import { withWorkspace } from '@veto/db';
 import {
   buildConsentUrl,
+  buildInstallUrl,
+  readInstallation,
   createConnection,
   exchangeAuthorizationCode,
   GOOGLE_SERVICES,
   GOOGLE_SERVICE_NAMES,
   listConnections,
+  findConnection,
   revealRefreshTokenForBroker,
   revokeConnection,
   revokeUpstream,
+  type GitHubAppConfig,
   type GoogleOAuthConfig,
   type UpstreamTokenExchange,
 } from '@veto/connections';
@@ -42,6 +46,15 @@ export interface ConnectionRoutesDeps {
   readonly wrapper: KeyWrapper;
   readonly google: GoogleOAuthConfig | null;
   readonly exchange: UpstreamTokenExchange | null;
+  /** Null until the GitHub App is configured; the routes then 503 rather than half-work. */
+  readonly github: GitHubAppConfig | null;
+  /**
+   * Revocation has to reach the provider the connection actually belongs to.
+   * Handing an installation id to Google's revoke endpoint fails quietly and
+   * leaves the installation live, which is the worst shape a revocation can
+   * take: the operator believes access is gone and it is not.
+   */
+  readonly githubExchange: UpstreamTokenExchange | null;
 }
 
 const CONNECTION_SCHEMA = {
@@ -80,6 +93,25 @@ const CONNECT_BODY = {
  * must recognise its own callback later; both are public values, and both are
  * shape-checked before they are interpolated into a URL that a browser follows.
  */
+const INSTALL_QUERY = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['state'],
+  properties: {
+    state: { type: 'string', minLength: 16, maxLength: 128, pattern: '^[A-Za-z0-9._~-]+$' },
+  },
+} as const;
+
+const INSTALL_BODY = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['installation_id'],
+  properties: {
+    // Digits only, so nothing can be smuggled into the path this builds.
+    installation_id: { type: 'string', minLength: 1, maxLength: 20, pattern: '^[0-9]+$' },
+  },
+} as const;
+
 const AUTHORIZE_QUERY = {
   type: 'object',
   additionalProperties: false,
@@ -247,6 +279,93 @@ export function registerConnectionRoutes(app: FastifyInstance, deps: ConnectionR
     },
   );
 
+  app.get(
+    '/v1/connections/github/install-url',
+    {
+      schema: {
+        querystring: INSTALL_QUERY,
+        response: {
+          200: { type: 'object', properties: { url: { type: 'string' } }, required: ['url'] },
+          '4xx': ERROR_SCHEMA,
+          '5xx': ERROR_SCHEMA,
+        },
+      },
+    },
+    async (request: FastifyRequest<{ Querystring: { state: string } }>) => {
+      requireScope(request, SCOPE_CONTROL_PLANE);
+
+      if (!deps.github) {
+        throw new HttpError(503, 'CONNECTION_EXPIRED', 'GitHub is not configured on this server');
+      }
+
+      // No PKCE and no scope list. Unlike an OAuth consent screen there is
+      // nothing here to narrow: what an installation may reach is chosen on
+      // GitHub's own screen by the person installing it, and cannot be widened
+      // from this side. `state` still round-trips so the callback can be tied
+      // to the request that started it (§12.1 OAuth CSRF).
+      //
+      // Only the slug crosses this line, never the private key — the same
+      // narrowing `ConsentConfig` does for the Google client secret.
+      return {
+        url: buildInstallUrl({ appSlug: deps.github.appSlug }, { state: request.query.state }),
+      };
+    },
+  );
+
+  app.post(
+    '/v1/connections/github',
+    {
+      schema: {
+        body: INSTALL_BODY,
+        response: { 201: CONNECTION_SCHEMA, '4xx': ERROR_SCHEMA, '5xx': ERROR_SCHEMA },
+      },
+    },
+    async (request: FastifyRequest<{ Body: { installation_id: string } }>, reply) => {
+      requireScope(request, SCOPE_CONTROL_PLANE);
+      const { workspaceId, userId } = request.principal;
+
+      if (!deps.github) {
+        throw new HttpError(503, 'CONNECTION_EXPIRED', 'GitHub is not configured on this server');
+      }
+
+      // The callback handed us a number. It is not trusted: GitHub is asked
+      // what that installation is, and the answer is what gets stored. A
+      // crafted redirect that could assert its own installation id would be
+      // choosing whose repositories this workspace reaches.
+      let installation;
+      try {
+        installation = await readInstallation(deps.github, request.body.installation_id);
+      } catch {
+        // GitHub's error text is not propagated: it is written for a console
+        // and can echo the request.
+        throw new HttpError(
+          400,
+          'ARGUMENT_SCHEMA_INVALID',
+          'That installation could not be confirmed',
+        );
+      }
+
+      const connection = await withWorkspace(deps.pool, workspaceId, (db) =>
+        createConnection(db, deps.wrapper, {
+          workspaceId,
+          userId,
+          provider: 'github',
+          // What the installation actually holds, not what we hoped for. An
+          // installer who granted only issues must not be recorded as having
+          // granted code.
+          scopes: installation.scopes,
+          // The installation id sits where a refresh token sits. It is not a
+          // bearer credential on its own — the App private key is the secret —
+          // but it is tenant data and is encrypted like everything else here.
+          refreshToken: installation.installationId,
+          correlationId: String(request.id),
+        }),
+      );
+
+      return reply.code(201).send(serialize(connection));
+    },
+  );
+
   app.delete(
     '/v1/connections/:connectionId',
     {
@@ -278,6 +397,12 @@ export function registerConnectionRoutes(app: FastifyInstance, deps: ConnectionR
       const { workspaceId, userId } = request.principal;
       const { connectionId } = request.params;
 
+      // Which provider this connection belongs to, read before the row is
+      // destroyed. Revoking at the wrong provider is a silent no-op.
+      const existing = await withWorkspace(deps.pool, workspaceId, (db) =>
+        findConnection(db, workspaceId, connectionId).catch(() => null),
+      );
+
       // Read the credential before destroying it, so there is something left to
       // revoke at the provider. Held only for the length of this request.
       const token = await withWorkspace(deps.pool, workspaceId, (db) =>
@@ -294,8 +419,12 @@ export function registerConnectionRoutes(app: FastifyInstance, deps: ConnectionR
 
       // Provider revocation runs after the local delete has committed, so an
       // outage at Google leaves the credential already unusable here (§9.1).
+      const exchange =
+        existing?.provider === 'github' ? deps.githubExchange : deps.exchange;
       const providerRevoked =
-        token !== null && deps.exchange !== null ? await revokeUpstream(deps.exchange, token) : false;
+        token !== null && exchange !== null && exchange !== undefined
+          ? await revokeUpstream(exchange, token)
+          : false;
 
       return {
         connection_id: connectionId,
