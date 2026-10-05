@@ -364,7 +364,7 @@ export const githubInstallUrl = (
  */
 export const connectGithub = (
   credential: string,
-  body: { installation_id: string },
+  body: { installation_id: string; state: string },
 ): Promise<ConnectionView> =>
   request('/v1/connections/github', { method: 'POST', credential, body: JSON.stringify(body) });
 

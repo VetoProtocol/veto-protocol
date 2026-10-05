@@ -68,7 +68,13 @@ export async function GET(request: NextRequest) {
     // Nothing from this is carried back in the URL. The page re-reads the
     // connection list, so what it shows is what GitHub confirmed rather than
     // what this redirect claimed.
-    await connectGithub(session.credential, { installation_id: installationId });
+    // The state goes with it. The cookie proves this browser began the flow;
+    // the state proves the *server* issued it for this workspace, and the
+    // control plane will not accept an installation id without one.
+    await connectGithub(session.credential, {
+      installation_id: installationId,
+      state: flow.state,
+    });
     return done(request, 'connected', 'ok');
   } catch (error) {
     if (error instanceof ApiError && error.failure.status === 503) {

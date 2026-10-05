@@ -189,3 +189,106 @@ describe('GET /v1/connections', () => {
     expect(response.json()).toEqual({ connections: [] });
   });
 });
+
+describe('a GitHub installation cannot be claimed by assertion (F-01)', () => {
+  // The hole this closes: `POST /v1/connections/github` took an
+  // `installation_id` from the body, asked GitHub what that installation *is*,
+  // and stored it against the caller's workspace. It never asked *whose* it
+  // was. Installation ids are small sequential integers, so any control-plane
+  // credential could attach a stranger's repositories to its own workspace —
+  // and this server, holding the App private key, would mint real tokens for
+  // them.
+  //
+  // The Google route has no equivalent because an authorization code cannot be
+  // forged. These assertions check the GitHub route now demands a proof too.
+
+  const INSTALLATION = '99887766';
+
+  it('refuses an installation id with no state at all', async () => {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/connections/github',
+      headers: as(WS, ALICE),
+      payload: { installation_id: INSTALLATION },
+    });
+
+    // The schema requires it, so this never reaches GitHub.
+    expect(response.statusCode).toBe(400);
+  });
+
+  it('refuses a state this server never issued', async () => {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/connections/github',
+      headers: as(WS, ALICE),
+      payload: { installation_id: INSTALLATION, state: 'z'.repeat(32) },
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error.code).toBe('ARGUMENT_SCHEMA_INVALID');
+  });
+
+  it('refuses a state issued to a different workspace', async () => {
+    // The key is workspace-scoped, so learning the value is not enough. This
+    // is the cross-tenant case the finding was really about.
+    const other = `ws_cnx${suffix()}`;
+    const stranger = `usr_x${suffix()}`;
+    await seed(pool, other, [stranger]);
+
+    const state = 'c'.repeat(32);
+    await redis.set(`veto:${other}:ghinst:${state}`, stranger, 'EX', 900);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/connections/github',
+      headers: as(WS, ALICE),
+      payload: { installation_id: INSTALLATION, state },
+    });
+
+    expect(response.statusCode).toBe(400);
+    // And the victim's state is still there, unconsumed.
+    expect(await redis.get(`veto:${other}:ghinst:${state}`)).toBe(stranger);
+    await redis.del(`veto:${other}:ghinst:${state}`);
+  });
+
+  it('refuses a state issued to a different user in the same workspace', async () => {
+    const state = 'd'.repeat(32);
+    await redis.set(`veto:${WS}:ghinst:${state}`, `usr_someoneelse${s}`, 'EX', 900);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/connections/github',
+      headers: as(WS, ALICE),
+      payload: { installation_id: INSTALLATION, state },
+    });
+
+    expect(response.statusCode).toBe(400);
+  });
+
+  it('consumes the state, so a replayed callback is refused', async () => {
+    const state = 'e'.repeat(32);
+    await redis.set(`veto:${WS}:ghinst:${state}`, ALICE, 'EX', 900);
+
+    // The first attempt gets past the state gate and fails later, at GitHub,
+    // because this test has no App configured. That is the point: the gate let
+    // it through exactly once.
+    await app.inject({
+      method: 'POST',
+      url: '/v1/connections/github',
+      headers: as(WS, ALICE),
+      payload: { installation_id: INSTALLATION, state },
+    });
+
+    expect(await redis.get(`veto:${WS}:ghinst:${state}`)).toBeNull();
+
+    const replay = await app.inject({
+      method: 'POST',
+      url: '/v1/connections/github',
+      headers: as(WS, ALICE),
+      payload: { installation_id: INSTALLATION, state },
+    });
+
+    expect(replay.statusCode).toBe(400);
+    expect(replay.json().error.code).toBe('ARGUMENT_SCHEMA_INVALID');
+  });
+});

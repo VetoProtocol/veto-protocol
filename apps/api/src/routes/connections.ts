@@ -19,6 +19,7 @@
 
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { Pool } from 'pg';
+import type Redis from 'ioredis';
 import { withWorkspace } from '@veto/db';
 import {
   buildConsentUrl,
@@ -43,6 +44,12 @@ import { requireScope, SCOPE_CONTROL_PLANE } from '../scope.ts';
 
 export interface ConnectionRoutesDeps {
   readonly pool: Pool;
+  /**
+   * Holds the single-use install state. The GitHub flow has no authorization
+   * code to prove with, so this is what ties an installation id to the browser
+   * round trip that obtained it.
+   */
+  readonly redis: Redis;
   readonly wrapper: KeyWrapper;
   readonly google: GoogleOAuthConfig | null;
   readonly exchange: UpstreamTokenExchange | null;
@@ -105,12 +112,29 @@ const INSTALL_QUERY = {
 const INSTALL_BODY = {
   type: 'object',
   additionalProperties: false,
-  required: ['installation_id'],
+  required: ['installation_id', 'state'],
   properties: {
     // Digits only, so nothing can be smuggled into the path this builds.
     installation_id: { type: 'string', minLength: 1, maxLength: 20, pattern: '^[0-9]+$' },
+    // The state this server minted for this workspace. Without it an
+    // installation id is an assertion rather than a proof.
+    state: { type: 'string', minLength: 16, maxLength: 128, pattern: '^[A-Za-z0-9._~-]+$' },
   },
 } as const;
+
+/**
+ * Where a pending install state lives.
+ *
+ * Scoped by workspace, so one tenant cannot consume another's state even if it
+ * learns the value. The stored value is the user who began the flow.
+ *
+ * Fifteen minutes, because installing means choosing repositories on GitHub's
+ * screen and that is a real decision, not a click.
+ */
+const installKey = (workspaceId: string, state: string): string =>
+  `veto:${workspaceId}:ghinst:${state}`;
+
+const INSTALL_STATE_TTL_SECONDS = 900;
 
 const AUTHORIZE_QUERY = {
   type: 'object',
@@ -293,6 +317,7 @@ export function registerConnectionRoutes(app: FastifyInstance, deps: ConnectionR
     },
     async (request: FastifyRequest<{ Querystring: { state: string } }>) => {
       requireScope(request, SCOPE_CONTROL_PLANE);
+      const { workspaceId, userId } = request.principal;
 
       if (!deps.github) {
         throw new HttpError(503, 'CONNECTION_EXPIRED', 'GitHub is not configured on this server');
@@ -306,6 +331,16 @@ export function registerConnectionRoutes(app: FastifyInstance, deps: ConnectionR
       //
       // Only the slug crosses this line, never the private key — the same
       // narrowing `ConsentConfig` does for the Google client secret.
+      // Remembered before the URL is handed out, so only a state this server
+      // issued for this workspace can later be redeemed. The value is the user
+      // who began it, which is what the connect route compares against.
+      await deps.redis.set(
+        installKey(workspaceId, request.query.state),
+        userId,
+        'EX',
+        INSTALL_STATE_TTL_SECONDS,
+      );
+
       return {
         url: buildInstallUrl({ appSlug: deps.github.appSlug }, { state: request.query.state }),
       };
@@ -320,13 +355,40 @@ export function registerConnectionRoutes(app: FastifyInstance, deps: ConnectionR
         response: { 201: CONNECTION_SCHEMA, '4xx': ERROR_SCHEMA, '5xx': ERROR_SCHEMA },
       },
     },
-    async (request: FastifyRequest<{ Body: { installation_id: string } }>, reply) => {
+    async (
+      request: FastifyRequest<{ Body: { installation_id: string; state: string } }>,
+      reply,
+    ) => {
       requireScope(request, SCOPE_CONTROL_PLANE);
       const { workspaceId, userId } = request.principal;
+
+      // Redeemed before anything else, including the configuration check.
+      // An unknown state is untrusted input and should be refused on its own
+      // terms, not after the server has revealed whether GitHub is set up.
+      //
+      // Asking GitHub what an installation *is* was never a check on who may
+      // claim it. Without this, any control-plane credential could post any
+      // installation id — ids are small sequential integers — and attach a
+      // stranger's repositories to its own workspace, which this server would
+      // then mint real tokens for with the App private key it holds.
+      //
+      // The Google route has no equivalent hole because an authorization code
+      // cannot be forged. This restores the same property by proof rather than
+      // by assertion. `getdel` makes it single-use, so a replayed callback is
+      // refused as firmly as an invented one.
+      const began = await deps.redis.getdel(installKey(workspaceId, request.body.state));
+      if (began !== userId) {
+        throw new HttpError(
+          400,
+          'ARGUMENT_SCHEMA_INVALID',
+          'That installation was not started from this account',
+        );
+      }
 
       if (!deps.github) {
         throw new HttpError(503, 'CONNECTION_EXPIRED', 'GitHub is not configured on this server');
       }
+
 
       // The callback handed us a number. It is not trusted: GitHub is asked
       // what that installation is, and the answer is what gets stored. A

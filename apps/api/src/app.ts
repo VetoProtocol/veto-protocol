@@ -165,6 +165,7 @@ export function createApp(deps: AppDeps): FastifyInstance {
   registerWebhookRoutes(app, { pool: deps.pool, wrapper: deps.wrapper });
   registerConnectionRoutes(app, {
     pool: deps.pool,
+    redis: deps.redis,
     wrapper: deps.wrapper,
     google: deps.google ?? null,
     github: deps.github ?? null,
