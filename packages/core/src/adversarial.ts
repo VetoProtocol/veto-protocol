@@ -201,6 +201,56 @@ export const ADVERSARIAL_SCENARIOS: readonly AdversarialScenario[] = [
     status: 'implemented',
     test: 'packages/db/test/rls.test.ts',
   },
+  {
+    id: 'S13',
+    source: 'spec §12 security',
+    summary: 'A GitHub issue instructs the agent to read another repository.',
+    threat: 'T1',
+    stage: 'policy',
+    asserts:
+      'The GitHub shape of S1, and worse: a Drive file must be shared with somebody ' +
+      'before it can carry a hostile instruction, while an issue on a public ' +
+      'repository can be opened by anyone alive and reaches a model the moment an ' +
+      'agent is asked what bugs are open. Asserts the attack is delivered rather than ' +
+      'dodged — the poisoned issue reads fine — that acting on it is refused exactly ' +
+      'as it would have been beforehand, that nothing reached GitHub for the refused ' +
+      'call, and that the attacker-written text never appears in the audit trail.',
+    status: 'implemented',
+    test: 'apps/gateway/test/github-adversarial.test.ts',
+  },
+  {
+    id: 'S14',
+    source: 'spec §12 security',
+    summary: 'An agent authorized for one repository requests another.',
+    threat: 'T4',
+    stage: 'policy',
+    asserts:
+      'The GitHub shape of S2. The installation token can see both repositories, so ' +
+      'the credential would answer — the decision is the only thing refusing, which ' +
+      'is the property worth proving. Covers an issue read and a directory listing, ' +
+      'and asserts the reader was never handed the ungranted id rather than only that ' +
+      'the response was an error.',
+    status: 'implemented',
+    test: 'apps/gateway/test/github-adversarial.test.ts',
+  },
+  {
+    id: 'S15',
+    source: 'spec §12 security',
+    summary: 'A search query names a repository the decision did not authorise.',
+    threat: 'T4',
+    // Step 8, which the stage list calls `credential`: the refusal is not a
+    // policy denial — the repository *was* authorised — it is step 8 refusing
+    // to widen what it forwards.
+    stage: 'credential',
+    asserts:
+      'GitHub search takes qualifiers inside the query string, so a free-text argument ' +
+      'is a way to name a destination. Step 8 prepends the authorised repository ' +
+      'rather than trusting the caller, and the test passes a query carrying two ' +
+      'competing `repo:` qualifiers to prove the agent\u2019s own text travels as search ' +
+      'terms and not as a destination.',
+    status: 'implemented',
+    test: 'apps/gateway/test/github-adversarial.test.ts',
+  },
 ] as const;
 
 export const MANDATORY_SCENARIO_COUNT = 8;
