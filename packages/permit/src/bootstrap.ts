@@ -23,6 +23,8 @@ import {
   CALENDAR_RESOURCE,
   FILE_RESOURCE,
   FOLDER_RESOURCE,
+  GITHUB_ACCOUNT_RESOURCE,
+  GITHUB_REPO_RESOURCE,
   HUMAN_RESOURCE,
   MAILBOX_RESOURCE,
   RELATION_DELEGATOR,
@@ -274,6 +276,92 @@ export async function bootstrapPermitEnvironment(config: PermitConfig): Promise<
       name: 'Calendar reader',
       description: 'May list and read this calendar. Cannot create or change events.',
       permissions: ['read', 'search'],
+    }),
+  );
+
+  // GitHub, read only. Same shape as Drive and for the same reason: a
+  // container whose reader role flows down to the things inside it.
+  //
+  // The account is the container. A repository is the thing a grant usually
+  // names, and it is keyed by GitHub's numeric id — `owner/repo` does not
+  // survive Permit's instance-key grammar, and an id survives a rename.
+  await step(`resource:${GITHUB_ACCOUNT_RESOURCE}`, () =>
+    permit.api.resources.create({
+      key: GITHUB_ACCOUNT_RESOURCE,
+      name: 'GitHub account',
+      description:
+        'One GitHub organisation or user that installed the app. Keyed by login. Exists so "which repositories can I see" has something to be authorised against.',
+      actions: { search: {} },
+      attributes: {
+        sensitivity: {
+          type: 'string',
+          description: 'Classification label, never the content itself.',
+        },
+      },
+    }),
+  );
+
+  await step(`resource:${GITHUB_REPO_RESOURCE}`, () =>
+    permit.api.resources.create({
+      key: GITHUB_REPO_RESOURCE,
+      name: 'GitHub repository',
+      description:
+        "One repository, keyed by GitHub's numeric id. Files, issues and pull requests are not separate resources — their ids are not knowable before a search, so Permit answers whether the repository is reachable and a Veto rule says under what conditions.",
+      actions: { read: {}, search: {} },
+      attributes: {
+        sensitivity: {
+          type: 'string',
+          description: 'Classification label, never the content itself.',
+        },
+      },
+    }),
+  );
+
+  // Declared on the repository, naming the account: "this repository belongs to
+  // that account". Downward only, like the folder relation — being granted one
+  // repository says nothing about the account, so it cannot be turned into a
+  // list of everything the installation can see.
+  await step(`relation:${GITHUB_REPO_RESOURCE}.${RELATION_PARENT}`, () =>
+    permit.api.resourceRelations.create(GITHUB_REPO_RESOURCE, {
+      key: RELATION_PARENT,
+      name: 'Owning account',
+      description:
+        'The account this repository belongs to. Access flows from account to repository, never upward.',
+      subject_resource: GITHUB_ACCOUNT_RESOURCE,
+    }),
+  );
+
+  await step(`role:${GITHUB_ACCOUNT_RESOURCE}.${ROLE_READER}`, () =>
+    permit.api.resourceRoles.create(GITHUB_ACCOUNT_RESOURCE, {
+      key: ROLE_READER,
+      name: 'Account reader',
+      description: 'May list the repositories this installation can see.',
+      permissions: ['search'],
+    }),
+  );
+
+  // The inheritance, and the reason the account resource exists at all: an
+  // operator who grants the account reaches every repository under it, without
+  // enumerating repositories nobody has enumerated.
+  //
+  // Nothing writes that account grant automatically. An edge beneath an
+  // ungranted account reaches nobody, exactly as a folder edge does.
+  await step(`role:${GITHUB_REPO_RESOURCE}.${ROLE_READER}`, () =>
+    permit.api.resourceRoles.create(GITHUB_REPO_RESOURCE, {
+      key: ROLE_READER,
+      name: 'Repository reader',
+      description:
+        'May browse and read this repository, its issues and its pull requests. Also held by anyone who reads the owning account.',
+      permissions: ['read', 'search'],
+      granted_to: {
+        users_with_role: [
+          {
+            linked_by_relation: RELATION_PARENT,
+            on_resource: GITHUB_ACCOUNT_RESOURCE,
+            role: ROLE_READER,
+          },
+        ],
+      },
     }),
   );
 

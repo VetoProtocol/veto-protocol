@@ -263,6 +263,13 @@ describe('a client can connect and list', () => {
       'google_gmail.read_message',
       'google_calendar.list_events',
       'google_calendar.read_event',
+      'github_repo.list_repos',
+      'github_repo.list_directory',
+      'github_repo.read_file',
+      'github_issue.search',
+      'github_issue.read',
+      'github_pull.read',
+      'github_pull.read_diff',
     ]);
   });
 

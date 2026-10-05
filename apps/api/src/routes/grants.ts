@@ -28,6 +28,8 @@ import {
   CALENDAR_RESOURCE,
   FILE_RESOURCE,
   FOLDER_RESOURCE,
+  GITHUB_ACCOUNT_RESOURCE,
+  GITHUB_REPO_RESOURCE,
   MAILBOX_RESOURCE,
   type PolicyFacts,
 } from '@veto/permit';
@@ -95,7 +97,14 @@ const asJob = (row: SyncJobRow) => ({
   finished_at: row.finished_at?.toISOString() ?? null,
 });
 
-const GRANTABLE = [FOLDER_RESOURCE, FILE_RESOURCE, MAILBOX_RESOURCE, CALENDAR_RESOURCE] as const;
+const GRANTABLE = [
+  FOLDER_RESOURCE,
+  FILE_RESOURCE,
+  MAILBOX_RESOURCE,
+  CALENDAR_RESOURCE,
+  GITHUB_ACCOUNT_RESOURCE,
+  GITHUB_REPO_RESOURCE,
+] as const;
 
 const GRANT_SCHEMA = {
   type: 'object',

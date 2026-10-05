@@ -87,6 +87,43 @@ export const MAILBOX_RESOURCE = 'gmail_mailbox';
 export const CALENDAR_RESOURCE = 'google_calendar';
 
 /**
+ * A GitHub repository, keyed by its **numeric id** and never by `owner/repo`.
+ *
+ * Permit instance keys are `^[A-Za-z0-9\-_]+$`. A slash does not survive that,
+ * so the full name cannot be the key — the same wall path-shaped ids hit for
+ * `google_file`, and the same answer: use the provider's own opaque id.
+ *
+ * The id is also the stabler fact. A repository can be renamed or transferred
+ * between accounts and keeps its id, so a grant written today still names the
+ * same repository tomorrow. A grant written against `acme/api` would silently
+ * follow whoever registered that name next.
+ *
+ * Files, issues and pull requests are deliberately **not** Permit resources,
+ * for the reason individual messages are not: their ids are not knowable before
+ * a search runs, so per-file grants could never be written in advance. Permit
+ * answers "may this agent reach this repository at all"; which path, which
+ * issue, how many and when is the Veto rule's job at step 4.
+ */
+export const GITHUB_REPO_RESOURCE = 'github_repo';
+
+/**
+ * The installation account — one GitHub org or user that installed the app.
+ *
+ * Exists so "list the repositories I can see" has a resource to be authorised
+ * against. Keyed by the **Veto user id**, not by the GitHub login — for the
+ * reason the mailbox is: an agent acts for one person and reaches the account
+ * that person connected. A login in the key would be an argument an agent could
+ * supply, and naming somebody else's organisation is exactly what must not be
+ * expressible.
+ *
+ * Repositories declare `parent` against it, so an operator *may* grant the
+ * account and reach every repository under it. Nothing creates that grant
+ * automatically: as with a Drive folder nobody was granted, an edge beneath an
+ * ungranted account reaches nobody.
+ */
+export const GITHUB_ACCOUNT_RESOURCE = 'github_account';
+
+/**
  * Containment.
  *
  * Declared on the file *and* on the folder, both naming a folder as subject, so

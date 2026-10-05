@@ -186,6 +186,146 @@ export const TOOLS: readonly ToolDefinition[] = [
       },
     },
   },
+
+  {
+    name: 'github_repo.list_repos',
+    title: 'List repositories',
+    description:
+      'List the repositories the installation can see \u2014 the ones chosen when the app was ' +
+      'installed. Names and ids only. Every call is authorized individually.',
+    action: 'search',
+    resourceType: 'github_account',
+    inputSchema: {
+      type: 'object',
+      additionalProperties: false,
+      required: [],
+      properties: {
+        page_size: { type: 'integer', minimum: 1, maximum: 100 },
+        declared_intent: { type: 'string', maxLength: 500 },
+      },
+    },
+  },
+  {
+    name: 'github_repo.list_directory',
+    title: 'List a directory',
+    description:
+      'List the files and folders at one path in a repository. Listing is a separate ' +
+      'permission from reading. Every call is authorized individually.',
+    action: 'read',
+    resourceType: 'github_repo',
+    inputSchema: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['repo_id'],
+      properties: {
+        // GitHub's numeric id, not `owner/repo`: the policy layer's instance
+        // keys have no room for a slash, and an id survives a rename.
+        repo_id: { type: 'string', minLength: 1, maxLength: 20, pattern: '^[0-9]+$' },
+        path: { type: 'string', minLength: 1, maxLength: 400, pattern: '^[^\\\\]+$' },
+        ref: { type: 'string', minLength: 1, maxLength: 255, pattern: '^[A-Za-z0-9._/-]+$' },
+        page_size: { type: 'integer', minimum: 1, maximum: 100 },
+        declared_intent: { type: 'string', maxLength: 500 },
+      },
+    },
+  },
+  {
+    name: 'github_repo.read_file',
+    title: 'Read a file',
+    description:
+      'Read one file from a repository at a given path. Large and binary files are refused ' +
+      'rather than truncated silently. Every call is authorized individually.',
+    action: 'read',
+    resourceType: 'github_repo',
+    inputSchema: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['repo_id', 'path'],
+      properties: {
+        repo_id: { type: 'string', minLength: 1, maxLength: 20, pattern: '^[0-9]+$' },
+        path: { type: 'string', minLength: 1, maxLength: 400, pattern: '^[^\\\\]+$' },
+        ref: { type: 'string', minLength: 1, maxLength: 255, pattern: '^[A-Za-z0-9._/-]+$' },
+        declared_intent: { type: 'string', maxLength: 500 },
+      },
+    },
+  },
+  {
+    name: 'github_issue.search',
+    title: 'Search issues',
+    description:
+      'Find issues and pull requests in one repository. Returns titles, authors, labels and ' +
+      'state \u2014 never bodies. Every call is authorized individually.',
+    action: 'search',
+    resourceType: 'github_repo',
+    inputSchema: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['repo_id', 'query'],
+      properties: {
+        repo_id: { type: 'string', minLength: 1, maxLength: 20, pattern: '^[0-9]+$' },
+        // The repository qualifier is prepended by step 8, so a query cannot
+        // reach a repository the decision did not name.
+        query: { type: 'string', minLength: 1, maxLength: 256 },
+        page_size: { type: 'integer', minimum: 1, maximum: 50 },
+        declared_intent: { type: 'string', maxLength: 500 },
+      },
+    },
+  },
+  {
+    name: 'github_issue.read',
+    title: 'Read an issue',
+    description:
+      'Read one issue, including its comments. Every call is authorized individually.',
+    action: 'read',
+    resourceType: 'github_repo',
+    inputSchema: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['repo_id', 'issue_number'],
+      properties: {
+        repo_id: { type: 'string', minLength: 1, maxLength: 20, pattern: '^[0-9]+$' },
+        issue_number: { type: 'integer', minimum: 1, maximum: 999999 },
+        declared_intent: { type: 'string', maxLength: 500 },
+      },
+    },
+  },
+  {
+    name: 'github_pull.read',
+    title: 'Read a pull request',
+    description:
+      'Read one pull request: its description, branches and state. The changed lines are a ' +
+      'separate call. Every call is authorized individually.',
+    action: 'read',
+    resourceType: 'github_repo',
+    inputSchema: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['repo_id', 'pull_number'],
+      properties: {
+        repo_id: { type: 'string', minLength: 1, maxLength: 20, pattern: '^[0-9]+$' },
+        pull_number: { type: 'integer', minimum: 1, maximum: 999999 },
+        declared_intent: { type: 'string', maxLength: 500 },
+      },
+    },
+  },
+  {
+    name: 'github_pull.read_diff',
+    title: 'Read the changes in a pull request',
+    description:
+      'Read which lines changed in one pull request. Bounded by file count and total size; ' +
+      'what was dropped is reported. Every call is authorized individually.',
+    action: 'read',
+    resourceType: 'github_repo',
+    inputSchema: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['repo_id', 'pull_number'],
+      properties: {
+        repo_id: { type: 'string', minLength: 1, maxLength: 20, pattern: '^[0-9]+$' },
+        pull_number: { type: 'integer', minimum: 1, maximum: 999999 },
+        declared_intent: { type: 'string', maxLength: 500 },
+      },
+    },
+  },
 ];
 
 export const findTool = (name: string): ToolDefinition | undefined =>

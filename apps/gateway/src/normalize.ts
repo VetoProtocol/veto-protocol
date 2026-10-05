@@ -32,10 +32,19 @@ const validators = new Map<string, ValidateFunction>(
 const RESOURCE_ARGUMENT: Readonly<Record<string, string>> = {
   'google_drive.read_file': 'file_id',
   'google_drive.list_folder': 'folder_id',
+  // GitHub names the repository, never the file or issue. Those are not
+  // separate policy resources — Permit answers whether the repository is
+  // reachable, and which path or number is a Veto rule's business at step 4.
+  'github_repo.list_directory': 'repo_id',
+  'github_repo.read_file': 'repo_id',
+  'github_issue.search': 'repo_id',
+  'github_issue.read': 'repo_id',
+  'github_pull.read': 'repo_id',
+  'github_pull.read_diff': 'repo_id',
 };
 
 /**
- * Tools whose resource is the caller's own mailbox or calendar.
+ * Tools whose resource belongs to the caller, not to an argument.
  *
  * Gmail and Calendar are not like Drive. A Drive call names the thing it wants;
  * a mail or calendar call names a query, a message id or an event id, and the
@@ -52,6 +61,10 @@ const MAILBOX_TOOLS = new Set([
   'google_gmail.read_message',
   'google_calendar.list_events',
   'google_calendar.read_event',
+  // "Which repositories can I see" is the same shape: the account reached is
+  // the one the delegating human connected, and there is no argument an agent
+  // could put somebody else's organisation in.
+  'github_repo.list_repos',
 ]);
 
 const invalid = (): RpcError =>
