@@ -7,14 +7,19 @@
  * possible failure to debug.
  */
 
+import { readFileSync } from 'node:fs';
 import Redis from 'ioredis';
 import { createPool, loadRepoEnv } from '@veto/db';
 import { createPermitPolicyDecisions, permitConfigFromEnv } from '@veto/permit';
 import {
   createCalendarReader,
   createDriveReader,
+  createGitHubExchange,
   createGmailReader,
   createGoogleExchange,
+  createIssueReader,
+  createRepoReader,
+  type GitHubAppConfig,
   type GoogleOAuthConfig,
 } from '@veto/connections';
 import { createLocalKeyWrapper } from '@veto/vault';
@@ -59,6 +64,24 @@ const google: GoogleOAuthConfig | null =
         redirectUri: required('GOOGLE_REDIRECT_URI'),
       };
 
+// GitHub, on the same terms as Google: absent means every GitHub tool refuses
+// rather than half-works. The private key is read from a path because a PEM is
+// multi-line and a mangled one fails at JWT signing, on the first real call.
+//
+// This is the enforcement point, so it needs the App config too — the control
+// plane holding it is not enough. Wiring it there and not here is exactly how
+// a tool ends up listed, authorised by policy, and then refused at step 8 with
+// "GitHub is not configured on this server".
+const githubAppId = (process.env['GITHUB_APP_ID'] ?? '').trim();
+const github: GitHubAppConfig | null =
+  githubAppId === ''
+    ? null
+    : {
+        appId: githubAppId,
+        appSlug: required('GITHUB_APP_SLUG'),
+        privateKeyPem: readFileSync(required('GITHUB_PRIVATE_KEY_PATH'), 'utf8'),
+      };
+
 const execute =
   google === null
     ? null
@@ -68,6 +91,13 @@ const execute =
         drive: createDriveReader(),
         gmail: createGmailReader(),
         calendar: createCalendarReader(),
+        ...(github === null
+          ? {}
+          : {
+              githubExchange: createGitHubExchange(github),
+              repos: createRepoReader(),
+              issues: createIssueReader(),
+            }),
       };
 
 const app = createGateway({
