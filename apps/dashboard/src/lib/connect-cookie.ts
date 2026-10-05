@@ -30,9 +30,28 @@ export const CONNECT_TTL_MS = 5 * 60 * 1000;
 const DOMAIN = 'veto.connect.v1';
 
 export interface ConnectFlow {
+  /**
+   * The PKCE verifier. Empty only for a provider that has no code to exchange.
+   *
+   * It stays required for Google: a consent round trip without PKCE is a
+   * weaker flow, and an empty string there would mean somebody dropped it.
+   */
   readonly verifier: string;
   readonly state: string;
   readonly expiresAt: number;
+  /**
+   * Which flow this cookie belongs to.
+   *
+   * Absent means `google`, because that is the only flow that existed when
+   * these cookies were first minted and one may still be in a browser.
+   *
+   * It exists so the two callbacks cannot satisfy each other. They are
+   * different round trips with different security properties — one ends in an
+   * OAuth grant, the other in a GitHub installation — and a cookie minted for
+   * either must not open the other. The same separation the sign-in and
+   * connect cookies already keep between themselves.
+   */
+  readonly provider?: 'google' | 'github';
 }
 
 function secret(): Buffer {
@@ -60,18 +79,24 @@ export function openConnect(raw: string, now: number = Date.now()): ConnectFlow 
     return null;
   }
 
+  const provider = flow.provider ?? 'google';
+
   if (
     typeof flow.verifier !== 'string' ||
     typeof flow.state !== 'string' ||
-    flow.verifier === '' ||
     flow.state === '' ||
+    (provider !== 'google' && provider !== 'github') ||
+    // PKCE is required where there is a code to exchange, and meaningless
+    // where there is not. GitHub hands back an installation id, which is worth
+    // nothing without the App private key.
+    (provider === 'google' && flow.verifier === '') ||
     !Number.isFinite(flow.expiresAt) ||
     flow.expiresAt <= now
   ) {
     return null;
   }
 
-  return flow;
+  return { ...flow, provider };
 }
 
 const mac = (body: string): string =>

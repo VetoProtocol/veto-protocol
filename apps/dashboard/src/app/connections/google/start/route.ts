@@ -88,7 +88,7 @@ export async function GET(request: NextRequest) {
   const response = NextResponse.redirect(url, { status: 302 });
   response.cookies.set(
     CONNECT_COOKIE,
-    sealConnect({ verifier, state, expiresAt: Date.now() + CONNECT_TTL_MS }),
+    sealConnect({ verifier, state, provider: 'google', expiresAt: Date.now() + CONNECT_TTL_MS }),
     { ...cookieOptions(), maxAge: Math.floor(CONNECT_TTL_MS / 1000) },
   );
   return response;

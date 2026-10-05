@@ -26,6 +26,7 @@ beforeAll(async () => {
 const flow = () => ({
   verifier: 'v'.repeat(43),
   state: 'state-abc',
+  provider: 'google' as const,
   expiresAt: Date.now() + 60_000,
 });
 
@@ -78,6 +79,27 @@ describe('connect cookie', () => {
     // A blank verifier would be sent to Google as `code_verifier=`, which is a
     // PKCE exchange with no proof in it. Null here, not an empty string.
     expect(openConnect(sealConnect({ ...flow(), verifier: '' }))).toBeNull();
+  });
+
+  it('treats a cookie with no provider as Google', () => {
+    // One minted before the field existed may still be in a browser. Google is
+    // the only flow that could have minted it, and it still needs a verifier.
+    const legacy: Record<string, unknown> = { ...flow() };
+    delete legacy['provider'];
+    expect(openConnect(sealConnect(legacy as never))?.provider).toBe('google');
+  });
+
+  it('accepts a GitHub flow with no verifier, because there is no code', () => {
+    // The bug this test exists for: an empty verifier is correct for GitHub,
+    // and rejecting it made every install callback report a timeout. Shipped,
+    // deployed, and only visible when a human clicked the button.
+    const github = { ...flow(), verifier: '', provider: 'github' as const };
+    expect(openConnect(sealConnect(github))).toEqual(github);
+  });
+
+  it('refuses a provider it does not know', () => {
+    const odd = { ...flow(), provider: 'gitlab' as unknown as 'github' };
+    expect(openConnect(sealConnect(odd))).toBeNull();
   });
 
   it('refuses garbage', () => {

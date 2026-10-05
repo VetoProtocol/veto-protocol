@@ -40,6 +40,11 @@ export async function GET(request: NextRequest) {
   const flow = sealed ? openConnect(sealed) : null;
   if (!flow) return done(request, 'error', 'expired');
 
+  // A Google consent cookie must not open this door. They are different round
+  // trips with different properties, and one standing in for the other is the
+  // kind of substitution that looks like it works right up until it matters.
+  if (flow.provider !== 'github') return done(request, 'error', 'mismatch');
+
   const params = request.nextUrl.searchParams;
 
   // GitHub's own refusal. The parameter is caller-controlled, so it decides

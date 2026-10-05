@@ -36,6 +36,7 @@ export async function GET(request: NextRequest) {
   const sealed = request.cookies.get(CONNECT_COOKIE)?.value;
   const flow = sealed ? openConnect(sealed) : null;
   if (!flow) return done(request, 'error', 'expired');
+  if (flow.provider !== 'google') return done(request, 'error', 'mismatch');
 
   const params = request.nextUrl.searchParams;
 

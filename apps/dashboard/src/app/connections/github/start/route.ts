@@ -61,11 +61,11 @@ export async function GET(request: NextRequest) {
   const response = NextResponse.redirect(url, { status: 302 });
   response.cookies.set(
     CONNECT_COOKIE,
-    // The cookie shape is shared with the Google flow, which needs a PKCE
-    // verifier. This one has nothing to put there — there is no code exchange —
-    // so the field is empty rather than filled with a decorative random value
-    // that would read as a secret somebody forgot to use.
-    sealConnect({ verifier: '', state, expiresAt: Date.now() + CONNECT_TTL_MS }),
+    // No PKCE verifier: there is no code to exchange. The flow says which
+    // provider it belongs to, so the opener knows that empty field is correct
+    // here and still refuses it for Google — and so the two callbacks cannot
+    // satisfy each other.
+    sealConnect({ verifier: '', state, provider: 'github', expiresAt: Date.now() + CONNECT_TTL_MS }),
     { ...cookieOptions(), maxAge: Math.floor(CONNECT_TTL_MS / 1000) },
   );
   return response;
