@@ -22,6 +22,7 @@ import { RESOURCE_KINDS, kindLabel, kindReach } from '../src/app/policies/resour
 const here = path.dirname(fileURLToPath(import.meta.url));
 const grantsRoute = path.join(here, '../../..', 'apps/api/src/routes/grants.ts');
 const model = path.join(here, '../../..', 'packages/permit/src/model.ts');
+const forms = path.join(here, '..', 'src/app/policies/forms.tsx');
 
 /** The resource types the API will actually accept in a grant. */
 function grantableTypes(): string[] {
@@ -61,5 +62,44 @@ describe('grantable resource kinds', () => {
 
   it('shows an unknown type as itself rather than guessing', () => {
     expect(kindLabel('something_new')).toBe('something_new');
+  });
+});
+
+describe('the policy and grant forms offer every grantable type', () => {
+  /** Every `resource_type` option value the forms actually render. */
+  function offered(): Set<string> {
+    const source = readFileSync(forms, 'utf8');
+    const selects = source.split('name="resource_type"').slice(1);
+    const values = new Set<string>();
+    for (const block of selects) {
+      // Stop at the closing tag so a later select's options are not counted
+      // against this one; every option before it belongs to this dropdown.
+      const until = block.indexOf('</select>');
+      for (const m of (until < 0 ? block : block.slice(0, until)).matchAll(
+        /<option value="([^"]+)"/g,
+      )) {
+        if (m[1] !== undefined) values.add(m[1]);
+      }
+    }
+    return values;
+  }
+
+  it('lets an operator name every type the API would accept', () => {
+    // A type the API accepts but no dropdown offers is a feature that exists
+    // and cannot be reached. GitHub shipped that way: the engine decided,
+    // Permit knew the resource, and there was no option to select it — so the
+    // only answer an agent ever got was deny-by-default, which looks exactly
+    // like the system working correctly.
+    const options = offered();
+    for (const type of grantableTypes()) {
+      expect(options.has(type), `no dropdown offers ${type}`).toBe(true);
+    }
+  });
+
+  it('offers nothing the API would refuse', () => {
+    const grantable = new Set(grantableTypes());
+    for (const value of offered()) {
+      expect(grantable.has(value), `${value} is offered but not grantable`).toBe(true);
+    }
   });
 });

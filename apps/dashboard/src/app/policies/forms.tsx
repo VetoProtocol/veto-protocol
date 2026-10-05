@@ -116,6 +116,8 @@ export function CreatePolicyForm({ agents }: { agents: readonly AgentChoice[] })
             <option value="google_folder">google_folder</option>
             <option value="gmail_mailbox">gmail_mailbox</option>
             <option value="google_calendar">google_calendar</option>
+            <option value="github_repo">github_repo</option>
+            <option value="github_account">github_account</option>
           </select>
         </label>
       </div>
@@ -314,6 +316,10 @@ export function CreateGrantForm({ agents }: { agents: readonly AgentChoice[] }) 
             <option value="google_file">file — just this one</option>
             <option value="gmail_mailbox">mailbox — one person&rsquo;s mail</option>
             <option value="google_calendar">calendar — one person&rsquo;s calendar</option>
+            <option value="github_repo">repository — one repo, by its numeric id</option>
+            <option value="github_account">
+              GitHub account — and every repository under it
+            </option>
           </select>
         </label>
 
