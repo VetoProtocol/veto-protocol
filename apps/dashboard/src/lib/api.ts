@@ -236,6 +236,18 @@ export interface HierarchyJob {
  *
  * Read the outcome with `getHierarchyJob`.
  */
+/**
+ * Record where this installation's repositories live.
+ *
+ * The GitHub counterpart of `syncHierarchy`, and far smaller: an installation
+ * holds a flat list, so there is no walk, no job and nothing to poll. It
+ * finishes inside the request.
+ */
+export const syncGithubRepos = (
+  credential: string,
+): Promise<{ repositories: number; links: number; skipped: number; truncated: boolean }> =>
+  request('/v1/grants/github/sync', { method: 'POST', credential, body: '{}' });
+
 export const syncHierarchy = (credential: string, folderId: string): Promise<HierarchyJob> =>
   request('/v1/grants/sync', {
     method: 'POST',

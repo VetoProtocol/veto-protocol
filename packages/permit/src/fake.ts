@@ -89,7 +89,10 @@ export function createFakePolicyFacts(): FakePolicyFacts {
       // that a *grant* failure denies; a containment edge grants nothing, so
       // there is no denial to assert.
       keyFor(link.workspaceId).add(
-        parentFact(link.childType, link.childKey, link.parentKey),
+        // The parent type is part of the fact. Without it the fake cannot tell
+        // a repository-in-account edge from a file-in-folder one, and the test
+        // guarding exactly that distinction would pass either way.
+        parentFact(link.childType, link.childKey, link.parentKey, link.parentType),
       );
     },
 

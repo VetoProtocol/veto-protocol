@@ -316,9 +316,11 @@ export function createPermitPolicyFacts(config: PermitConfig): PermitPolicyFacts
         const childKey = scopedInstanceKey(link.workspaceId, link.childKey);
         const parentKey = scopedInstanceKey(link.workspaceId, link.parentKey);
 
+        const parentType = link.parentType ?? FOLDER_RESOURCE;
+
         for (const instance of [
           { resource: link.childType, key: childKey },
-          { resource: FOLDER_RESOURCE, key: parentKey },
+          { resource: parentType, key: parentKey },
         ]) {
           await permit.api.resourceInstances
             .create({ ...instance, tenant })
@@ -332,7 +334,7 @@ export function createPermitPolicyFacts(config: PermitConfig): PermitPolicyFacts
         // reach the whole folder.
         await permit.api.relationshipTuples
           .create({
-            subject: resourceInstanceKey(FOLDER_RESOURCE, parentKey),
+            subject: resourceInstanceKey(parentType, parentKey),
             relation: RELATION_PARENT,
             object: resourceInstanceKey(link.childType, childKey),
             tenant,

@@ -3,7 +3,7 @@
 import { useActionState } from 'react';
 import { Button } from '@/components/button';
 import { EMPTY, type ActionState } from '../agents/action-state';
-import { revokeConnectionAction, syncHierarchyAction } from './actions';
+import { revokeConnectionAction, syncGithubAction, syncHierarchyAction } from './actions';
 
 export function RevokeConnection({ connectionId }: { connectionId: string }) {
   const [state, action, pending] = useActionState<ActionState, FormData>(
@@ -83,6 +83,44 @@ export function SyncHierarchy() {
         <p role="status" style={{ margin: 0, color: 'var(--text-dim)', fontSize: 11.5, maxWidth: 560 }}>
           {state.notice}
         </p>
+      ) : null}
+    </form>
+  );
+}
+
+/**
+ * Record where this installation's repositories live.
+ *
+ * No field to fill in, unlike the Drive walk: an installation's list is what
+ * the installer picked on GitHub's own screen, and there is nothing here a
+ * caller could name. A parameter would only be a way to ask about somebody
+ * else's account.
+ *
+ * It finishes inside the request. A flat list of at most a hundred is a
+ * different shape of problem from walking a Drive nobody has enumerated.
+ */
+export function SyncGithub() {
+  const [state, action, pending] = useActionState<ActionState, FormData>(
+    syncGithubAction,
+    EMPTY,
+  );
+
+  return (
+    <form action={action} style={{ display: 'grid', gap: 10, justifyItems: 'start' }}>
+      <Button type="submit" disabled={pending}>
+        {pending ? 'reading repositories…' : 'record repository structure'}
+      </Button>
+      <p style={{ margin: 0, color: 'var(--text-faint)', fontSize: 11.5, maxWidth: 560 }}>
+        Records which account each repository belongs to, so a grant on the account reaches them.
+        Grants nothing by itself. Run it again after sharing more repositories with the app.
+      </p>
+      {state.error ? (
+        <p role="alert" style={{ margin: 0, color: 'var(--deny)', fontSize: 11.5 }}>
+          {state.error}
+        </p>
+      ) : null}
+      {state.notice ? (
+        <p style={{ margin: 0, color: 'var(--text-dim)', fontSize: 11.5 }}>{state.notice}</p>
       ) : null}
     </form>
   );

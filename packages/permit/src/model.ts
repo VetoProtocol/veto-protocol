@@ -252,5 +252,9 @@ export const roleFact = (userKey: string, role: string): string => `role:${role}
  * Local, like `grantFact` and `delegatorFact` — never sent to Permit. Reads
  * child-in-parent, the direction access flows.
  */
-export const parentFact = (childType: string, childKey: string, parentKey: string): string =>
-  `${childType}:${childKey}#${RELATION_PARENT}@${FOLDER_RESOURCE}:${parentKey}`;
+export const parentFact = (
+  childType: string,
+  childKey: string,
+  parentKey: string,
+  parentType: string = FOLDER_RESOURCE,
+): string => `${childType}:${childKey}#${RELATION_PARENT}@${parentType}:${parentKey}`;

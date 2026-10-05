@@ -76,8 +76,18 @@ export interface ParentLink {
   /** `google_file` or `google_folder` — the thing inside. */
   readonly childType: string;
   readonly childKey: string;
-  /** The containing folder's id. A parent is always a folder. */
+  /** The container's id. */
   readonly parentKey: string;
+  /**
+   * What kind of container that is. Defaults to a Drive folder, which is what
+   * every caller meant when a folder was the only container there was.
+   *
+   * GitHub needs this: a repository's parent is an *account*, not a folder, and
+   * writing the tuple against the wrong resource type produces a 404 rather
+   * than a wrong answer — which is lucky, because a silently wrong edge would
+   * make a grant reach things nobody granted.
+   */
+  readonly parentType?: string;
 }
 
 export interface PolicyFacts {

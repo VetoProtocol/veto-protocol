@@ -9,7 +9,7 @@ import {
   type HierarchyJob,
 } from '@/lib/api';
 import { currentSession } from '@/lib/session';
-import { RevokeConnection, SyncHierarchy } from './forms';
+import { RevokeConnection, SyncGithub, SyncHierarchy } from './forms';
 import { describeWalk } from './walk-state';
 
 export const dynamic = 'force-dynamic';
@@ -241,6 +241,12 @@ export default async function ConnectionsPage({
               </div>
             ) : null}
             <SyncHierarchy />
+            {/* The GitHub half. Shown beside the Drive walk because they answer
+                the same question for two providers: where does this thing sit,
+                so that a grant on the container reaches it. */}
+            <div style={{ borderTop: '1px solid var(--border)', paddingTop: 16, marginTop: 4 }}>
+              <SyncGithub />
+            </div>
           </div>
         </Panel>
       ) : null}

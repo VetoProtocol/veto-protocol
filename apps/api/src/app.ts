@@ -14,10 +14,11 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import type { Pool } from 'pg';
 import type Redis from 'ioredis';
 import { PolicyUnavailableError, type PolicyDecisions, type PolicyFacts } from '@veto/permit';
-import { createDriveReader } from '@veto/connections';
+import { createRepoReader, createDriveReader } from '@veto/connections';
 import type {
   DriveReader,
   GitHubAppConfig,
+  RepoReader,
   GoogleOAuthConfig,
   UpstreamTokenExchange,
 } from '@veto/connections';
@@ -60,6 +61,8 @@ export interface AppDeps {
   /** Null when the GitHub App is not configured. Same rule. */
   readonly github?: GitHubAppConfig | null;
   readonly githubExchange?: UpstreamTokenExchange | null;
+  /** Overridable so a test can sync repositories without a live GitHub. */
+  readonly repos?: RepoReader | null;
   /** Null disables the passkey routes; approvals then cannot be resolved at all. */
   readonly webauthn?: WebAuthnConfig | null;
   readonly exchange?: UpstreamTokenExchange | null;
@@ -149,6 +152,10 @@ export function createApp(deps: AppDeps): FastifyInstance {
     // the default honest: nothing else in the API talks to Drive, so there is
     // no shared instance to reach for.
     drive: deps.drive ?? createDriveReader(),
+    githubExchange: deps.githubExchange ?? null,
+    // Same rule as Drive: constructed here so the default is honest, and
+    // overridable so a test can sync a hierarchy without a live GitHub.
+    repos: deps.githubExchange ? (deps.repos ?? createRepoReader()) : null,
   });
   registerOAuthRoutes(app, {
     pool: deps.pool,

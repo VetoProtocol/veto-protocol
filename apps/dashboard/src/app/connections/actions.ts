@@ -1,7 +1,7 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import { ApiError, revokeConnection, syncHierarchy } from '@/lib/api';
+import { ApiError, revokeConnection, syncGithubRepos, syncHierarchy } from '@/lib/api';
 import { describeWalk } from './walk-state';
 import { currentSession } from '@/lib/session';
 import type { ActionState } from '../agents/action-state';
@@ -103,3 +103,39 @@ export async function syncHierarchyAction(
     };
   }
 }
+
+/**
+ * Record where this installation's repositories live.
+ *
+ * Grants nothing, exactly as the Drive walk grants nothing: every edge says
+ * which account a repository belongs to, not who may read it. What it buys is
+ * that a grant on the account reaches the repositories under it — the sentence
+ * the grant form has been offering, which was not true until this existed.
+ */
+export async function syncGithubAction(): Promise<ActionState> {
+  const session = await currentSession();
+  if (!session) return { error: 'Your session has expired. Sign in again.', notice: null };
+
+  try {
+    const report = await syncGithubRepos(session.credential);
+    revalidatePath('/connections');
+    revalidatePath('/policies');
+
+    const repos = report.repositories === 1 ? '1 repository' : `${report.repositories} repositories`;
+    return {
+      error: null,
+      notice: report.truncated
+        ? `Recorded ${repos}, which is as many as one pass reads. Run it again if the installation holds more.`
+        : `Recorded ${repos}. A grant on the account now reaches each of them.`,
+    };
+  } catch (error) {
+    return {
+      error:
+        error instanceof ApiError
+          ? error.failure.message
+          : 'The control plane could not be reached. Nothing was recorded.',
+      notice: null,
+    };
+  }
+}
+

@@ -38,6 +38,8 @@ import {
   BrokerError,
   DRIVE_READONLY_SCOPE,
   findConnectionForScope,
+  GITHUB_METADATA_READ,
+  type RepoReader,
   mintUpstreamToken,
   type DriveReader,
   type UpstreamTokenExchange,
@@ -151,7 +153,16 @@ export interface GrantRoutesDeps {
   /** Null when Google is not configured. The sync route then refuses. */
   readonly exchange: UpstreamTokenExchange | null;
   readonly drive: DriveReader;
+  /** Null when the GitHub App is not configured. Its sync route then refuses. */
+  readonly githubExchange?: UpstreamTokenExchange | null;
+  readonly repos?: RepoReader | null;
 }
+
+/** One page is the whole answer; an installation's list is what the installer picked. */
+const GITHUB_SYNC_LIMIT = 100;
+
+/** Permit's Cloud API is slow per write, so these go a few at a time. */
+const GITHUB_SYNC_CONCURRENCY = 4;
 
 const SYNC_BODY = {
   type: 'object',
@@ -266,6 +277,132 @@ export function registerGrantRoutes(app: FastifyInstance, deps: GrantRoutesDeps)
    * read it, so running it against a folder nobody was granted changes nobody's
    * access. That is what makes it safe to expose as its own operation.
    */
+
+  /**
+   * Where every repository this installation can see actually lives.
+   *
+   * The GitHub counterpart of the folder walk, and far smaller: an installation
+   * holds a flat list, bounded by what the installer picked, so there is no
+   * recursion, no depth limit and no cycle to guard against. One page is the
+   * whole answer.
+   *
+   * It writes one `parent` edge per repository, pointing at the account. That
+   * is what makes a grant on the account reach the repositories under it —
+   * without this, the account resource exists, the relation is declared, and
+   * the inheritance reaches nothing. The dashboard offers "GitHub account — and
+   * every repository under it", and this is the code that makes the sentence
+   * true.
+   *
+   * It grants nothing. Every edge says where a repository sits, not who may
+   * read it, so running it against an account nobody was granted changes
+   * nobody's access.
+   */
+  app.post(
+    '/v1/grants/github/sync',
+    {
+      schema: {
+        body: { type: 'object', additionalProperties: false, properties: {} },
+        response: {
+          200: {
+            type: 'object',
+            properties: {
+              repositories: { type: 'integer' },
+              links: { type: 'integer' },
+              skipped: { type: 'integer' },
+              truncated: { type: 'boolean' },
+            },
+            required: ['repositories', 'links', 'skipped', 'truncated'],
+          },
+          '4xx': ERROR_SCHEMA,
+          '5xx': ERROR_SCHEMA,
+        },
+      },
+    },
+    async (request) => {
+      requireScope(request, SCOPE_CONTROL_PLANE);
+      const { workspaceId, userId } = request.principal;
+
+      const exchange = deps.githubExchange;
+      const repos = deps.repos;
+      if (!exchange || !repos) {
+        throw new HttpError(
+          503,
+          'GITHUB_NOT_CONFIGURED',
+          'GitHub is not configured on this control plane',
+        );
+      }
+
+      // Found inside the workspace, so one tenant cannot enumerate another's
+      // repositories by naming anything (invariant 4).
+      const connection = await withWorkspace(deps.pool, workspaceId, (db) =>
+        findConnectionForScope(db, workspaceId, 'github', GITHUB_METADATA_READ, userId),
+      );
+      if (!connection) {
+        throw new HttpError(409, 'CONNECTION_UNKNOWN', 'No active GitHub connection');
+      }
+
+      let accessToken: string;
+      try {
+        const grant = await withWorkspace(deps.pool, workspaceId, (db) =>
+          mintUpstreamToken(db, deps.wrapper, exchange, {
+            workspaceId,
+            connectionId: connection.id,
+            // Listing repositories needs metadata and nothing else. This token
+            // cannot read a file even though the installation can.
+            requiredScopes: [GITHUB_METADATA_READ],
+          }),
+        );
+        accessToken = grant.accessToken;
+      } catch (error) {
+        const reason = error instanceof BrokerError ? error.reason : 'EXCHANGE_FAILED';
+        throw new HttpError(409, reason, 'The connected GitHub installation could not be used');
+      }
+
+      const listed = await repos.listRepos(accessToken, GITHUB_SYNC_LIMIT);
+
+      // Written with bounded concurrency. Permit's Cloud API takes well over a
+      // second per write, so twenty-five repositories serially is a request
+      // that times out before it finishes.
+      let links = 0;
+      const queue = [...listed];
+      const workers = Array.from({ length: GITHUB_SYNC_CONCURRENCY }, async () => {
+        for (let next = queue.shift(); next !== undefined; next = queue.shift()) {
+          if (next.id === '') continue;
+          await deps.policy.recordParent({
+            workspaceId,
+            childType: GITHUB_REPO_RESOURCE,
+            childKey: next.id,
+            // The account is keyed by the Veto user id, not the GitHub login —
+            // the same key `normalize` builds for `list_repos`, so the edge
+            // lands where the decision will look for it.
+            parentKey: userId,
+            parentType: GITHUB_ACCOUNT_RESOURCE,
+          });
+          links += 1;
+        }
+      });
+      await Promise.all(workers);
+
+      await withWorkspace(deps.pool, workspaceId, (db) =>
+        writeAuditEvent(db, {
+          workspaceId,
+          actor: userId,
+          eventType: 'grant.hierarchy_synced',
+          resourceRef: `${GITHUB_ACCOUNT_RESOURCE}:${userId}#links=${String(links)}`,
+          outcome: 'lifecycle',
+          correlationId: String(request.id),
+        }),
+      );
+
+      return {
+        repositories: listed.length,
+        links,
+        skipped: 0,
+        truncated: listed.length >= GITHUB_SYNC_LIMIT,
+      };
+    },
+  );
+
   app.post(
     '/v1/grants/sync',
     {
