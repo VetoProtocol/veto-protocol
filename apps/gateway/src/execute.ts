@@ -32,9 +32,16 @@ import {
   GMAIL_READONLY_SCOPE,
   GmailError,
   MAX_WINDOW_DAYS,
+  RepoError,
+  GITHUB_CONTENTS_READ,
+  GITHUB_ISSUES_READ,
+  GITHUB_METADATA_READ,
+  GITHUB_PULL_REQUESTS_READ,
   type CalendarReader,
   type DriveReader,
   type GmailReader,
+  type IssueReader,
+  type RepoReader,
   type UpstreamTokenExchange,
 } from '@veto/connections';
 import { REASON_CODES, type ReasonCode } from '@veto/core';
@@ -89,6 +96,24 @@ export interface ExecuteDeps {
   readonly gmail?: GmailReader;
   /** Absent until Calendar is configured. Same rule. */
   readonly calendar?: CalendarReader;
+  /**
+   * GitHub is a second provider, not a second service on the first one.
+   *
+   * It needs its own exchange because an installation token is minted from an
+   * App private key, not refreshed from a user's grant. Absent until the App is
+   * configured, and then every GitHub tool refuses rather than half-works.
+   */
+  readonly githubExchange?: UpstreamTokenExchange;
+  readonly repos?: RepoReader;
+  readonly issues?: IssueReader;
+}
+
+type Provider = 'google' | 'github';
+
+interface Upstream {
+  readonly provider: Provider;
+  /** The narrowest set that supports this action, and nothing more. */
+  readonly scopes: readonly string[];
 }
 
 /**
@@ -99,13 +124,55 @@ export interface ExecuteDeps {
  * carries Drive — step 8 forwards exactly what was authorised and nothing
  * wider.
  */
-const SCOPE_FOR_TOOL: Readonly<Record<string, string>> = {
-  'google_drive.read_file': DRIVE_READONLY_SCOPE,
-  'google_drive.list_folder': DRIVE_READONLY_SCOPE,
-  'google_gmail.search_messages': GMAIL_READONLY_SCOPE,
-  'google_gmail.read_message': GMAIL_READONLY_SCOPE,
-  'google_calendar.list_events': CALENDAR_READONLY_SCOPE,
-  'google_calendar.read_event': CALENDAR_READONLY_SCOPE,
+const UPSTREAM_FOR_TOOL: Readonly<Record<string, Upstream>> = {
+  'google_drive.read_file': { provider: 'google', scopes: [DRIVE_READONLY_SCOPE] },
+  'google_drive.list_folder': { provider: 'google', scopes: [DRIVE_READONLY_SCOPE] },
+  'google_gmail.search_messages': { provider: 'google', scopes: [GMAIL_READONLY_SCOPE] },
+  'google_gmail.read_message': { provider: 'google', scopes: [GMAIL_READONLY_SCOPE] },
+  'google_calendar.list_events': { provider: 'google', scopes: [CALENDAR_READONLY_SCOPE] },
+  'google_calendar.read_event': { provider: 'google', scopes: [CALENDAR_READONLY_SCOPE] },
+
+  // GitHub asks for two permissions where Google asks for one, because
+  // `metadata:read` is required alongside whatever is actually being read. It
+  // is named rather than assumed: GitHub grants it implicitly, and an implicit
+  // permission would let a connection that never held it pass the broker's
+  // scope check.
+  //
+  // The narrowing is real here. Google fixes a grant's scopes at consent, so a
+  // Drive-only token comes from picking the Drive *connection*; GitHub honours
+  // a subset at mint time, so an issue read receives a token that physically
+  // cannot read a file.
+  'github_repo.list_repos': {
+    provider: 'github',
+    scopes: [GITHUB_METADATA_READ],
+  },
+  'github_repo.list_directory': {
+    provider: 'github',
+    scopes: [GITHUB_METADATA_READ, GITHUB_CONTENTS_READ],
+  },
+  'github_repo.read_file': {
+    provider: 'github',
+    scopes: [GITHUB_METADATA_READ, GITHUB_CONTENTS_READ],
+  },
+  'github_issue.search': {
+    provider: 'github',
+    scopes: [GITHUB_METADATA_READ, GITHUB_ISSUES_READ],
+  },
+  'github_issue.read': {
+    provider: 'github',
+    scopes: [GITHUB_METADATA_READ, GITHUB_ISSUES_READ],
+  },
+  // A pull request needs `contents` as well: the diff is file content, and an
+  // installation that granted issues but not contents must not read code
+  // through the review surface.
+  'github_pull.read': {
+    provider: 'github',
+    scopes: [GITHUB_METADATA_READ, GITHUB_PULL_REQUESTS_READ],
+  },
+  'github_pull.read_diff': {
+    provider: 'github',
+    scopes: [GITHUB_METADATA_READ, GITHUB_PULL_REQUESTS_READ, GITHUB_CONTENTS_READ],
+  },
 };
 
 export type ExecuteOutcome =
@@ -116,8 +183,8 @@ export async function executeAllowed(
   deps: ExecuteDeps,
   input: EvaluateInput,
 ): Promise<ExecuteOutcome> {
-  const requiredScope = SCOPE_FOR_TOOL[input.tool];
-  if (requiredScope === undefined) {
+  const upstream = UPSTREAM_FOR_TOOL[input.tool];
+  if (upstream === undefined) {
     // An allowed action with no way to carry it out is refused plainly rather
     // than reported as success.
     return {
@@ -143,20 +210,62 @@ export async function executeAllowed(
     };
   }
 
+  // GitHub needs three things present, not one: an exchange that can mint an
+  // installation token, and a reader for whichever half of the API this tool
+  // uses. A server started without the App configured refuses the tool rather
+  // than reaching for an exchange that is not there.
+  const githubExchange = deps.githubExchange;
+  if (upstream.provider === 'github' && githubExchange === undefined) {
+    return {
+      ok: false,
+      reasonCode: 'TOOL_NOT_ALLOWED',
+      message: 'GitHub is not configured on this server.',
+    };
+  }
+  if (input.tool.startsWith('github_repo.') && deps.repos === undefined) {
+    return {
+      ok: false,
+      reasonCode: 'TOOL_NOT_ALLOWED',
+      message: 'GitHub is not configured on this server.',
+    };
+  }
+  if (
+    (input.tool.startsWith('github_issue.') || input.tool.startsWith('github_pull.')) &&
+    deps.issues === undefined
+  ) {
+    return {
+      ok: false,
+      reasonCode: 'TOOL_NOT_ALLOWED',
+      message: 'GitHub is not configured on this server.',
+    };
+  }
+
   // The connection that holds this tool's scope, not merely the newest one.
   // Consent is per service (§9.1), so an account that activated Drive, Gmail
   // and Calendar has three single-scope connections; asking for "the newest
   // Google connection" makes whichever was activated last the only one that
   // works and silently breaks the rest.
   const connection = await withWorkspace(deps.pool, input.workspaceId, (db) =>
-    findConnectionForScope(db, input.workspaceId, 'google', requiredScope, input.humanId),
+    // One scope is enough to find the connection; the broker checks the rest.
+    // GitHub's `metadata:read` is on every installation, so the discriminating
+    // one is whichever comes after it.
+    findConnectionForScope(
+      db,
+      input.workspaceId,
+      upstream.provider,
+      upstream.scopes[upstream.scopes.length - 1] ?? '',
+      input.humanId,
+    ),
   );
 
   if (!connection) {
     return {
       ok: false,
       reasonCode: 'CONNECTION_EXPIRED',
-      message: 'No connected Google account for this user.',
+      message:
+        upstream.provider === 'github'
+          ? 'No connected GitHub installation for this user.'
+          : 'No connected Google account for this user.',
     };
   }
 
@@ -183,14 +292,23 @@ export async function executeAllowed(
   let accessToken: string;
   try {
     const grant = await withWorkspace(deps.pool, input.workspaceId, (db) =>
-      mintUpstreamToken(db, deps.wrapper, deps.exchange, {
-        workspaceId: input.workspaceId,
-        connectionId: connection.id,
-        // The narrowest scope that supports this action, not everything the
-        // connection holds (§9.1). A connection with both Drive and Gmail
-        // still mints a Drive-only token for a Drive read.
-        requiredScopes: [requiredScope],
-      }),
+      mintUpstreamToken(
+        db,
+        deps.wrapper,
+        upstream.provider === 'github' && githubExchange !== undefined
+          ? githubExchange
+          : deps.exchange,
+        {
+          workspaceId: input.workspaceId,
+          connectionId: connection.id,
+          // The narrowest set that supports this action, not everything the
+          // connection holds (§9.1). A connection with both Drive and Gmail
+          // still mints a Drive-only token for a Drive read, and a GitHub
+          // installation that can read code still mints an issues-only token
+          // for an issue read.
+          requiredScopes: upstream.scopes,
+        },
+      ),
     );
     accessToken = grant.accessToken;
   } catch (error) {
@@ -225,7 +343,10 @@ export async function executeAllowed(
     }
 
     const status =
-      error instanceof DriveError || error instanceof GmailError || error instanceof CalendarError
+      error instanceof DriveError ||
+      error instanceof GmailError ||
+      error instanceof CalendarError ||
+      error instanceof RepoError
         ? error.status
         : 0;
     const reasonCode =
@@ -280,6 +401,8 @@ async function carryOut(
       content: file.content,
     };
   }
+
+  if (input.tool.startsWith('github_')) return carryOutGitHub(deps, input, accessToken);
 
   if (input.tool.startsWith('google_calendar.')) {
     const calendar = deps.calendar;
@@ -340,4 +463,88 @@ async function carryOut(
   if (typeof messageId !== 'string') throw badArgument();
 
   return gmail.readMessage(accessToken, messageId, fields);
+}
+
+/**
+ * The GitHub half of step 8.
+ *
+ * Separate from `carryOut` because the shape differs in one way that matters:
+ * every call here names a repository by its numeric id, and the id has to be
+ * traded for `owner/name` before any content endpoint will answer. That lookup
+ * goes to GitHub. An agent able to assert what repository 42 is called would be
+ * choosing what to read by argument.
+ *
+ * What comes back is hostile input, and an issue body more so than a Drive file
+ * — anyone on the internet can open an issue on a public repository. It is
+ * returned to the caller and nowhere else: not logged, not audited, and never
+ * re-read as instructions.
+ */
+async function carryOutGitHub(
+  deps: ExecuteDeps,
+  input: EvaluateInput,
+  accessToken: string,
+): Promise<unknown> {
+  const repos = deps.repos;
+  const issues = deps.issues;
+  if (!repos || !issues) throw new RepoError(503);
+
+  const pageSize = input.arguments['page_size'];
+  const bounded = typeof pageSize === 'number' ? pageSize : 25;
+
+  if (input.tool === 'github_repo.list_repos') {
+    // The installation's own repositories. The resource was the account, taken
+    // from the session, so there is no argument naming whose account this is.
+    return { repositories: await repos.listRepos(accessToken, bounded) };
+  }
+
+  // Every remaining tool names a repository. `normalize` put it in the
+  // resource, so this reads it from there rather than from `arguments` — the
+  // decision authorised that id and no other.
+  const repoId = input.resource.id;
+
+  const ref = input.arguments['ref'];
+  const refValue = typeof ref === 'string' ? ref : null;
+
+  if (input.tool === 'github_repo.list_directory') {
+    const path = input.arguments['path'];
+    return {
+      entries: await repos.listDirectory(
+        accessToken,
+        repoId,
+        typeof path === 'string' ? path : '',
+        refValue,
+        bounded,
+      ),
+    };
+  }
+
+  if (input.tool === 'github_repo.read_file') {
+    const path = input.arguments['path'];
+    if (typeof path !== 'string') throw badArgument();
+    return repos.readFile(accessToken, repoId, path, refValue);
+  }
+
+  if (input.tool === 'github_issue.search') {
+    const query = input.arguments['query'];
+    if (typeof query !== 'string') throw badArgument();
+    // The repository qualifier is prepended by the reader, so this query
+    // cannot reach a repository the decision did not name.
+    return { issues: await issues.search(accessToken, repoId, query, bounded) };
+  }
+
+  if (input.tool === 'github_issue.read') {
+    const number = input.arguments['issue_number'];
+    if (typeof number !== 'number') throw badArgument();
+    return issues.readIssue(accessToken, repoId, number);
+  }
+
+  const pullNumber = input.arguments['pull_number'];
+  if (typeof pullNumber !== 'number') throw badArgument();
+
+  if (input.tool === 'github_pull.read') {
+    return issues.readPullRequest(accessToken, repoId, pullNumber);
+  }
+
+  // github_pull.read_diff
+  return issues.readDiff(accessToken, repoId, pullNumber);
 }
