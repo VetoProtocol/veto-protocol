@@ -24,13 +24,40 @@ describe('§12.1 — a request targeting a private or metadata address', () => {
       '::1', '::', 'fe80::1', 'fd00::1', 'ff02::1',
       '::ffff:169.254.169.254',     // the metadata address wearing a hat
       'not-an-address',
+      // The same addresses with a hex tail instead of a dotted one. Every line
+      // here was ALLOWED until the v6 check stopped matching spellings and
+      // started decoding bytes — including cloud metadata.
+      '::ffff:7f00:1',              // 127.0.0.1
+      '::ffff:a9fe:a9fe',           // 169.254.169.254, metadata
+      '::ffff:c0a8:1',              // 192.168.0.1
+      '::ffff:0a00:1',              // 10.0.0.1
+      '::ffff:ac10:1',              // 172.16.0.1
+      '::7f00:1',                   // IPv4-compatible loopback
+      '::127.0.0.1',
+      '64:ff9b::7f00:1',            // NAT64, a translator built to reach IPv4
+      '64:ff9b::169.254.169.254',
+      // Prefix families written out in full, where a startsWith test could slip.
+      'fe80:0000:0000:0000:0000:0000:0000:0001',
+      'fc00::1', 'fdff::1', 'ff00::1',
+      // Malformed input is refused, never allowed through.
+      '::ffff:999.1.1.1', ':::1', '1:2:3:4:5:6:7:8:9',
     ]) {
       expect(isBlockedAddress(address), address).toBe(true);
     }
   });
 
   it('permits ordinary public addresses', () => {
-    for (const address of ['8.8.8.8', '1.1.1.1', '142.251.127.84', '2a00:1450:4001:c21::54']) {
+    for (const address of [
+      '8.8.8.8', '1.1.1.1', '142.251.127.84', '2a00:1450:4001:c21::54',
+      '2001:4860:4860::8888',
+      '2606:4700:4700::1111',
+      // Public v4 inside a v6 wrapper is still public. The fix must not block
+      // by wrapper shape — only by the address the wrapper carries.
+      '::ffff:8.8.8.8', '::ffff:0808:0808',
+      // Near neighbours of the blocked prefixes. fe00 is not fe80::/10 and
+      // fb00 is not fc00::/7; a sloppy mask would swallow both.
+      'fe00::1', 'fb00::1',
+    ]) {
       expect(isBlockedAddress(address), address).toBe(false);
     }
   });
