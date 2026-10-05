@@ -29,6 +29,13 @@ export const RESOURCE_KINDS: Readonly<Record<string, ResourceKind>> = {
   google_file: { label: 'file', reach: 'that file' },
   gmail_mailbox: { label: 'mailbox', reach: 'that mailbox' },
   google_calendar: { label: 'calendar', reach: 'that calendar' },
+  // A GitHub grant names a repository by its numeric id, so the label is the
+  // only place a reader learns what the number *is*.
+  github_repo: { label: 'repository', reach: 'that repository' },
+  // Named for what granting it actually does. "GitHub account" alone would read
+  // as one thing; it reaches every repository beneath it, and somebody about to
+  // click should see that in the sentence rather than discover it later.
+  github_account: { label: 'GitHub account', reach: 'every repository under that account' },
 };
 
 /**

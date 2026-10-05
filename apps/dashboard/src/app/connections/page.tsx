@@ -24,18 +24,21 @@ export const dynamic = 'force-dynamic';
  */
 const ERRORS: Record<string, string> = {
   session: 'Your session expired before that finished. Sign in and try again.',
-  unconfigured: 'Google is not set up on this server yet. An operator needs to add the credentials.',
+  unconfigured:
+    'That service is not set up on this server yet. An operator needs to add the credentials.',
   unavailable: 'The control plane could not be reached at all. Nothing was connected.',
   rejected:
     'The control plane refused that request. If the dashboard and the API were deployed at different times, restarting the API usually fixes it — the server log names the reason.',
   expired: 'That attempt timed out. Five minutes is the window; start it again.',
-  declined: 'You declined at the Google screen. Nothing was connected.',
-  refused: 'Google refused that authorization. Nothing was connected.',
+  declined: 'You declined at the provider\u2019s screen. Nothing was connected.',
+  refused: 'The provider refused that authorization. Nothing was connected.',
   mismatch: 'That response did not match the attempt that started here, so it was rejected.',
   nocode: 'Google sent no authorization code back. Nothing was connected.',
   exchange: 'That authorization could not be completed. Start again, and grant offline access.',
   unknownservice:
     'That is not a service this dashboard knows how to connect. Nothing was connected — and nothing else was connected in its place.',
+  noinstallation:
+    'GitHub sent no installation back. Nothing was connected. If you cancelled on the GitHub screen, that is why.',
 };
 
 const STATUS_TONE: Record<string, Tone> = {
@@ -61,16 +64,32 @@ const SCOPE_MEANING: Record<string, string> = {
  * is one screen asking for everything before either feature exists.
  */
 const SERVICES = [
-  { key: 'drive', label: 'Connect Google Drive', detail: 'Read-only. Files and folders.' },
+  {
+    key: 'drive',
+    label: 'Connect Google Drive',
+    href: '/connections/google/start?service=drive',
+    detail: 'Read-only. Files and folders.',
+  },
   {
     key: 'gmail',
     label: 'Connect Gmail',
+    href: '/connections/google/start?service=gmail',
     detail: 'Read-only. Searching and reading; there is no send permission to grant.',
   },
   {
     key: 'calendar',
     label: 'Connect Calendar',
+    href: '/connections/google/start?service=calendar',
     detail: 'Read-only. Creating and changing events come later, behind an approval.',
+  },
+  {
+    // A different provider, not a fourth Google service. GitHub is installed
+    // rather than authorised: you pick the repositories on GitHub's own screen,
+    // and nothing on this side can widen that afterwards.
+    key: 'github',
+    label: 'Connect GitHub',
+    href: '/connections/github/start',
+    detail: 'Read-only. You choose which repositories; code, issues and pull requests.',
   },
 ] as const;
 
@@ -166,7 +185,7 @@ export default async function ConnectionsPage({
             {SERVICES.map((service, index) => (
               <div key={service.key} style={{ display: 'grid', gap: 5, justifyItems: 'start' }}>
                 <a
-                  href={`/connections/google/start?service=${service.key}`}
+                  href={service.href}
                   style={{
                     display: 'inline-block',
                     padding: '9px 18px',

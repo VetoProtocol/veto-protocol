@@ -328,6 +328,34 @@ export const connectGoogle = (
 ): Promise<ConnectionView> =>
   request('/v1/connections/google', { method: 'POST', credential, body: JSON.stringify(body) });
 
+/**
+ * Where to send someone to install the GitHub App.
+ *
+ * No PKCE and no scope list, unlike the Google pair: an installation's reach is
+ * chosen on GitHub's own screen and cannot be widened from this side. `state`
+ * still round-trips so the callback can be tied to the request that began it.
+ */
+export const githubInstallUrl = (
+  credential: string,
+  query: { state: string },
+): Promise<{ url: string }> =>
+  request(`/v1/connections/github/install-url?${new URLSearchParams(query).toString()}`, {
+    method: 'GET',
+    credential,
+  });
+
+/**
+ * Hands the installation id across.
+ *
+ * The id is not trusted by the API either — it asks GitHub what that
+ * installation is and stores the answer. This is just the carrier.
+ */
+export const connectGithub = (
+  credential: string,
+  body: { installation_id: string },
+): Promise<ConnectionView> =>
+  request('/v1/connections/github', { method: 'POST', credential, body: JSON.stringify(body) });
+
 export const revokeConnection = (
   credential: string,
   connectionId: string,
