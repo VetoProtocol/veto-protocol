@@ -142,14 +142,20 @@ const OVERVIEW = [
   ['/presence', 'Presence', 'presence'],
   ['/audit', 'Audit', 'audit'],
   ['/alerts', 'Alerts', 'alerts'],
-  // Last, because it answers a question the others create: once agents,
-  // policies and connections exist, what does all of that add up to right now.
-  ['/consent', 'Consent Grants', 'shield'],
 ] as const;
 
+/**
+ * Paid tier. Route is null for the two that do not exist yet.
+ *
+ * Consent Grants is built, so on a Pro workspace it becomes an ordinary link.
+ * On a free one it stays a dead row with the badge, exactly like the other two
+ * — and the API refuses the request regardless, because a hidden link is not a
+ * control.
+ */
 const ENTERPRISE = [
-  ['Agent Fingerprints', 'fingerprint'],
-  ['Shadow Agents', 'shadow'],
+  ['Consent Grants', 'shield', '/consent'],
+  ['Agent Fingerprints', 'fingerprint', null],
+  ['Shadow Agents', 'shadow', null],
 ] as const;
 
 const sectionLabel: React.CSSProperties = {
@@ -189,7 +195,15 @@ const avatar = (size: number): React.CSSProperties => ({
   flex: '0 0 auto',
 });
 
-export function Sidebar({ workspaceId, userId }: { workspaceId: string; userId: string }) {
+export function Sidebar({
+  workspaceId,
+  userId,
+  plan,
+}: {
+  workspaceId: string;
+  userId: string;
+  plan: 'free' | 'pro';
+}) {
   // Read here rather than threaded through every page: the rail is rendered
   // once by the layout, and a page should not have to announce where it is.
   const active = usePathname();
@@ -260,12 +274,10 @@ export function Sidebar({ workspaceId, userId }: { workspaceId: string; userId: 
 
       <div style={{ padding: '6px 0 4px', borderTop: '1px solid var(--border)' }}>
         <div style={{ ...sectionLabel, paddingTop: 10 }}>enterprise</div>
-        {ENTERPRISE.map(([label, icon]) => (
-          // Not an <a>. These do nothing, so nothing here is focusable or
-          // clickable — a control that ignores Enter is a broken promise.
-          <div key={label} style={{ ...row, color: 'var(--text-faint)' }}>
-            {icons[icon]}
-            <span style={{ flex: 1 }}>{label}</span>
+        {ENTERPRISE.map(([label, icon, href]) => {
+          const open = href !== null && plan === 'pro';
+
+          const badge = (
             <span
               style={{
                 fontSize: 8.5,
@@ -278,8 +290,30 @@ export function Sidebar({ workspaceId, userId }: { workspaceId: string; userId: 
             >
               PRO
             </span>
-          </div>
-        ))}
+          );
+
+          // A link only when it goes somewhere this workspace may reach. The
+          // rest are not <a> and not focusable: a control that ignores Enter is
+          // a broken promise, and a link to a 402 is worse than no link.
+          return open ? (
+            <a
+              key={label}
+              href={href}
+              aria-current={active === href ? 'page' : undefined}
+              style={{ ...row, color: active === href ? 'var(--text)' : 'var(--text-dim)' }}
+            >
+              {icons[icon]}
+              <span style={{ flex: 1 }}>{label}</span>
+              {badge}
+            </a>
+          ) : (
+            <div key={label} style={{ ...row, color: 'var(--text-faint)' }}>
+              {icons[icon]}
+              <span style={{ flex: 1 }}>{label}</span>
+              {badge}
+            </div>
+          );
+        })}
       </div>
 
       <div style={{ marginTop: 'auto', borderTop: '1px solid var(--border)' }}>

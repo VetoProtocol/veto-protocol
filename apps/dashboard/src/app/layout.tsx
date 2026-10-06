@@ -5,7 +5,7 @@ import { StatusDot } from '@/components/chip';
 import { Sidebar } from '@/components/sidebar';
 import { LegalGate } from '@/components/legal-gate';
 import { currentSession } from '@/lib/session';
-import { getLegalAcceptance } from '@/lib/api';
+import { getLegalAcceptance, getWorkspace } from '@/lib/api';
 import './globals.css';
 
 // Self-hosted by next/font, so the page pulls no stylesheet from a third party
@@ -49,6 +49,19 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     }
   }
 
+  // The tier, read per render rather than sealed into the session cookie, so an
+  // upgrade shows on the next page. Free on failure: the sidebar then offers
+  // less than it might, which is the harmless direction — and the API refuses
+  // the request on its own account either way.
+  let plan: 'free' | 'pro' = 'free';
+  if (session) {
+    try {
+      ({ plan } = await getWorkspace(session.credential));
+    } catch (error) {
+      console.warn('[plan] could not read the workspace tier; assuming free:', error);
+    }
+  }
+
   return (
     <html lang="en" className={`${mono.variable} ${sans.variable}`}>
       <body>
@@ -80,7 +93,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         {session ? (
           // Signed in: the rail, and the working surface beside it.
           <div style={{ display: 'flex', minHeight: 'calc(100vh - 44px)' }}>
-            <Sidebar workspaceId={session.workspaceId} userId={session.userId} />
+            <Sidebar workspaceId={session.workspaceId} userId={session.userId} plan={plan} />
             <main
               id="main"
               className="grid-ground"

@@ -389,6 +389,12 @@ export interface ConsentView {
   readonly recording_since: string | null;
 }
 
+/** The workspace's tier. Read per render; never cached in the session cookie. */
+export const getWorkspace = (
+  credential: string,
+): Promise<{ workspace_id: string; plan: 'free' | 'pro' }> =>
+  request('/v1/workspace', { method: 'GET', credential });
+
 /** What every agent may reach right now, and when it last did. */
 export const listConsentGrants = (credential: string): Promise<ConsentView> =>
   request('/v1/grants/consent', { method: 'GET', credential });

@@ -41,6 +41,7 @@ import { registerLabelRoutes } from './routes/labels.ts';
 import { registerLegalRoutes } from './routes/legal.ts';
 import { registerPolicyRoutes } from './routes/policies.ts';
 import { registerWebhookRoutes } from './routes/webhooks.ts';
+import { registerWorkspaceRoutes } from './routes/workspace.ts';
 
 export interface AppDeps {
   readonly pool: Pool;
@@ -143,6 +144,8 @@ export function createApp(deps: AppDeps): FastifyInstance {
   registerLabelRoutes(app, { pool: deps.pool });
   registerLegalRoutes(app, { pool: deps.pool });
   registerPolicyRoutes(app, { pool: deps.pool });
+  registerWorkspaceRoutes(app, { pool: deps.pool });
+
   registerGrantRoutes(app, {
     pool: deps.pool,
     policy: deps.policy,

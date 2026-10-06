@@ -57,6 +57,39 @@ export default async function ConsentPage() {
   try {
     view = await listConsentGrants(session.credential);
   } catch (error) {
+    // 402 is the tier, not a fault. Typing the URL on a free workspace reaches
+    // here, which is the point: the sidebar hides the link and the API refuses
+    // the request, and only the second of those is a control.
+    if (error instanceof ApiError && error.failure.status === 402) {
+      return (
+        <Panel title="CONSENT GRANTS" meta="PRO">
+          <div
+            style={{
+              padding: '20px 22px 24px',
+              color: 'var(--text-dim)',
+              fontSize: 12.5,
+              lineHeight: 1.75,
+              maxWidth: 620,
+            }}
+          >
+            <p style={{ margin: '0 0 10px', color: 'var(--text)' }}>
+              One page for everything your agents can reach.
+            </p>
+            <p style={{ margin: '0 0 10px' }}>
+              Every grant in one list: which agent, what it reaches, who granted it, when it was
+              last actually used, and what a policy rule permits for it today. Revoke from the same
+              row.
+            </p>
+            <p style={{ margin: 0 }}>
+              Part of the Pro plan for this workspace. Everything it shows is already being
+              recorded — the audit timeline has it all — this is the screen that puts it in one
+              place.
+            </p>
+          </div>
+        </Panel>
+      );
+    }
+
     return (
       <Panel title="UNAVAILABLE" meta="CONTROL PLANE">
         <div style={{ padding: 22, color: 'var(--text-dim)', fontSize: 12.5 }}>

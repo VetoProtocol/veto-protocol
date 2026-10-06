@@ -33,3 +33,22 @@ export async function assertWorkspaceUnlocked(db: Db, workspaceId: string): Prom
     throw new HttpError(423, 'WORKSPACE_LOCKED', 'Workspace is under emergency lock');
   }
 }
+
+/**
+ * Which tier this workspace is on.
+ *
+ * Read at request time, never from a session cookie. An upgrade has to take
+ * effect on the next page rather than the next sign-in — and a plan cached in a
+ * signed cookie is a plan the server cannot revoke.
+ *
+ * A missing workspace reads as `free`. The caller is already authenticated into
+ * one, so this should not happen; if it does, the safe answer is the one that
+ * grants less.
+ */
+export async function workspacePlan(db: Db, workspaceId: string): Promise<'free' | 'pro'> {
+  const { rows } = await db.query<{ plan: string }>(
+    `select plan from workspaces where id = $1`,
+    [workspaceId],
+  );
+  return rows[0]?.plan === 'pro' ? 'pro' : 'free';
+}

@@ -48,6 +48,7 @@ import {
 import { ERROR_SCHEMA, HttpError } from '../errors.ts';
 import { edgeKey, syncFolderHierarchy, MAX_SYNC_DEPTH } from '../hierarchy.ts';
 import { requireScope, SCOPE_CONTROL_PLANE } from '../scope.ts';
+import { workspacePlan } from '../workspace.ts';
 
 /** Only what the tool catalogue can actually ask about. */
 /**
@@ -327,6 +328,18 @@ export function registerGrantRoutes(app: FastifyInstance, deps: GrantRoutesDeps)
     async (request) => {
       requireScope(request, SCOPE_CONTROL_PLANE);
       const { workspaceId } = request.principal;
+
+      // Checked before any work, and server-side rather than by hiding a link.
+      // A badge in a sidebar is a suggestion; this is the control. 402 rather
+      // than 403 because the caller is permitted to ask and the workspace is
+      // simply not on the tier that answers.
+      if ((await withWorkspace(deps.pool, workspaceId, (db) => workspacePlan(db, workspaceId))) !== 'pro') {
+        throw new HttpError(
+          402,
+          'PLAN_REQUIRED',
+          'Consent Grants is part of the Pro plan for this workspace',
+        );
+      }
 
       const grants = await deps.policy.listGrants(workspaceId);
 

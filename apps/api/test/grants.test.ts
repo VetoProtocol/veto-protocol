@@ -240,6 +240,59 @@ describe('tenant isolation', () => {
   });
 });
 
+describe('consent grants are gated on the plan', () => {
+  // The sidebar hides the link on a free workspace. That is presentation. This
+  // is the control — a hidden link is not one, and anybody can type a URL.
+
+  it('refuses a free workspace with 402, not 403', async () => {
+    // 402: the caller is permitted to ask, the workspace is simply not on the
+    // tier that answers. 403 would say they are forbidden, which is a different
+    // and wronger statement.
+    const response = await app.inject({
+      method: 'GET',
+      url: '/v1/grants/consent',
+      headers: as(OTHER_WS, CAROL),
+    });
+
+    expect(response.statusCode).toBe(402);
+    expect(response.json().error.code).toBe('PLAN_REQUIRED');
+  });
+
+  it('refuses before doing any work', async () => {
+    // Nothing is listed, queried or joined for a workspace that may not see it.
+    // A gate applied after the work is a gate that still leaks timing and still
+    // spends the Permit call.
+    const before = await app.inject({
+      method: 'GET',
+      url: '/v1/grants/consent',
+      headers: as(OTHER_WS, CAROL),
+    });
+
+    expect(before.json()).not.toHaveProperty('grants');
+  });
+
+  it('answers once the workspace is on pro', async () => {
+    await withWorkspace(pool, OTHER_WS, (db) =>
+      db.query(`update workspaces set plan = 'pro' where id = $1`, [OTHER_WS]),
+    );
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/v1/grants/consent',
+      headers: as(OTHER_WS, CAROL),
+    });
+
+    expect(response.statusCode).toBe(200);
+    // Read at request time, so an upgrade takes effect on the next call rather
+    // than the next sign-in. No cookie was reissued here.
+    expect(response.json()).toHaveProperty('grants');
+
+    await withWorkspace(pool, OTHER_WS, (db) =>
+      db.query(`update workspaces set plan = 'free' where id = $1`, [OTHER_WS]),
+    );
+  });
+});
+
 describe('consent grants', () => {
   // The join between a grant and its use is a *string*: `type:key`, written by
   // the pipeline and read here. Nothing errors when it stops matching — every
@@ -252,6 +305,12 @@ describe('consent grants', () => {
   let agent: string;
 
   beforeAll(async () => {
+    // This suite is about the contents of the page, so the workspace is on the
+    // tier that can see it. The gate itself is covered above.
+    await withWorkspace(pool, WS, (db) =>
+      db.query(`update workspaces set plan = 'pro' where id = $1`, [WS]),
+    );
+
     agent = await register(WS, ALICE, `consent-${suffix()}`);
 
     await app.inject({
@@ -273,12 +332,27 @@ describe('consent grants', () => {
   };
 
   it('never shows a grant from another workspace', async () => {
-    // The one that matters. Permit is asked per tenant and the Postgres reads
-    // run inside withWorkspace, so a leak would have to cross both.
-    const body = (await consent(OTHER_WS, CAROL)).json() as {
-      grants: Array<Record<string, unknown>>;
-    };
-    expect(body.grants.some((g) => g['agent_id'] === agent)).toBe(false);
+    // The other workspace is put on the paid tier for this assertion, so what
+    // is being tested is isolation rather than the plan gate. A test that
+    // passed because of a 402 would prove nothing about tenancy and would keep
+    // passing if isolation broke.
+    await withWorkspace(pool, OTHER_WS, (db) =>
+      db.query(`update workspaces set plan = 'pro' where id = $1`, [OTHER_WS]),
+    );
+
+    try {
+      const response = await consent(OTHER_WS, CAROL);
+      expect(response.statusCode).toBe(200);
+
+      const body = response.json() as { grants: Array<Record<string, unknown>> };
+      // Permit is asked per tenant and the Postgres reads run inside
+      // withWorkspace, so a leak would have to cross both.
+      expect(body.grants.some((g) => g['agent_id'] === agent)).toBe(false);
+    } finally {
+      await withWorkspace(pool, OTHER_WS, (db) =>
+        db.query(`update workspaces set plan = 'free' where id = $1`, [OTHER_WS]),
+      );
+    }
   });
 
   it('reports a grant nobody has used as stale, not as used today', async () => {
