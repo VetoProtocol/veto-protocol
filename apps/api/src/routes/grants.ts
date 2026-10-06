@@ -21,7 +21,7 @@
 
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { Pool } from 'pg';
-import { newId } from '@veto/core';
+import { grantRef, newId } from '@veto/core';
 import { withWorkspace } from '@veto/db';
 import { findAgent, writeAuditEvent } from '@veto/identity';
 import {
@@ -107,6 +107,44 @@ const GRANTABLE = [
   GITHUB_ACCOUNT_RESOURCE,
   GITHUB_REPO_RESOURCE,
 ] as const;
+
+const CONSENT_SCHEMA = {
+  type: 'object',
+  properties: {
+    agent_id: { type: 'string' },
+    resource_type: { type: 'string' },
+    resource_key: { type: 'string' },
+    /** Null when the grant predates audit recording, not when nobody granted it. */
+    granted_by: { type: 'string', nullable: true },
+    granted_at: { type: 'string', nullable: true },
+    /** Null means no allowed decision names this grant — see `recording_since`. */
+    last_used_at: { type: 'string', nullable: true },
+    days_since_last_use: { type: 'integer', nullable: true },
+    stale: { type: 'boolean' },
+    /** True when the grant reaches more than the named resource. */
+    inherits: { type: 'boolean' },
+  },
+  required: [
+    'agent_id', 'resource_type', 'resource_key',
+    'granted_by', 'granted_at', 'last_used_at', 'days_since_last_use', 'stale', 'inherits',
+  ],
+} as const;
+
+/**
+ * Unused for this long and we say so on screen.
+ *
+ * Not configurable yet, deliberately: one number everybody reads the same way
+ * is worth more than a setting nobody changes.
+ */
+const STALE_AFTER_DAYS = 90;
+
+/**
+ * Grants on these reach everything beneath them, through Permit's `parent`
+ * relation. The row must say so — a list that looks exhaustive and is not is
+ * worse than no list, because it invites someone to conclude the other things
+ * are unreachable.
+ */
+const CONTAINER_TYPES = new Set([FOLDER_RESOURCE, GITHUB_ACCOUNT_RESOURCE]);
 
 const GRANT_SCHEMA = {
   type: 'object',
@@ -207,6 +245,123 @@ export function registerGrantRoutes(app: FastifyInstance, deps: GrantRoutesDeps)
           resource_type: g.resourceType,
           resource_key: g.resourceKey,
         })),
+      };
+    },
+  );
+
+  /**
+   * Consent Grants — what every agent may reach, and when it last did.
+   *
+   * Permit is the authority for what is granted; this adds two facts Permit
+   * does not hold. Both already exist in Postgres and neither needed a new
+   * table:
+   *
+   *  - **last use**, from the most recent allowed `decisions` row whose
+   *    `resource_ref` matches the grant;
+   *  - **provenance**, from the `grant.created` audit event, which records the
+   *    actor and the time.
+   *
+   * The join is a string, which is the fragile part. `grantRef` is the single
+   * place that formats it, and the pipeline now uses the same function — a
+   * mismatch would not error, it would quietly report every grant as never
+   * used, which looks exactly like a working screen.
+   *
+   * Read-only. Revocation stays on `DELETE /v1/grants`, which already writes
+   * its own audit event.
+   */
+  app.get(
+    '/v1/grants/consent',
+    {
+      schema: {
+        response: {
+          200: {
+            type: 'object',
+            properties: {
+              grants: { type: 'array', items: CONSENT_SCHEMA },
+              stale_after_days: { type: 'integer' },
+              /**
+               * The oldest decision this workspace still holds. "Never used"
+               * means "not since this date", which is a different claim from
+               * "never" and the screen has to be able to say which.
+               */
+              recording_since: { type: 'string', nullable: true },
+            },
+            required: ['grants', 'stale_after_days', 'recording_since'],
+          },
+          '4xx': ERROR_SCHEMA,
+          '5xx': ERROR_SCHEMA,
+        },
+      },
+    },
+    async (request) => {
+      requireScope(request, SCOPE_CONTROL_PLANE);
+      const { workspaceId } = request.principal;
+
+      const grants = await deps.policy.listGrants(workspaceId);
+
+      // Two queries for the whole page, not two per grant. Permit's grant list
+      // is small; the decisions table is not, and a per-row query would make
+      // this screen slower the longer a workspace has been running.
+      const { lastUse, lineage, since } = await withWorkspace(deps.pool, workspaceId, async (db) => {
+        const uses = await db.query<{ agent_id: string; resource_ref: string; at: Date }>(
+          `select agent_id, resource_ref, max(created_at) as at
+             from decisions
+            where workspace_id = $1 and veto_result = 'allow' and resource_ref is not null
+            group by agent_id, resource_ref`,
+          [workspaceId],
+        );
+
+        // `<type>:<key>#agent=<id>` is what the grant route writes. The agent
+        // is split off here rather than matched in SQL so the format stays
+        // owned by one place.
+        const created = await db.query<{ actor: string; resource_ref: string; at: Date }>(
+          `select distinct on (resource_ref) actor, resource_ref, occurred_at as at
+             from audit_events
+            where workspace_id = $1 and event_type = 'grant.created' and resource_ref is not null
+            order by resource_ref, occurred_at desc`,
+          [workspaceId],
+        );
+
+        const oldest = await db.query<{ at: Date | null }>(
+          `select min(created_at) as at from decisions where workspace_id = $1`,
+          [workspaceId],
+        );
+
+        return {
+          lastUse: new Map(uses.rows.map((r) => [`${r.agent_id}\u0000${r.resource_ref}`, r.at])),
+          lineage: new Map(created.rows.map((r) => [r.resource_ref, r])),
+          since: oldest.rows[0]?.at ?? null,
+        };
+      });
+
+      const now = Date.now();
+      const DAY_MS = 24 * 60 * 60 * 1000;
+
+      return {
+        grants: grants.map((g) => {
+          const ref = grantRef(g.resourceType, g.resourceKey);
+          const used = lastUse.get(`${g.agentId}\u0000${ref}`) ?? null;
+          const born = lineage.get(`${ref}#agent=${g.agentId}`) ?? null;
+
+          // Floored, so "today" reads as 0 rather than rounding up to 1.
+          const days = used === null ? null : Math.floor((now - used.getTime()) / DAY_MS);
+
+          return {
+            agent_id: g.agentId,
+            resource_type: g.resourceType,
+            resource_key: g.resourceKey,
+            granted_by: born?.actor ?? null,
+            granted_at: born?.at.toISOString() ?? null,
+            last_used_at: used?.toISOString() ?? null,
+            days_since_last_use: days,
+            // Never used counts as stale. It is the case most worth seeing:
+            // access granted and then forgotten about entirely.
+            stale: days === null || days >= STALE_AFTER_DAYS,
+            inherits: CONTAINER_TYPES.has(g.resourceType),
+          };
+        }),
+        stale_after_days: STALE_AFTER_DAYS,
+        recording_since: since?.toISOString() ?? null,
       };
     },
   );

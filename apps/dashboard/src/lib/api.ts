@@ -368,6 +368,28 @@ export const connectGithub = (
 ): Promise<ConnectionView> =>
   request('/v1/connections/github', { method: 'POST', credential, body: JSON.stringify(body) });
 
+export interface ConsentGrantView {
+  readonly agent_id: string;
+  readonly resource_type: string;
+  readonly resource_key: string;
+  readonly granted_by: string | null;
+  readonly granted_at: string | null;
+  readonly last_used_at: string | null;
+  readonly days_since_last_use: number | null;
+  readonly stale: boolean;
+  readonly inherits: boolean;
+}
+
+export interface ConsentView {
+  readonly grants: readonly ConsentGrantView[];
+  readonly stale_after_days: number;
+  readonly recording_since: string | null;
+}
+
+/** What every agent may reach right now, and when it last did. */
+export const listConsentGrants = (credential: string): Promise<ConsentView> =>
+  request('/v1/grants/consent', { method: 'GET', credential });
+
 export const revokeConnection = (
   credential: string,
   connectionId: string,

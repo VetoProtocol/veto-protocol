@@ -239,3 +239,125 @@ describe('tenant isolation', () => {
     expect(mine.map((g) => g.resource_key)).not.toContain('1Theirs_id');
   });
 });
+
+describe('consent grants', () => {
+  // The join between a grant and its use is a *string*: `type:key`, written by
+  // the pipeline and read here. Nothing errors when it stops matching — every
+  // grant simply reports "never used", which looks exactly like a working
+  // screen showing an idle workspace. These tests exist because that failure is
+  // silent.
+
+  const REPO = 'github_repo';
+  const KEY = '524250555';
+  let agent: string;
+
+  beforeAll(async () => {
+    agent = await register(WS, ALICE, `consent-${suffix()}`);
+
+    await app.inject({
+      method: 'POST',
+      url: '/v1/grants',
+      headers: as(WS, ALICE),
+      payload: { agent_id: agent, resource_type: REPO, resource_key: KEY },
+    });
+  });
+
+  const consent = (ws: string, user: string) =>
+    app.inject({ method: 'GET', url: '/v1/grants/consent', headers: as(ws, user) });
+
+  const rowFor = async (ws: string, user: string, agentId: string) => {
+    const body = (await consent(ws, user)).json() as {
+      grants: Array<Record<string, unknown>>;
+    };
+    return body.grants.find((g) => g['agent_id'] === agentId);
+  };
+
+  it('never shows a grant from another workspace', async () => {
+    // The one that matters. Permit is asked per tenant and the Postgres reads
+    // run inside withWorkspace, so a leak would have to cross both.
+    const body = (await consent(OTHER_WS, CAROL)).json() as {
+      grants: Array<Record<string, unknown>>;
+    };
+    expect(body.grants.some((g) => g['agent_id'] === agent)).toBe(false);
+  });
+
+  it('reports a grant nobody has used as stale, not as used today', async () => {
+    const row = await rowFor(WS, ALICE, agent);
+
+    expect(row).toBeDefined();
+    expect(row?.['resource_key']).toBe(KEY);
+    expect(row?.['last_used_at']).toBeNull();
+    expect(row?.['days_since_last_use']).toBeNull();
+    // Never used is the case most worth surfacing: granted and then forgotten.
+    expect(row?.['stale']).toBe(true);
+  });
+
+  it('finds the last use through the shared ref format', async () => {
+    // Written the way the pipeline writes it. If `grantRef` and this insert
+    // ever disagree, this assertion is what fails.
+    await withWorkspace(pool, WS, (db) =>
+      db.query(
+        `insert into decisions
+           (id, workspace_id, request_id, human_id, agent_id, tool, action, resource_ref,
+            permit_result, veto_result, reason_code, policy_version, latency_ms)
+         values ($1,$2,$3,$4,$5,'github_repo.read_file','read',$6,
+                 'allow','allow','ALLOWED_WITHIN_POLICY',null,10)`,
+        [`dec_cg${suffix()}`, WS, `req_cg${suffix()}`, ALICE, agent, `${REPO}:${KEY}`],
+      ),
+    );
+
+    const row = await rowFor(WS, ALICE, agent);
+
+    expect(row?.['last_used_at']).not.toBeNull();
+    expect(row?.['days_since_last_use']).toBe(0);
+    expect(row?.['stale']).toBe(false);
+  });
+
+  it('ignores a denial, because a refusal is not a use', async () => {
+    const other = await register(WS, ALICE, `consent2-${suffix()}`);
+    await app.inject({
+      method: 'POST',
+      url: '/v1/grants',
+      headers: as(WS, ALICE),
+      payload: { agent_id: other, resource_type: REPO, resource_key: KEY },
+    });
+
+    await withWorkspace(pool, WS, (db) =>
+      db.query(
+        `insert into decisions
+           (id, workspace_id, request_id, human_id, agent_id, tool, action, resource_ref,
+            permit_result, veto_result, reason_code, policy_version, latency_ms)
+         values ($1,$2,$3,$4,$5,'github_repo.read_file','read',$6,
+                 'deny','deny','POLICY_DENIED',null,5)`,
+        [`dec_cg${suffix()}`, WS, `req_cg${suffix()}`, ALICE, other, `${REPO}:${KEY}`],
+      ),
+    );
+
+    const row = await rowFor(WS, ALICE, other);
+    expect(row?.['last_used_at']).toBeNull();
+  });
+
+  it('says when recording started, so "never used" is a bounded claim', async () => {
+    const body = (await consent(WS, ALICE)).json() as Record<string, unknown>;
+
+    // "Never used" means "not since this date". Without it the screen would be
+    // inviting somebody to revoke on evidence it does not have.
+    expect(body['recording_since']).not.toBeNull();
+    expect(body['stale_after_days']).toBe(90);
+  });
+
+  it('marks a container grant as reaching more than it names', async () => {
+    const third = await register(WS, ALICE, `consent3-${suffix()}`);
+    await app.inject({
+      method: 'POST',
+      url: '/v1/grants',
+      headers: as(WS, ALICE),
+      payload: { agent_id: third, resource_type: 'google_folder', resource_key: 'root' },
+    });
+
+    const row = await rowFor(WS, ALICE, third);
+    // A folder grant reaches everything inside it. A list that looked
+    // exhaustive would invite the wrong conclusion about the rest.
+    expect(row?.['inherits']).toBe(true);
+  });
+});

@@ -29,6 +29,7 @@ import {
   actionDigest,
   newId,
   describeReason,
+  grantRef,
   CURRENT_LEGAL_VERSIONS,
   LEGAL_DOCUMENTS,
   type DigestibleValue,
@@ -403,7 +404,7 @@ async function persist(
         input.tool,
         input.action,
         // A reference, never the content (invariant 5, §11).
-        `${input.resource.type}:${input.resource.id}`,
+        grantRef(input.resource.type, input.resource.id),
         args.policyVersion,
         args.permitResult,
         args.outcome.result,
@@ -438,7 +439,7 @@ async function persist(
           workspaceId: input.workspaceId,
           actor: input.agentId,
           eventType: `decision.${args.outcome.result}`,
-          resourceRef: `${input.resource.type}:${input.resource.id}`,
+          resourceRef: grantRef(input.resource.type, input.resource.id),
           outcome: args.outcome.result,
           correlationId: input.requestId,
         });
@@ -508,7 +509,7 @@ async function persist(
       workspaceId: input.workspaceId,
       actor: input.agentId,
       eventType: `decision.${args.outcome.result}`,
-      resourceRef: `${input.resource.type}:${input.resource.id}`,
+      resourceRef: grantRef(input.resource.type, input.resource.id),
       outcome: args.outcome.result,
       correlationId: input.requestId,
     });
@@ -543,7 +544,7 @@ async function announce(
   };
 
   // A reference, never the content or the arguments (invariant 5).
-  const resourceRef = `${input.resource.type}:${input.resource.id}`;
+  const resourceRef = grantRef(input.resource.type, input.resource.id);
 
   if (args.outcome.result === 'deny') {
     const data = {

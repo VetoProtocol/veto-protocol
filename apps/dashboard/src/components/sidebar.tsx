@@ -142,10 +142,12 @@ const OVERVIEW = [
   ['/presence', 'Presence', 'presence'],
   ['/audit', 'Audit', 'audit'],
   ['/alerts', 'Alerts', 'alerts'],
+  // Last, because it answers a question the others create: once agents,
+  // policies and connections exist, what does all of that add up to right now.
+  ['/consent', 'Consent Grants', 'shield'],
 ] as const;
 
 const ENTERPRISE = [
-  ['Consent Grants', 'shield'],
   ['Agent Fingerprints', 'fingerprint'],
   ['Shadow Agents', 'shadow'],
 ] as const;
