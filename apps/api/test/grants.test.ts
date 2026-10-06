@@ -346,6 +346,79 @@ describe('consent grants', () => {
     expect(body['stale_after_days']).toBe(90);
   });
 
+  it('reports a grant that no rule allows as inert', async () => {
+    // The reason this column exists. Step 4 denies when no rule matches, before
+    // Permit is consulted, so a grant with no rule reaches nothing. A page that
+    // listed it as access would be stating a fiction, and somebody revoking it
+    // would believe they had removed something.
+    const row = await rowFor(WS, ALICE, agent);
+
+    expect(row?.['inert']).toBe(true);
+    expect(row?.['effective']).toEqual([]);
+  });
+
+  it('reports what a rule actually permits, per action', async () => {
+    const ruled = await register(WS, ALICE, `consent4-${suffix()}`);
+    await app.inject({
+      method: 'POST',
+      url: '/v1/grants',
+      headers: as(WS, ALICE),
+      payload: { agent_id: ruled, resource_type: REPO, resource_key: KEY },
+    });
+    await app.inject({
+      method: 'POST',
+      url: '/v1/policies',
+      headers: as(WS, ALICE),
+      payload: {
+        subject: ruled,
+        action: 'read',
+        effect: 'allow',
+        resource_filter: { type: REPO, ids: [KEY] },
+      },
+    });
+
+    const row = await rowFor(WS, ALICE, ruled);
+
+    expect(row?.['inert']).toBe(false);
+    // Only the action the rule names. `search` is not implied by `read`.
+    expect(row?.['effective']).toEqual([{ action: 'read', effect: 'allow' }]);
+  });
+
+  it('shows a challenge as a challenge, not as plain access', async () => {
+    const stepped = await register(WS, ALICE, `consent5-${suffix()}`);
+    await app.inject({
+      method: 'POST',
+      url: '/v1/grants',
+      headers: as(WS, ALICE),
+      payload: { agent_id: stepped, resource_type: REPO, resource_key: KEY },
+    });
+    await app.inject({
+      method: 'POST',
+      url: '/v1/policies',
+      headers: as(WS, ALICE),
+      payload: {
+        subject: stepped,
+        action: 'read',
+        effect: 'challenge',
+        resource_filter: { type: REPO, ids: [KEY] },
+      },
+    });
+
+    const row = await rowFor(WS, ALICE, stepped);
+
+    // Access that needs a passkey every time is not the same as access, and a
+    // reader deciding what to revoke should see the difference.
+    expect(row?.['effective']).toEqual([{ action: 'read', effect: 'challenge' }]);
+    expect(row?.['inert']).toBe(false);
+  });
+
+  it('does not treat a rule for another agent as reaching this one', async () => {
+    // The rule written above names `ruled`. The original agent still has no
+    // rule of its own, so it must still be inert.
+    const row = await rowFor(WS, ALICE, agent);
+    expect(row?.['inert']).toBe(true);
+  });
+
   it('marks a container grant as reaching more than it names', async () => {
     const third = await register(WS, ALICE, `consent3-${suffix()}`);
     await app.inject({

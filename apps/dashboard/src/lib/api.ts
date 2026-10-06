@@ -378,6 +378,9 @@ export interface ConsentGrantView {
   readonly days_since_last_use: number | null;
   readonly stale: boolean;
   readonly inherits: boolean;
+  /** What a rule actually permits, per action. Empty means no rule matches. */
+  readonly effective: ReadonlyArray<{ action: string; effect: 'allow' | 'challenge' }>;
+  readonly inert: boolean;
 }
 
 export interface ConsentView {

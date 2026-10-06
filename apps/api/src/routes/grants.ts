@@ -23,6 +23,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { Pool } from 'pg';
 import { grantRef, newId } from '@veto/core';
 import { withWorkspace } from '@veto/db';
+import { loadPolicies, matchPolicies, type EvaluateInput } from '@veto/decisions';
 import { findAgent, writeAuditEvent } from '@veto/identity';
 import {
   CALENDAR_RESOURCE,
@@ -123,12 +124,42 @@ const CONSENT_SCHEMA = {
     stale: { type: 'boolean' },
     /** True when the grant reaches more than the named resource. */
     inherits: { type: 'boolean' },
+    /**
+     * What a rule would actually permit for this grant, per action.
+     *
+     * A grant is only half of an answer. Step 4 denies when no rule matches,
+     * before Permit is consulted at all, so a grant nothing allows reaches
+     * nothing — and a page that listed it as access would be stating a fiction.
+     */
+    effective: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          action: { type: 'string' },
+          effect: { type: 'string', enum: ['allow', 'challenge'] },
+        },
+        required: ['action', 'effect'],
+      },
+    },
+    /** True when no rule matches this grant at all, so it currently grants nothing. */
+    inert: { type: 'boolean' },
   },
   required: [
     'agent_id', 'resource_type', 'resource_key',
     'granted_by', 'granted_at', 'last_used_at', 'days_since_last_use', 'stale', 'inherits',
+    'effective', 'inert',
   ],
 } as const;
+
+/**
+ * The actions worth probing for a grant.
+ *
+ * `POLICY_ACTIONS` also contains `write`, which no tool can perform, and `*`,
+ * which is a rule's wildcard rather than something an agent asks for. Probing
+ * either would report access that cannot be exercised.
+ */
+const PROBE_ACTIONS = ['read', 'list', 'search'] as const;
 
 /**
  * Unused for this long and we say so on screen.
@@ -302,7 +333,7 @@ export function registerGrantRoutes(app: FastifyInstance, deps: GrantRoutesDeps)
       // Two queries for the whole page, not two per grant. Permit's grant list
       // is small; the decisions table is not, and a per-row query would make
       // this screen slower the longer a workspace has been running.
-      const { lastUse, lineage, since } = await withWorkspace(deps.pool, workspaceId, async (db) => {
+      const { lastUse, lineage, since, rules, timeZone } = await withWorkspace(deps.pool, workspaceId, async (db) => {
         const uses = await db.query<{ agent_id: string; resource_ref: string; at: Date }>(
           `select agent_id, resource_ref, max(created_at) as at
              from decisions
@@ -327,10 +358,25 @@ export function registerGrantRoutes(app: FastifyInstance, deps: GrantRoutesDeps)
           [workspaceId],
         );
 
+        // Loaded once for the page. The rules are then matched in memory, with
+        // the pipeline's own matcher — see the note beside the probe below.
+        const rules = await loadPolicies(db, workspaceId);
+
+        // A windowed rule is read in the workspace's own zone (migration 0020),
+        // not in UTC. Reading it in the wrong zone would report a rule as shut
+        // when it is open, or open when it is shut, for anybody not on UTC —
+        // and only near the boundary, which is the worst way to be wrong.
+        const zone = await db.query<{ timezone: string }>(
+          `select timezone from workspaces where id = $1`,
+          [workspaceId],
+        );
+
         return {
+          timeZone: zone.rows[0]?.timezone ?? 'UTC',
           lastUse: new Map(uses.rows.map((r) => [`${r.agent_id}\u0000${r.resource_ref}`, r.at])),
           lineage: new Map(created.rows.map((r) => [r.resource_ref, r])),
           since: oldest.rows[0]?.at ?? null,
+          rules,
         };
       });
 
@@ -346,10 +392,43 @@ export function registerGrantRoutes(app: FastifyInstance, deps: GrantRoutesDeps)
           // Floored, so "today" reads as 0 rather than rounding up to 1.
           const days = used === null ? null : Math.floor((now - used.getTime()) / DAY_MS);
 
+          // What a rule would actually permit, asked of the pipeline's own
+          // matcher rather than a second implementation of it. A simpler
+          // "does any filter match" check here would be a copy that drifts,
+          // and the page disagreeing with the gateway about whether access
+          // exists is worse than having no page.
+          //
+          // `ruleMatches` reads the agent, the action, and the resource type
+          // and id. Everything else on this object is a placeholder that no
+          // rule consults; it is spelled out rather than cast so a future
+          // field has a defined value instead of undefined.
+          const effective = PROBE_ACTIONS.flatMap((action) => {
+            const probe: EvaluateInput = {
+              requestId: 'req_consent_probe',
+              workspaceId,
+              humanId: '',
+              agentId: g.agentId,
+              clientId: 'consent-probe',
+              tool: '',
+              action,
+              resource: { type: g.resourceType, id: g.resourceKey },
+              arguments: {},
+              declaredIntent: null,
+              destination: null,
+              occurredAt: new Date().toISOString(),
+            };
+            const verdict = matchPolicies(rules, probe, { at: new Date(), timeZone });
+            return verdict.effect === 'deny' ? [] : [{ action, effect: verdict.effect }];
+          });
+
           return {
             agent_id: g.agentId,
             resource_type: g.resourceType,
             resource_key: g.resourceKey,
+            effective,
+            // No rule matches any action, so step 4 refuses before Permit is
+            // ever asked. The grant exists and reaches nothing.
+            inert: effective.length === 0,
             granted_by: born?.actor ?? null,
             granted_at: born?.at.toISOString() ?? null,
             last_used_at: used?.toISOString() ?? null,

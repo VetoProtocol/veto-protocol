@@ -67,6 +67,7 @@ export default async function ConsentPage() {
   }
 
   const stale = view.grants.filter((g) => g.stale).length;
+  const inert = view.grants.filter((g) => g.inert).length;
 
   return (
     <>
@@ -79,11 +80,12 @@ export default async function ConsentPage() {
             {view.grants.length} {view.grants.length === 1 ? 'grant' : 'grants'}
           </h1>
           {stale > 0 ? <Chip tone="deny">{`${String(stale)} unused`}</Chip> : null}
+          {inert > 0 ? <Chip tone="neutral">{`${String(inert)} reach nothing`}</Chip> : null}
         </div>
         <p style={{ color: 'var(--text-dim)', maxWidth: 680, marginTop: 12, fontSize: 12.5 }}>
-          Everything your agents are connected to. A grant is the outer bound of what one agent can
-          reach — a policy rule can narrow it, never widen it — so this is the list to read before
-          deciding what to take away.
+          Everything your agents are connected to, and what a policy rule actually permits for each
+          one. Both have to agree: a grant with no matching rule reaches nothing, because the rule
+          check refuses before the connection is ever consulted.
         </p>
       </div>
 
@@ -100,6 +102,7 @@ export default async function ConsentPage() {
                 <tr>
                   <th style={head}>agent</th>
                   <th style={head}>can reach</th>
+                  <th style={head}>a rule permits</th>
                   <th style={head}>granted</th>
                   <th style={head}>by</th>
                   <th style={head}>last used</th>
@@ -123,6 +126,27 @@ export default async function ConsentPage() {
                           reaches {kindReach(g.resource_type)}
                         </div>
                       ) : null}
+                    </td>
+                    <td style={cell}>
+                      {/* A grant is half an answer. With no matching rule the
+                          pipeline refuses at step 4, before Permit is asked, so
+                          the grant reaches nothing at all. */}
+                      {g.inert ? (
+                        <span style={{ color: 'var(--deny)' }}>
+                          nothing — no rule matches
+                        </span>
+                      ) : (
+                        g.effective.map((e) => (
+                          <div key={e.action} style={{ marginBottom: 2 }}>
+                            {e.action}
+                            {e.effect === 'challenge' ? (
+                              <span style={{ color: 'var(--challenge)', marginLeft: 6 }}>
+                                needs approval
+                              </span>
+                            ) : null}
+                          </div>
+                        ))
+                      )}
                     </td>
                     <td style={{ ...cell, color: 'var(--text-dim)' }}>{day(g.granted_at)}</td>
                     <td style={{ ...cell, color: 'var(--text-dim)' }}>{g.granted_by ?? '—'}</td>
