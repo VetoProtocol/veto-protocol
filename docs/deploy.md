@@ -307,6 +307,7 @@ systemctl restart veto-api veto-gateway            # services run from source
 pnpm --filter @veto/dashboard build && systemctl restart veto-dashboard
 journalctl -u veto-gateway -f                      # follow one service
 pnpm --filter @veto/db migrate                     # apply pending migrations
+pnpm --filter @veto/db plan -- --workspace ws_... --plan pro   # set a tier (docs/plans.md)
 podman restart veto-pdp                            # decision point
 curl -XPOST localhost:4000/v1/webhooks/drain -H "authorization: Bearer $TOK" -d '{}'
 ```

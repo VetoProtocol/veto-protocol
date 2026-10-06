@@ -130,6 +130,12 @@ consulted — so listing it as access would be stating a fiction. The probe call
 it: a page that disagreed with the gateway about whether access exists would be
 worse than no page.
 
+`/consent` is the first **paid** screen. `workspaces.plan` is one column with two
+values and no billing behind it (migration 0025, `docs/plans.md`); the API
+returns 402 before doing any work, because the sidebar hiding a link is not a
+control. The plan is read per request and never sealed into the session cookie,
+so an upgrade shows on the next page rather than the next sign-in.
+
 ### Commands
 
 ```bash
@@ -147,6 +153,7 @@ curl -XPOST localhost:4000/v1/webhooks/drain -H "authorization: Bearer $TOK" -d 
 curl -XPOST localhost:4000/v1/grants/sync -H "authorization: Bearer $TOK" -d '{"folder_id":"root"}'  # teach Permit where files live
 curl -XPOST localhost:4000/v1/grants/github/sync -H "authorization: Bearer $TOK" -d '{}'  # same, for repositories
 pnpm --filter @veto/identity invite -- --subject "oidc|<from the auth log>" --workspace "Name"
+pnpm --filter @veto/db plan -- --workspace ws_... --plan pro   # tier; docs/plans.md
 ```
 
 Every entry point loads the repo-root `.env`, with anything already set in the
