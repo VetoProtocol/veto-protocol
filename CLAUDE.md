@@ -89,6 +89,47 @@ rather than quietly stopping. One known gap remains inside what is built: Permit
 resource-instance keys must match `^[A-Za-z0-9\-_]+$`, which real Drive ids do
 and the repo's path-shaped test fixtures do not.
 
+**GitHub is the second provider, and it is installed rather than authorized.**
+Seven read-only tools — `github_repo.list_repos`, `.list_directory`,
+`.read_file`, `github_issue.search`, `.read`, `github_pull.read`, `.read_diff`.
+A GitHub **App**, not an OAuth App: `repo` scope is read *and* write across
+every repository the user can reach and has no read-only form, so an OAuth App
+could not express what this product sells. An App holds only the repositories
+and permissions the installer picked.
+
+The durable credential is the **installation id**, stored where a refresh token
+is stored; the secret is the App private key, which lives at
+`GITHUB_PRIVATE_KEY_PATH` and never reaches the vault. It is a path and not a
+value because a PEM is multi-line and a mangled one fails at JWT signing, on the
+first real call, pointing nowhere useful.
+
+Narrowing is literal here in a way it cannot be for Google. Google fixes a
+grant's scopes at consent and ignores what the broker asks for, so a Drive-only
+token comes from picking the Drive *connection*. GitHub honours a subset at mint
+time, so an issue read receives a token that physically cannot read a file —
+asserted in `apps/gateway/test/github.test.ts` against a connection seeded with
+all four permissions, so the narrowness is a choice rather than the only thing
+on offer.
+
+`POST /v1/grants/github/sync` writes a `parent` edge per repository so a grant
+on the account reaches the repositories under it. Without it the account
+resource exists, the relation is declared, and inheritance reaches nothing —
+which is how the dashboard came to offer "and every repository under it" while
+meaning no such thing, for two commits.
+
+**Consent Grants (`/consent`) is one page for what every agent may reach, and
+when it last did.** Nothing new is stored: last use comes from the newest
+allowed `decisions` row whose `resource_ref` matches, provenance from the
+`grant.created` audit event. Migration 0024 adds two partial indexes and no
+columns.
+
+It shows what a rule **actually permits**, per action, not only what is granted.
+A grant with no matching rule reaches nothing — step 4 denies before Permit is
+consulted — so listing it as access would be stating a fiction. The probe calls
+`matchPolicies`, the pipeline's own matcher, never a second implementation of
+it: a page that disagreed with the gateway about whether access exists would be
+worse than no page.
+
 ### Commands
 
 ```bash
@@ -104,6 +145,7 @@ pnpm --filter @veto/gateway start                  # MCP gateway on :4100
 pnpm --filter @veto/dashboard dev                  # dashboard on :3000
 curl -XPOST localhost:4000/v1/webhooks/drain -H "authorization: Bearer $TOK" -d '{}'  # deliver queued alerts
 curl -XPOST localhost:4000/v1/grants/sync -H "authorization: Bearer $TOK" -d '{"folder_id":"root"}'  # teach Permit where files live
+curl -XPOST localhost:4000/v1/grants/github/sync -H "authorization: Bearer $TOK" -d '{}'  # same, for repositories
 pnpm --filter @veto/identity invite -- --subject "oidc|<from the auth log>" --workspace "Name"
 ```
 
@@ -126,14 +168,16 @@ outside a test env, and the app `.env` sets `NODE_ENV=development`.
 | `packages/tokens` | Short-lived internal capability tokens. HMAC, no algorithm field. |
 | `packages/decisions` | The §3.3 pipeline and sensitivity labels. Decides; never executes. |
 | `packages/vault` | Envelope encryption. The encryption context is a tenant boundary. |
-| `packages/connections` | Credential vault and broker. Never returns a refresh token. |
+| `packages/connections` | Credential vault and broker. Never returns a refresh token. Google and GitHub readers live here. |
 | `packages/presence` | §7.2 state machine. A signal, never proof of intent. |
 | `packages/webhooks` | §5.4 alerts. Enqueue is transactional; delivery is a worker. |
 | `packages/passkeys` | WebAuthn enrolment and assertion. Public keys only. |
+| `packages/oauth` | §8 authorization server: clients, codes, PKCE, refresh rotation. |
+| `packages/wallet` | SIWE sign-in. A second identity kind, with no issuer vouching for it. |
 | `packages/health` | Startup probes. Reachability only — never validates a credential. |
 | `apps/api` | Fastify control plane (§5). Manages objects; not an enforcement point. |
 | `apps/gateway` | **The** MCP enforcement point (§3.1). Calls the pipeline in process. |
-| `apps/dashboard` | Next.js dashboard: agents, policies, connections, presence, labels, approvals, audit, alerts. Dark only. |
+| `apps/dashboard` | Next.js dashboard: agents, policies, connections, presence, labels, approvals, audit, alerts, consent. Dark only. |
 
 Sign-in is OIDC against any conformant provider (`docs/auth-setup.md`).
 
@@ -219,6 +263,32 @@ since migration 0001 and nothing created the first kind until stage 4.
   escalation by argument, the same shape invariant 10 refuses for credentials.
   The walk is bounded and off the decision path: it writes where things are, not
   who may read them, so an edge under a folder nobody was granted reaches nobody.
+- **A GitHub installation is proved, never asserted.** `POST /v1/connections/github`
+  redeems a single-use state the server itself issued, keyed by workspace, before
+  it asks GitHub anything. It shipped without that check: any control-plane
+  credential could post a stranger's installation id — they are small sequential
+  integers — and have this server mint real tokens for their repositories with
+  its own App key. The comment above that call claimed the id was "not trusted"
+  because GitHub was asked what the installation *is*, which was never a check on
+  who may claim it. A comment describing a control that does not exist is worse
+  than no comment.
+- **A GitHub repository is keyed by its numeric id, never `owner/repo`.** The
+  slash does not survive Permit's instance-key grammar, and an id survives a
+  rename where a name would silently follow whoever registered it next. Files,
+  issues and pull requests are not Permit resources at all: their ids are not
+  knowable before a search, so Permit answers whether the repository is reachable
+  and a Veto rule says under what conditions.
+- **`decisions.resource_ref` has one formatter, `grantRef` in `@veto/core`.** It
+  was built inline in four places until Consent Grants had to join on it. A join
+  against a format four callers each write for themselves goes quietly empty the
+  day one changes — every grant would read "never used", which looks exactly like
+  a working screen. Deliberately not `resourceInstanceKey`: same shape, different
+  key space, and `model.ts` says they are not interchangeable.
+- **An address is classified by its bytes, not by its spelling.**
+  `isBlockedV6` matched `::ffff:127.0.0.1` and allowed `::ffff:7f00:1`, which is
+  the same address with a hex tail. Nine addresses got through, including cloud
+  metadata and the NAT64 forms. A blocklist of spellings can always be spelled
+  around.
 - **Permit resource-instance keys are `^[A-Za-z0-9\-_]+$`.** Real Drive ids fit;
   paths do not. `/v1/grants` enforces it so the failure is a 400 that explains
   itself rather than an upstream 422. Same shape of surprise as `agent|` in
