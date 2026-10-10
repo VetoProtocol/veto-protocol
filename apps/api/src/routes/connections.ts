@@ -454,7 +454,20 @@ export function registerConnectionRoutes(app: FastifyInstance, deps: ConnectionR
           code: request.body.code,
           installationId: request.body.installation_id,
         });
-      } catch {
+      } catch (error) {
+        // The caller is told nothing; the operator is told everything.
+        //
+        // The response has to stay opaque so somebody probing installation ids
+        // cannot tell "not yours" from "does not exist" — but the first version
+        // of this swallowed the cause entirely, and a refusal nobody can
+        // diagnose is its own kind of outage. `bad_verification_code`,
+        // `incorrect_client_credentials` and an unreachable GitHub are three
+        // very different problems with three different fixes.
+        request.log.warn(
+          { err: error, installation_id: request.body.installation_id },
+          'github installation ownership could not be confirmed',
+        );
+
         // A failed exchange is a refusal, never a pass. GitHub being
         // unreachable must not become a way to skip the check (invariant 1).
         throw new HttpError(
@@ -465,6 +478,13 @@ export function registerConnectionRoutes(app: FastifyInstance, deps: ConnectionR
       }
 
       if (!owned) {
+        // Said plainly in the log, because this one is a real refusal rather
+        // than a fault and an operator should be able to see the difference.
+        request.log.warn(
+          { installation_id: request.body.installation_id },
+          'github installation is not reachable by the authorizing user',
+        );
+
         // Deliberately the same message as a failed confirmation. Somebody
         // probing installation ids learns only that it did not work, not
         // whether the id exists and belongs to somebody else.

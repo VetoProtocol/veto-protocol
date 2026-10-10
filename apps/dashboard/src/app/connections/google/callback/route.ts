@@ -59,7 +59,9 @@ export async function GET(request: NextRequest) {
     // the connection list, so what it shows is what was actually granted rather
     // than what this redirect claimed.
     await connectGoogle(session.credential, { code, code_verifier: flow.verifier });
-    return done(request, 'connected', 'ok');
+    // Names the provider, because the page used to report every success in
+    // Google's words — including a GitHub one.
+    return done(request, 'connected', 'google');
   } catch (error) {
     if (error instanceof ApiError && error.failure.status === 503) {
       return done(request, 'error', 'unconfigured');

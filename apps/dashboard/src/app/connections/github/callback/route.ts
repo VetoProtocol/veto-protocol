@@ -89,7 +89,9 @@ export async function GET(request: NextRequest) {
       state: flow.state,
       code,
     });
-    return done(request, 'connected', 'ok');
+    // Names the provider, because the page used to report every success in
+    // Google's words — including a GitHub one.
+    return done(request, 'connected', 'github');
   } catch (error) {
     if (error instanceof ApiError && error.failure.status === 503) {
       return done(request, 'error', 'unconfigured');

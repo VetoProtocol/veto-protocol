@@ -34,6 +34,8 @@ const ERRORS: Record<string, string> = {
   refused: 'The provider refused that authorization. Nothing was connected.',
   mismatch: 'That response did not match the attempt that started here, so it was rejected.',
   nocode: 'Google sent no authorization code back. Nothing was connected.',
+  // GitHub's equivalent is `nouserauth` below: a different cause and a
+  // different fix, so a different message.
   exchange: 'That authorization could not be completed. Start again, and grant offline access.',
   unknownservice:
     'That is not a service this dashboard knows how to connect. Nothing was connected — and nothing else was connected in its place.',
@@ -44,6 +46,24 @@ const ERRORS: Record<string, string> = {
   // says which setting.
   nouserauth:
     'GitHub did not confirm who owns that installation, so nothing was connected. The GitHub App needs \u201cRequest user authorization (OAuth) during installation\u201d switched on.',
+};
+
+/**
+ * What to say after a successful connect.
+ *
+ * Keyed by provider, because this used to be one hardcoded sentence about
+ * Google and GitHub had been a first-class provider for weeks — so connecting
+ * a repository reported that "Google" had granted something. A message that
+ * names the wrong system is worse than a vague one: it makes somebody doubt
+ * what actually happened.
+ *
+ * `ok` is what older callbacks sent and is kept so a redirect already in flight
+ * during a deploy still lands on something true.
+ */
+const CONNECTED: Record<string, string> = {
+  google: 'Connected. What Google actually granted is listed below.',
+  github: 'Connected. The repositories and permissions you picked are listed below.',
+  ok: 'Connected. What the provider actually granted is listed below.',
 };
 
 const STATUS_TONE: Record<string, Tone> = {
@@ -138,7 +158,7 @@ export default async function ConnectionsPage({
   return (
     <>
 
-      <Panel title="CONNECTIONS" meta="GOOGLE WORKSPACE / §9">
+      <Panel title="CONNECTIONS" meta="GOOGLE · GITHUB / §9">
         <div style={{ padding: '22px 18px 18px' }}>
           <p className="path" style={{ margin: '0 0 12px' }}>
             ~/{session.workspaceId}/connections
@@ -148,7 +168,7 @@ export default async function ConnectionsPage({
             <span style={{ color: 'var(--text-faint)' }}> · {connections.length} total</span>
           </h1>
           <p style={{ color: 'var(--text-dim)', maxWidth: 660, marginTop: 12, fontSize: 12.5 }}>
-            Connecting Google lets Veto reach your Drive{' '}
+            Connecting an account lets Veto reach it{' '}
             <span style={{ color: 'var(--text)' }}>on an agent&rsquo;s behalf</span> — and only when
             a decision says yes. The credential is stored encrypted and never handed to an agent;
             each allowed call gets a fresh short-lived token instead.
@@ -166,7 +186,7 @@ export default async function ConnectionsPage({
                 fontSize: 12.5,
               }}
             >
-              Connected. What Google actually granted is listed below.
+              {CONNECTED[connected] ?? CONNECTED['ok']}
             </p>
           ) : null}
 

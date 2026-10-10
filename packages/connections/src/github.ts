@@ -206,13 +206,24 @@ export async function exchangeUserCode(
     }),
   });
 
-  if (!response.ok) throw new Error(`user code exchange failed: ${response.status}`);
+  if (!response.ok) throw new Error(`user code exchange failed: HTTP ${response.status}`);
 
   // GitHub answers 200 with an `error` field for a bad code rather than a 4xx,
   // so a status check alone would accept a failure as a success.
-  const body = (await response.json()) as { access_token?: unknown; error?: unknown };
+  const body = (await response.json()) as {
+    access_token?: unknown;
+    error?: unknown;
+    error_description?: unknown;
+  };
+
   if (typeof body.access_token !== 'string' || body.access_token === '') {
-    throw new Error('user code exchange returned no token');
+    // Carry GitHub's own code — `bad_verification_code`,
+    // `incorrect_client_credentials`, `redirect_uri_mismatch`. It names the
+    // cause exactly, it is an error code rather than a secret, and without it
+    // every one of those failures looks identical in a log. The description is
+    // left out: it is prose written for a console and can echo the request.
+    const code = typeof body.error === 'string' ? body.error : 'no access_token in response';
+    throw new Error(`user code exchange refused: ${code}`);
   }
 
   return body.access_token;
@@ -244,7 +255,9 @@ export async function userInstallationIds(userToken: string): Promise<ReadonlySe
       },
     );
 
-    if (!response.ok) throw new Error(`installation list failed: ${response.status}`);
+    if (!response.ok) {
+      throw new Error(`installation list failed: HTTP ${response.status} on page ${String(page)}`);
+    }
 
     const body = (await response.json()) as { installations?: unknown };
     const page_ = Array.isArray(body.installations) ? body.installations : [];
