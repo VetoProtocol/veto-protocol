@@ -54,12 +54,23 @@ describe('observeClient', () => {
     expect(other.fingerprint).not.toBe(claude.fingerprint);
   });
 
-  it('distinguishes the same product on a different channel', () => {
-    // `claude-code (sdk-cli)` and `claude-code (desktop)` are the same product
-    // reached two ways, and the channel is part of the stable half.
-    expect(observeClient('claude-code/2.1.293 (desktop)').fingerprint).not.toBe(
-      observeClient(CLAUDE_CODE).fingerprint,
-    );
+  it('treats one install reaching us two ways as one client', () => {
+    // Measured, not assumed. The same Claude Code install sent both of these:
+    //
+    //   claude-code/2.1.293 (sdk-cli)   its own server health check
+    //   claude-code/2.1.289 (cli)       an actual tool call
+    //
+    // Hashing the channel gave every user two fingerprints for one program,
+    // pinned whichever connected first, and would have challenged the other
+    // the moment enforcement went on. Found by deploying and making one real
+    // call, which no amount of unit testing was going to turn up.
+    const health = observeClient('claude-code/2.1.293 (sdk-cli)');
+    const toolCall = observeClient('claude-code/2.1.289 (cli)');
+
+    expect(toolCall.fingerprint).toBe(health.fingerprint);
+    // Both halves are still recorded; they simply do not decide anything.
+    expect(health.channel).toBe('sdk-cli');
+    expect(toolCall.channel).toBe('cli');
   });
 
   it('gives a missing header its own bucket rather than failing', () => {
@@ -111,7 +122,7 @@ describe('observeClient', () => {
   });
 
   it('names the version that produced the digest', () => {
-    expect(FINGERPRINT_VERSION).toBe(1);
+    expect(FINGERPRINT_VERSION).toBe(2);
   });
 });
 

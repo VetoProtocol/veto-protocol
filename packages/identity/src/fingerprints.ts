@@ -18,15 +18,30 @@
  *
  * ## The split that makes it usable
  *
- * `product` and `channel` survive a release. The version does not. Hashing the
- * whole header would make every routine Claude Code update indistinguishable
- * from a different program arriving on the same credential — the control would
- * fire on every upgrade, somebody would switch it off, and a control that is
- * off protects nothing.
+ * Only `product` is hashed. Everything else in that header varies with how the
+ * same program happens to be connecting, and hashing any of it turns a routine
+ * event into an alarm.
  *
- * So the digest covers the stable half and the version rides alongside as a
- * recorded fact. "A different program is using this agent" is the alarm;
- * "this program updated itself" is a note with a date on it.
+ * The version was the obvious case: hash `2.1.293` and every Claude Code
+ * update looks like a different program on the same credential. The control
+ * fires on every upgrade, somebody switches it off, and a control that is off
+ * protects nothing.
+ *
+ * `channel` — the parenthesised comment — looked stable and is not. Measured
+ * against one Claude Code install on 2026-10-09 and 2026-10-10:
+ *
+ *     claude-code/2.1.293 (sdk-cli)   the client's own server health check
+ *     claude-code/2.1.289 (cli)       an actual tool call
+ *
+ * Same machine, same install, same person: two channels *and* two version
+ * numbers, depending on which internal path built the request. Hashing the
+ * channel would have given every user two fingerprints, pinned one of them,
+ * and challenged the other the first time anybody turned enforcement on. It is
+ * recorded, like the version, and never hashed.
+ *
+ * What survives is the product. "A different program is using this agent" is
+ * the alarm; "the same program connected a different way, or updated itself"
+ * is a note with a date on it.
  *
  * ## Nothing here decides anything
  *
@@ -49,7 +64,7 @@ import type { FingerprintMode } from './agents.ts';
  * hashed payload: a change becomes a visible migration instead of a silent
  * mass re-pinning that an operator would read as "everything changed at once".
  */
-export const FINGERPRINT_VERSION = 1;
+export const FINGERPRINT_VERSION = 2;
 
 /**
  * How many distinct fingerprints one agent may accumulate.
@@ -131,7 +146,11 @@ function digestOf(product: string, channel: string | null, version: string | nul
   // A fixed-shape JSON payload, not concatenation. `a|b` and `a` + `|b` must
   // not produce the same digest, and the same discipline governs `actionDigest`
   // in @veto/core.
-  const payload = JSON.stringify({ v: FINGERPRINT_VERSION, product, channel });
+  //
+  // `channel` is deliberately absent: see the note above on `(cli)` versus
+  // `(sdk-cli)` from one install. It is carried on the observation and stored,
+  // but it must not change the identity.
+  const payload = JSON.stringify({ v: FINGERPRINT_VERSION, product });
   const fingerprint = `sha256:${createHash('sha256').update(payload, 'utf8').digest('hex')}`;
   return { fingerprint, product, channel, version };
 }
@@ -234,6 +253,8 @@ export async function recordSighting(db: Db, input: SightingInput): Promise<Sigh
             -- The newest version wins; the first is never overwritten, so a row
             -- carries the span over which this software has been connecting.
             last_version = coalesce(excluded.last_version, agent_fingerprints.last_version),
+            -- Recorded, not hashed, so it moves exactly like the version does.
+            channel = coalesce(excluded.channel, agent_fingerprints.channel),
             -- Handshake fields fill in but never blank out: most requests carry
             -- no handshake, and letting those erase what "initialize" told us
             -- would leave the column empty almost always.

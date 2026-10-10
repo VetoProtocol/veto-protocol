@@ -51,29 +51,49 @@ to say so rather than implying a check that is not happening.
 Nothing downstream may read a fingerprint as proof of identity. It is the same
 rule presence lives under: a signal, never proof of intent.
 
-## Why the version is not hashed
+## Only the product is hashed
 
-`product` and `channel` survive a release. The version does not — `2.1.293` is
-a patch number on a tool that updates often.
+Everything else in that header varies with *how* the same program happens to be
+connecting, and hashing any of it turns a routine event into an alarm.
 
-Hashing the whole header would make every routine Claude Code update
-indistinguishable from a different program arriving on the same credential. The
-control would fire on every upgrade, somebody would switch it off, and a
-control that is off protects nothing.
+The version was the obvious case. `2.1.293` is a patch number on a tool that
+updates often, so hashing it would make every routine update
+indistinguishable from a different program arriving on the same credential —
+the control fires on every upgrade, somebody switches it off, and a control
+that is off protects nothing.
 
-So the digest covers the stable half and the version rides alongside as a
-recorded fact:
+**The channel looked stable and was not.** One Claude Code install, measured
+twice a day apart:
+
+```
+claude-code/2.1.293 (sdk-cli)   the client's own server health check
+claude-code/2.1.289 (cli)       an actual tool call
+```
+
+Same machine, same install, same person: two channels *and* two version
+numbers, depending on which internal path built the request. Hashing the
+channel would have given every user two fingerprints for one program, pinned
+whichever connected first, and challenged the other the first time anybody
+turned enforcement on.
+
+This was found by deploying and making one real call — no amount of unit
+testing was going to turn it up, because every unit test used the string the
+first measurement produced. Migration 0028 moved the digest to v2 and cleared
+the table.
 
 | Part | Example | Hashed | On change |
 | --- | --- | --- | --- |
-| product | `claude-code` | yes | the alarm |
-| channel | `sdk-cli` | yes | the alarm |
-| version | `2.1.293` | no | a dated note |
+| product | `claude-code` | **yes** | the alarm |
+| channel | `cli`, `sdk-cli` | no | a note |
+| version | `2.1.289` | no | a dated note |
 
 `FINGERPRINT_VERSION` is inside the hashed payload. Changing what goes into a
 digest invalidates every stored one, so that becomes a visible migration rather
 than a silent mass re-pinning an operator would read as "everything changed at
-once".
+once". It has already earned its keep: the v1 → v2 move above needed migration
+0028 to clear the table, because trust on first use pins only when an agent has
+*no* rows — a stale v1 row left in place would have made every existing agent
+raise a "new software" alert for the software it had always been using.
 
 ## What is built
 

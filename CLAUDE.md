@@ -144,10 +144,14 @@ makes it usable: the gateway is stateless per request, so anything keyed to
 `initialize` would need shared state and would be absent for a client that
 never handshakes.
 
-Only the stable half is hashed. `claude-code` + `sdk-cli` survives a release;
-`2.1.293` does not, so hashing the whole header would make every routine update
-look like a different program and the control would be switched off within a
-week. The version is recorded beside the digest as a note.
+**Only the product is hashed.** The version obviously moves, but the channel —
+the parenthesised comment — looked stable and is not: one Claude Code install
+sent `claude-code/2.1.293 (sdk-cli)` for its own health check and
+`claude-code/2.1.289 (cli)` for a real tool call. Hashing it gave every user two
+fingerprints for one program and would have challenged the second one the moment
+enforcement went on. Found by deploying and making one real call; migration 0028
+moved the digest to v2 and cleared the table. Channel and version are recorded
+beside the digest as notes.
 
 **It is change detection, never authentication**, and that is asserted as a
 test rather than left in a comment: a thief who copies the token *and* the
