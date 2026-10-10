@@ -18,6 +18,7 @@ import {
   createGitHubExchange,
   createGoogleExchange,
   type GitHubAppConfig,
+  type GitHubUserAuthConfig,
   type GoogleOAuthConfig,
 } from '@veto/connections';
 import type { WebAuthnConfig } from '@veto/passkeys';
@@ -79,6 +80,23 @@ const github: GitHubAppConfig | null =
         privateKeyPem: readFileSync(required('GITHUB_PRIVATE_KEY_PATH'), 'utf8'),
       };
 
+// The App's *user*-authorization credentials, needed only to prove that the
+// person finishing an install actually controls the installation they claim.
+//
+// Separate from the App config because the gateway must never hold this: it
+// mints installation tokens and takes no part in the install round trip, and a
+// secret that only one process needs should only reach one process.
+//
+// Absent means new GitHub connections cannot be made — the install route
+// refuses to start rather than taking the caller's word for an installation id.
+// Connections already on file keep working, because minting a token for one
+// needs the private key and nothing here.
+const githubClientId = (process.env['GITHUB_CLIENT_ID'] ?? '').trim();
+const githubUserAuth: GitHubUserAuthConfig | null =
+  githubClientId === ''
+    ? null
+    : { clientId: githubClientId, clientSecret: required('GITHUB_CLIENT_SECRET') };
+
 // Origin and RP id are configuration, never derived from a request: a caller
 // that could name its own origin could satisfy the ceremony from a site it
 // controls.
@@ -107,6 +125,7 @@ const app = createApp({
   wrapper,
   google,
   github,
+  githubUserAuth,
   webauthn,
   exchange: google === null ? null : createGoogleExchange(google),
   githubExchange: github === null ? null : createGitHubExchange(github),

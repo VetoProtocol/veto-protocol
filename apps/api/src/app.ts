@@ -14,7 +14,11 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import type { Pool } from 'pg';
 import type Redis from 'ioredis';
 import { PolicyUnavailableError, type PolicyDecisions, type PolicyFacts } from '@veto/permit';
-import { createRepoReader, createDriveReader } from '@veto/connections';
+import {
+  createDriveReader,
+  createRepoReader,
+  type GitHubUserAuthConfig,
+} from '@veto/connections';
 import type {
   DriveReader,
   GitHubAppConfig,
@@ -62,6 +66,8 @@ export interface AppDeps {
   readonly google?: GoogleOAuthConfig | null;
   /** Null when the GitHub App is not configured. Same rule. */
   readonly github?: GitHubAppConfig | null;
+  /** App user-authorization credentials. Absent means new installs cannot be proved, so they are refused. */
+  readonly githubUserAuth?: GitHubUserAuthConfig | null;
   readonly githubExchange?: UpstreamTokenExchange | null;
   /** Overridable so a test can sync repositories without a live GitHub. */
   readonly repos?: RepoReader | null;
@@ -174,6 +180,7 @@ export function createApp(deps: AppDeps): FastifyInstance {
     wrapper: deps.wrapper,
     google: deps.google ?? null,
     github: deps.github ?? null,
+    githubUserAuth: deps.githubUserAuth ?? null,
     exchange: deps.exchange ?? null,
     githubExchange: deps.githubExchange ?? null,
   });

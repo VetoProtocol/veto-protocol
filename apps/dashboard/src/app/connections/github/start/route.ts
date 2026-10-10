@@ -11,6 +11,11 @@
  * somebody on our callback with an installation id of the attacker's choosing
  * and attach it to the victim's workspace (§12.1 OAuth CSRF).
  *
+ * The state is **issued by the control plane**, not minted here. It is checked
+ * there, and the side that checks a value should be the side that creates it.
+ * An earlier version generated it in this route and sent it along, which made
+ * it a value the caller picked.
+ *
  * A signed-in session is required first, for the reason the Google route
  * requires one: an installation granted by an anonymous visitor would have no
  * workspace to belong to.
@@ -20,7 +25,6 @@
  */
 
 import { NextResponse, type NextRequest } from 'next/server';
-import * as client from 'openid-client';
 import { cookieOptions } from '@/lib/cookie-options';
 import { CONNECT_COOKIE, CONNECT_TTL_MS, sealConnect } from '@/lib/connect-cookie';
 import { ApiError, githubInstallUrl } from '@/lib/api';
@@ -33,11 +37,13 @@ export async function GET(request: NextRequest) {
   const session = await currentSession();
   if (!session) return back(request, 'session');
 
-  const state = client.randomState();
-
+  // The state comes back from the control plane now; this route no longer
+  // mints one. A value the browser chooses is not CSRF protection against the
+  // browser, and the side that checks it is the side that should issue it.
   let url: string;
+  let state: string;
   try {
-    ({ url } = await githubInstallUrl(session.credential, { state }));
+    ({ url, state } = await githubInstallUrl(session.credential));
   } catch (error) {
     // 503 from this route means one thing: the GitHub App is not configured on
     // the server. That is a deployment fact worth naming precisely.

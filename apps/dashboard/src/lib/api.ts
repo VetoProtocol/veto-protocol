@@ -347,24 +347,19 @@ export const connectGoogle = (
  * chosen on GitHub's own screen and cannot be widened from this side. `state`
  * still round-trips so the callback can be tied to the request that began it.
  */
-export const githubInstallUrl = (
-  credential: string,
-  query: { state: string },
-): Promise<{ url: string }> =>
-  request(`/v1/connections/github/install-url?${new URLSearchParams(query).toString()}`, {
-    method: 'GET',
-    credential,
-  });
+export const githubInstallUrl = (credential: string): Promise<{ url: string; state: string }> =>
+  request('/v1/connections/github/install-url', { method: 'GET', credential });
 
 /**
- * Hands the installation id across.
+ * Hands the installation id and the proof of it across.
  *
- * The id is not trusted by the API either — it asks GitHub what that
- * installation is and stores the answer. This is just the carrier.
+ * The id is not trusted by the API: the `code` exchanges for a user token, and
+ * that token's own installation list is what decides whether this id was the
+ * caller's to claim. This is just the carrier.
  */
 export const connectGithub = (
   credential: string,
-  body: { installation_id: string; state: string },
+  body: { installation_id: string; state: string; code: string },
 ): Promise<ConnectionView> =>
   request('/v1/connections/github', { method: 'POST', credential, body: JSON.stringify(body) });
 

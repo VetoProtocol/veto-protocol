@@ -17,14 +17,16 @@
 import { createVerify, generateKeyPairSync } from 'node:crypto';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  GITHUB_API_URL,
+  GITHUB_SERVICES,
+  GITHUB_SERVICE_NAMES,
   buildInstallUrl,
   createAppJwt,
   createGitHubExchange,
-  GITHUB_SERVICE_NAMES,
-  GITHUB_SERVICES,
   isGitHubService,
   readInstallation,
   type GitHubAppConfig,
+  userControlsInstallation,
 } from '../src/github.ts';
 
 const { privateKey, publicKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
@@ -258,5 +260,114 @@ describe('the install URL', () => {
     // person installing it. There is no parameter here that could widen it.
     expect(url.searchParams.get('scope')).toBeNull();
     expect(url.searchParams.get('permissions')).toBeNull();
+  });
+});
+
+/**
+ * Proving an installation belongs to the person claiming it (F-01).
+ *
+ * `readInstallation` uses the App JWT and can read any installation of this
+ * App, so it answers "does this exist" and never "is this yours". These cover
+ * the half that answers the second question.
+ */
+describe('userControlsInstallation', () => {
+  const CONFIG = { clientId: 'Iv1.test', clientSecret: 'shh' };
+
+  function stub(options: {
+    reachable?: readonly string[];
+    tokenBody?: unknown;
+    listStatus?: number;
+  } = {}) {
+    const reachable = options.reachable ?? ['111'];
+
+    vi.stubGlobal('fetch', async (url: unknown) => {
+      const href = String(url);
+      const json = (body: unknown, status = 200) =>
+        new Response(JSON.stringify(body), {
+          status,
+          headers: { 'content-type': 'application/json' },
+        });
+
+      if (href === 'https://github.com/login/oauth/access_token') {
+        return json(options.tokenBody ?? { access_token: 'gho_x' });
+      }
+      if (href.startsWith(`${GITHUB_API_URL}/user/installations`)) {
+        if (options.listStatus !== undefined && options.listStatus !== 200) {
+          return json({ message: 'nope' }, options.listStatus);
+        }
+        return json({ installations: reachable.map((id) => ({ id: Number(id) })) });
+      }
+      throw new Error(`unexpected fetch: ${href}`);
+    });
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('says yes for an installation the user can reach', async () => {
+    stub({ reachable: ['111', '222'] });
+    await expect(userControlsInstallation(CONFIG, { code: 'c', installationId: '222' })).resolves.toBe(
+      true,
+    );
+  });
+
+  it('says no for one they cannot', async () => {
+    stub({ reachable: ['111'] });
+    await expect(userControlsInstallation(CONFIG, { code: 'c', installationId: '999' })).resolves.toBe(
+      false,
+    );
+  });
+
+  it('throws rather than returning false when the code is rejected', async () => {
+    // GitHub answers 200 with an `error` field for a bad code, so a status
+    // check alone would read a failure as a success and hand back an empty
+    // token. The caller must see a throw, because "no token" and "not yours"
+    // are different facts and only one of them is about ownership.
+    stub({ tokenBody: { error: 'bad_verification_code' } });
+    await expect(
+      userControlsInstallation(CONFIG, { code: 'c', installationId: '111' }),
+    ).rejects.toThrow();
+  });
+
+  it('throws when the installation list cannot be read', async () => {
+    // Never a silent false: an unreadable list is not evidence of anything,
+    // and the route turns a throw into a refusal anyway (invariant 1).
+    stub({ listStatus: 500 });
+    await expect(
+      userControlsInstallation(CONFIG, { code: 'c', installationId: '111' }),
+    ).rejects.toThrow();
+  });
+
+  it('reads past the first page', async () => {
+    const many = Array.from({ length: 100 }, (_, i) => String(5000 + i));
+    stub({ reachable: [...many, '777'] });
+    await expect(userControlsInstallation(CONFIG, { code: 'c', installationId: '777' })).resolves.toBe(
+      true,
+    );
+  });
+
+  it('sends the client secret to GitHub and nowhere else', async () => {
+    const seen: string[] = [];
+    vi.stubGlobal('fetch', async (url: unknown, init: unknown) => {
+      seen.push(String(url));
+      const body = (init as { body?: unknown }).body;
+      if (typeof body === 'string' && body.includes(CONFIG.clientSecret)) {
+        expect(String(url)).toBe('https://github.com/login/oauth/access_token');
+      }
+      return new Response(
+        JSON.stringify(
+          String(url).includes('/user/installations')
+            ? { installations: [{ id: 111 }] }
+            : { access_token: 'gho_x' },
+        ),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
+    });
+
+    await userControlsInstallation(CONFIG, { code: 'c', installationId: '111' });
+
+    // The list call carries the user token, never the secret.
+    expect(seen.some((u) => u.includes('/user/installations'))).toBe(true);
   });
 });

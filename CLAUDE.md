@@ -294,15 +294,25 @@ since migration 0001 and nothing created the first kind until stage 4.
   escalation by argument, the same shape invariant 10 refuses for credentials.
   The walk is bounded and off the decision path: it writes where things are, not
   who may read them, so an edge under a folder nobody was granted reaches nobody.
-- **A GitHub installation is proved, never asserted.** `POST /v1/connections/github`
-  redeems a single-use state the server itself issued, keyed by workspace, before
-  it asks GitHub anything. It shipped without that check: any control-plane
-  credential could post a stranger's installation id — they are small sequential
-  integers — and have this server mint real tokens for their repositories with
-  its own App key. The comment above that call claimed the id was "not trusted"
-  because GitHub was asked what the installation *is*, which was never a check on
-  who may claim it. A comment describing a control that does not exist is worse
-  than no comment.
+- **A GitHub installation is proved by the callback's `code`, never by its id
+  or its state.** `readInstallation` authenticates with the App JWT, which can
+  read *any* installation of this App, so it answers "does this exist" and never
+  "is this yours". The install `state` is CSRF protection: it says a flow began
+  in this workspace, not which installation it ended at. Neither is ownership,
+  and for two rounds of fixes the code claimed otherwise — any control-plane
+  credential could start a flow, skip GitHub, post a stranger's installation id
+  (they are small sequential integers) and have this server mint real tokens for
+  their repositories with its own App key. The proof is the user-authorization
+  `code` GitHub returns after an install: it exchanges for a *user* token, and
+  that token's `GET /user/installations` lists only what that person can reach.
+  The App therefore requires "Request user authorization (OAuth) during
+  installation", and `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` live on the API
+  alone — the gateway mints installation tokens and takes no part in the install
+  round trip. Without them the install route **refuses to begin** rather than
+  taking the caller's word; connections already on file are unaffected. Three
+  separate comments here have described a control that did not exist, which is
+  why `apps/api/test/github-install.test.ts` asserts the attack rather than the
+  presence of a check. Console side: `docs/github-setup.md`.
 - **A GitHub repository is keyed by its numeric id, never `owner/repo`.** The
   slash does not survive Permit's instance-key grammar, and an id survives a
   rename where a name would silently follow whoever registered it next. Files,

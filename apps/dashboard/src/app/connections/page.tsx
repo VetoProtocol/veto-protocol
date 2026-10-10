@@ -39,6 +39,11 @@ const ERRORS: Record<string, string> = {
     'That is not a service this dashboard knows how to connect. Nothing was connected — and nothing else was connected in its place.',
   noinstallation:
     'GitHub sent no installation back. Nothing was connected. If you cancelled on the GitHub screen, that is why.',
+  // Distinct from `nocode`, which is Google's. This one almost always means a
+  // settings change was missed rather than anything the person did wrong, so it
+  // says which setting.
+  nouserauth:
+    'GitHub did not confirm who owns that installation, so nothing was connected. The GitHub App needs \u201cRequest user authorization (OAuth) during installation\u201d switched on.',
 };
 
 const STATUS_TONE: Record<string, Tone> = {

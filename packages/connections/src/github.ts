@@ -149,6 +149,134 @@ export function buildInstallUrl(config: InstallConfig, options: { state: string 
   return url.href;
 }
 
+/**
+ * The App's *user*-authorization credentials — and why they have to exist.
+ *
+ * ## The hole this closes
+ *
+ * `readInstallation` authenticates with the **App JWT**, which can read any
+ * installation of this App, including one on a GitHub account the caller has
+ * never touched. It confirms an installation *exists*. It has never confirmed
+ * that the person claiming it controls it.
+ *
+ * The install `state` does not close that gap either. It proves "this user, in
+ * this workspace, began an install flow recently" — CSRF protection, and
+ * nothing about any particular installation. So an authenticated caller could
+ * start a flow, never visit GitHub, and post somebody else's installation id;
+ * ids are small sequential integers. This server would then mint real tokens
+ * for that stranger's repositories with the App private key it holds.
+ *
+ * ## What actually proves it
+ *
+ * GitHub's own answer: with "Request user authorization (OAuth) during
+ * installation" enabled, the post-install redirect carries a `code` as well as
+ * the installation id. That code exchanges for a **user** access token, and
+ * `GET /user/installations` with that token returns only the installations
+ * *that person* can reach. An id absent from that list was not theirs to claim.
+ *
+ * The client secret lives here and never reaches the dashboard or the gateway.
+ * The gateway mints installation tokens and has no business in the install
+ * round trip, which is why this is a separate type from `GitHubAppConfig`
+ * rather than two more fields on it — the same narrowing `ConsentConfig` does.
+ */
+export interface GitHubUserAuthConfig {
+  readonly clientId: string;
+  /** Never in the vault, never in a response, never in a log. */
+  readonly clientSecret: string;
+}
+
+/**
+ * Trade the post-install `code` for a user access token.
+ *
+ * The token is used once, immediately, to ask which installations the person
+ * can reach — and is never stored. It is a means of asking GitHub a question
+ * about the human in front of us, not a credential this product keeps.
+ */
+export async function exchangeUserCode(
+  config: GitHubUserAuthConfig,
+  code: string,
+): Promise<string> {
+  const response = await fetch('https://github.com/login/oauth/access_token', {
+    method: 'POST',
+    headers: { accept: 'application/json', 'content-type': 'application/json' },
+    body: JSON.stringify({
+      client_id: config.clientId,
+      client_secret: config.clientSecret,
+      code,
+    }),
+  });
+
+  if (!response.ok) throw new Error(`user code exchange failed: ${response.status}`);
+
+  // GitHub answers 200 with an `error` field for a bad code rather than a 4xx,
+  // so a status check alone would accept a failure as a success.
+  const body = (await response.json()) as { access_token?: unknown; error?: unknown };
+  if (typeof body.access_token !== 'string' || body.access_token === '') {
+    throw new Error('user code exchange returned no token');
+  }
+
+  return body.access_token;
+}
+
+/**
+ * Which installations this person can actually reach.
+ *
+ * Paginated deliberately rather than trusting the first page: somebody who
+ * belongs to many organisations would otherwise have a legitimate installation
+ * silently judged not theirs. Bounded, because this runs on a request and an
+ * unbounded loop against a third party is somebody else's rate limit deciding
+ * when our handler returns.
+ */
+export async function userInstallationIds(userToken: string): Promise<ReadonlySet<string>> {
+  const ids = new Set<string>();
+  const PER_PAGE = 100;
+  const MAX_PAGES = 10;
+
+  for (let page = 1; page <= MAX_PAGES; page += 1) {
+    const response = await fetch(
+      `${GITHUB_API_URL}/user/installations?per_page=${String(PER_PAGE)}&page=${String(page)}`,
+      {
+        headers: {
+          authorization: `Bearer ${userToken}`,
+          accept: 'application/vnd.github+json',
+          'x-github-api-version': '2022-11-28',
+        },
+      },
+    );
+
+    if (!response.ok) throw new Error(`installation list failed: ${response.status}`);
+
+    const body = (await response.json()) as { installations?: unknown };
+    const page_ = Array.isArray(body.installations) ? body.installations : [];
+
+    for (const entry of page_) {
+      const id = (entry as { id?: unknown }).id;
+      // GitHub sends a number; everything compared downstream is a string.
+      if (typeof id === 'number' || typeof id === 'string') ids.add(String(id));
+    }
+
+    if (page_.length < PER_PAGE) break;
+  }
+
+  return ids;
+}
+
+/**
+ * Does this person control this installation?
+ *
+ * The whole point of the `code` on the callback. A `false` here means the id
+ * was claimed rather than owned, and the only correct response is to refuse —
+ * there is no degraded version of this answer.
+ */
+export async function userControlsInstallation(
+  config: GitHubUserAuthConfig,
+  input: { readonly code: string; readonly installationId: string },
+): Promise<boolean> {
+  const userToken = await exchangeUserCode(config, input.code);
+  const reachable = await userInstallationIds(userToken);
+  return reachable.has(input.installationId);
+}
+
 export interface InstallationResult {
   readonly installationId: string;
   readonly accountLogin: string;
@@ -156,12 +284,18 @@ export interface InstallationResult {
 }
 
 /**
- * Confirm an installation exists and read back what it actually holds.
+ * Read back what an installation actually holds.
  *
- * The callback carries an `installation_id` query parameter, which is a
- * caller-supplied number. It is not trusted: this asks GitHub what that
- * installation is and which permissions it has, and the answer — not the
- * request — is what gets stored. The same shape as reading a file's parent from
+ * **This does not establish ownership and never could.** It authenticates with
+ * the App JWT, which can read any installation of this App, so it answers
+ * "does this exist and what does it hold" — not "is this yours". An earlier
+ * version of this comment treated it as the check on a caller-supplied
+ * installation id, which it was not; `userControlsInstallation` is. Call that
+ * first, and use this only for the facts that get stored.
+ *
+ * What it is good for: the permissions recorded are GitHub's answer rather than
+ * the caller's claim, so an installer who granted only issues cannot be
+ * recorded as having granted code. The same shape as reading a file's parent from
  * Drive rather than from an argument.
  */
 export async function readInstallation(

@@ -13,10 +13,13 @@
  *     file the victim's agents then read would be the attacker's to choose.
  *  3. `state` must equal the sealed one, compared without leaking where it
  *     stopped matching.
- *  4. The installation id goes to the control plane, which holds the App
- *     private key and asks GitHub what that installation actually is. This
- *     route never decides whose repositories these are; it carries a number
- *     that the server then verifies.
+ *  4. A `code` must be present. It is what proves the installation belongs to
+ *     the person who just completed the flow — the control plane exchanges it
+ *     for a user token and asks GitHub which installations that person can
+ *     actually reach. Asking what an installation *is* was never a check on
+ *     who may claim it, and for a while nothing here was.
+ *  5. All of it goes to the control plane. This route never decides whose
+ *     repositories these are; it carries values the server then verifies.
  *
  * The cookie is cleared on every path out, success or failure, so one attempt
  * cannot be replayed. Outcomes travel as a fixed code that the page looks up,
@@ -64,16 +67,27 @@ export async function GET(request: NextRequest) {
   const installationId = params.get('installation_id') ?? '';
   if (!/^[0-9]{1,20}$/.test(installationId)) return done(request, 'error', 'noinstallation');
 
+  // The proof. Present only because the App has "Request user authorization
+  // (OAuth) during installation" switched on — without it GitHub sends no code,
+  // and there is no way to tell whether this installation belongs to the person
+  // who just arrived. Missing is a refusal, never a reason to continue: the
+  // whole point is that an installation id alone is a claim.
+  const code = params.get('code') ?? '';
+  if (!/^[A-Za-z0-9._~-]{8,512}$/.test(code)) return done(request, 'error', 'nouserauth');
+
   try {
     // Nothing from this is carried back in the URL. The page re-reads the
     // connection list, so what it shows is what GitHub confirmed rather than
     // what this redirect claimed.
-    // The state goes with it. The cookie proves this browser began the flow;
-    // the state proves the *server* issued it for this workspace, and the
-    // control plane will not accept an installation id without one.
+    // Three values, three different jobs. The cookie proves this browser began
+    // the flow; the state proves the control plane issued it for this
+    // workspace; the code proves the installation belongs to the person who
+    // just granted it. Only the third is about ownership, and it is the one
+    // that was missing.
     await connectGithub(session.credential, {
       installation_id: installationId,
       state: flow.state,
+      code,
     });
     return done(request, 'connected', 'ok');
   } catch (error) {

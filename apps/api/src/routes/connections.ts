@@ -20,23 +20,26 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { Pool } from 'pg';
 import type Redis from 'ioredis';
+import { randomBytes } from 'node:crypto';
 import { withWorkspace } from '@veto/db';
 import {
-  buildConsentUrl,
-  buildInstallUrl,
-  readInstallation,
-  createConnection,
-  exchangeAuthorizationCode,
   GOOGLE_SERVICES,
   GOOGLE_SERVICE_NAMES,
-  listConnections,
+  buildConsentUrl,
+  buildInstallUrl,
+  createConnection,
+  exchangeAuthorizationCode,
   findConnection,
+  listConnections,
+  readInstallation,
   revealRefreshTokenForBroker,
   revokeConnection,
   revokeUpstream,
   type GitHubAppConfig,
+  type GitHubUserAuthConfig,
   type GoogleOAuthConfig,
   type UpstreamTokenExchange,
+  userControlsInstallation,
 } from '@veto/connections';
 import type { KeyWrapper } from '@veto/vault';
 import { ERROR_SCHEMA, HttpError } from '../errors.ts';
@@ -45,9 +48,13 @@ import { requireScope, SCOPE_CONTROL_PLANE } from '../scope.ts';
 export interface ConnectionRoutesDeps {
   readonly pool: Pool;
   /**
-   * Holds the single-use install state. The GitHub flow has no authorization
-   * code to prove with, so this is what ties an installation id to the browser
-   * round trip that obtained it.
+   * Holds the single-use install state, which ties the callback to the browser
+   * round trip that began it — CSRF protection, and only that.
+   *
+   * An earlier comment here said the GitHub flow "has no authorization code to
+   * prove with", and treated this state as the proof instead. It never was: it
+   * says a flow started, not which installation it ended at. The proof is the
+   * `code` on the callback.
    */
   readonly redis: Redis;
   readonly wrapper: KeyWrapper;
@@ -55,6 +62,16 @@ export interface ConnectionRoutesDeps {
   readonly exchange: UpstreamTokenExchange | null;
   /** Null until the GitHub App is configured; the routes then 503 rather than half-work. */
   readonly github: GitHubAppConfig | null;
+  /**
+   * The App's user-authorization credentials, held by the control plane alone.
+   *
+   * Absent means the install flow cannot prove who owns an installation, and
+   * the flow refuses to start rather than falling back to taking the caller's
+   * word for it. Existing connections are unaffected: minting tokens for an
+   * installation already on file needs only the private key, which lives on
+   * `github` and is what the gateway holds.
+   */
+  readonly githubUserAuth: GitHubUserAuthConfig | null;
   /**
    * Revocation has to reach the provider the connection actually belongs to.
    * Handing an installation id to Google's revoke endpoint fails quietly and
@@ -100,25 +117,35 @@ const CONNECT_BODY = {
  * must recognise its own callback later; both are public values, and both are
  * shape-checked before they are interpolated into a URL that a browser follows.
  */
+/**
+ * Nothing. The caller no longer chooses the state.
+ *
+ * It used to supply one, which made `state` a value an attacker could pick and
+ * then redeem at the moment of their choosing. It is CSRF protection, and CSRF
+ * protection the client mints is a token the client can replay against itself.
+ * The server issues it and hands it back.
+ */
 const INSTALL_QUERY = {
   type: 'object',
   additionalProperties: false,
-  required: ['state'],
-  properties: {
-    state: { type: 'string', minLength: 16, maxLength: 128, pattern: '^[A-Za-z0-9._~-]+$' },
-  },
+  properties: {},
 } as const;
 
 const INSTALL_BODY = {
   type: 'object',
   additionalProperties: false,
-  required: ['installation_id', 'state'],
+  required: ['installation_id', 'state', 'code'],
   properties: {
     // Digits only, so nothing can be smuggled into the path this builds.
     installation_id: { type: 'string', minLength: 1, maxLength: 20, pattern: '^[0-9]+$' },
-    // The state this server minted for this workspace. Without it an
-    // installation id is an assertion rather than a proof.
+    // The state this server minted for this workspace. It proves the flow
+    // began here; it proves nothing about *which* installation.
     state: { type: 'string', minLength: 16, maxLength: 128, pattern: '^[A-Za-z0-9._~-]+$' },
+    // The thing that actually proves ownership. GitHub issues it to the person
+    // who just completed the install, it exchanges for a user token, and that
+    // token's `/user/installations` is the only answer to "is this yours".
+    // Required, not optional: an optional proof is not a proof.
+    code: { type: 'string', minLength: 8, maxLength: 512, pattern: '^[A-Za-z0-9._~-]+$' },
   },
 } as const;
 
@@ -309,18 +336,35 @@ export function registerConnectionRoutes(app: FastifyInstance, deps: ConnectionR
       schema: {
         querystring: INSTALL_QUERY,
         response: {
-          200: { type: 'object', properties: { url: { type: 'string' } }, required: ['url'] },
+          200: {
+            type: 'object',
+            properties: { url: { type: 'string' }, state: { type: 'string' } },
+            required: ['url', 'state'],
+          },
           '4xx': ERROR_SCHEMA,
           '5xx': ERROR_SCHEMA,
         },
       },
     },
-    async (request: FastifyRequest<{ Querystring: { state: string } }>) => {
+    async (request: FastifyRequest) => {
       requireScope(request, SCOPE_CONTROL_PLANE);
       const { workspaceId, userId } = request.principal;
 
       if (!deps.github) {
         throw new HttpError(503, 'CONNECTION_EXPIRED', 'GitHub is not configured on this server');
+      }
+
+      // Refused here rather than at the callback, so somebody does not pick
+      // repositories on GitHub's screen and only then discover this server
+      // cannot finish. Without user authorization there is no way to prove an
+      // installation belongs to the person claiming it, and the honest answer
+      // to that is to not begin.
+      if (!deps.githubUserAuth) {
+        throw new HttpError(
+          503,
+          'CONNECTION_EXPIRED',
+          'GitHub user authorization is not configured on this server',
+        );
       }
 
       // No PKCE and no scope list. Unlike an OAuth consent screen there is
@@ -331,19 +375,17 @@ export function registerConnectionRoutes(app: FastifyInstance, deps: ConnectionR
       //
       // Only the slug crosses this line, never the private key — the same
       // narrowing `ConsentConfig` does for the Google client secret.
+      // Minted here, not accepted from the caller. 32 bytes of CSPRNG, base64url
+      // — the same shape the dashboard used to generate, moved to the side that
+      // is going to check it.
+      const state = randomBytes(32).toString('base64url');
+
       // Remembered before the URL is handed out, so only a state this server
       // issued for this workspace can later be redeemed. The value is the user
       // who began it, which is what the connect route compares against.
-      await deps.redis.set(
-        installKey(workspaceId, request.query.state),
-        userId,
-        'EX',
-        INSTALL_STATE_TTL_SECONDS,
-      );
+      await deps.redis.set(installKey(workspaceId, state), userId, 'EX', INSTALL_STATE_TTL_SECONDS);
 
-      return {
-        url: buildInstallUrl({ appSlug: deps.github.appSlug }, { state: request.query.state }),
-      };
+      return { url: buildInstallUrl({ appSlug: deps.github.appSlug }, { state }), state };
     },
   );
 
@@ -356,7 +398,7 @@ export function registerConnectionRoutes(app: FastifyInstance, deps: ConnectionR
       },
     },
     async (
-      request: FastifyRequest<{ Body: { installation_id: string; state: string } }>,
+      request: FastifyRequest<{ Body: { installation_id: string; state: string; code: string } }>,
       reply,
     ) => {
       requireScope(request, SCOPE_CONTROL_PLANE);
@@ -385,8 +427,52 @@ export function registerConnectionRoutes(app: FastifyInstance, deps: ConnectionR
         );
       }
 
-      if (!deps.github) {
+      if (!deps.github || !deps.githubUserAuth) {
         throw new HttpError(503, 'CONNECTION_EXPIRED', 'GitHub is not configured on this server');
+      }
+
+      // **The check that makes an installation id mean something.**
+      //
+      // Everything above proves a flow began here. None of it proves this
+      // installation is the caller's: `readInstallation` below authenticates
+      // with the App JWT, which can read any installation of this App, so it
+      // answers "does this exist" and never "is this yours".
+      //
+      // Without this, an authenticated caller could start a flow, never visit
+      // GitHub, and post a stranger's installation id — they are small
+      // sequential integers — attaching somebody else's repositories to their
+      // own workspace, which this server would then mint real tokens for with
+      // the App private key. The whole of §12.1's IDOR shape, over a number.
+      //
+      // The `code` is GitHub's own evidence about the human who just finished
+      // the install. It exchanges for a user token, and that token's
+      // `/user/installations` lists what that person can actually reach. An id
+      // absent from it was claimed rather than owned.
+      let owned: boolean;
+      try {
+        owned = await userControlsInstallation(deps.githubUserAuth, {
+          code: request.body.code,
+          installationId: request.body.installation_id,
+        });
+      } catch {
+        // A failed exchange is a refusal, never a pass. GitHub being
+        // unreachable must not become a way to skip the check (invariant 1).
+        throw new HttpError(
+          400,
+          'ARGUMENT_SCHEMA_INVALID',
+          'That installation could not be confirmed',
+        );
+      }
+
+      if (!owned) {
+        // Deliberately the same message as a failed confirmation. Somebody
+        // probing installation ids learns only that it did not work, not
+        // whether the id exists and belongs to somebody else.
+        throw new HttpError(
+          400,
+          'ARGUMENT_SCHEMA_INVALID',
+          'That installation could not be confirmed',
+        );
       }
 
 

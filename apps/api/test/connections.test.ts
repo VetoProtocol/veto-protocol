@@ -190,19 +190,23 @@ describe('GET /v1/connections', () => {
   });
 });
 
-describe('a GitHub installation cannot be claimed by assertion (F-01)', () => {
-  // The hole this closes: `POST /v1/connections/github` took an
-  // `installation_id` from the body, asked GitHub what that installation *is*,
-  // and stored it against the caller's workspace. It never asked *whose* it
-  // was. Installation ids are small sequential integers, so any control-plane
-  // credential could attach a stranger's repositories to its own workspace —
-  // and this server, holding the App private key, would mint real tokens for
-  // them.
+describe('the GitHub install state is CSRF protection, and only that', () => {
+  // These check the state gate: a callback must belong to a flow this server
+  // started, for this workspace, for this user, once.
   //
-  // The Google route has no equivalent because an authorization code cannot be
-  // forged. These assertions check the GitHub route now demands a proof too.
+  // What they do **not** check is ownership, and an earlier version of this
+  // comment claimed they did — it said the state closed F-01. It never could:
+  // the state says a flow began, not which installation it ended at, so a
+  // caller could start one, skip GitHub, and post a stranger's id. The proof is
+  // the `code`, and it is tested in `github-install.test.ts`.
+  //
+  // Both gates matter and neither substitutes for the other, which is why they
+  // are tested apart. Every payload here carries a `code` because the schema
+  // now requires one; none of these requests gets far enough to use it.
 
   const INSTALLATION = '99887766';
+  // Shape-valid, and never exchanged: every request below is refused earlier.
+  const CODE = 'abcdefgh12345678';
 
   it('refuses an installation id with no state at all', async () => {
     const response = await app.inject({
@@ -221,7 +225,7 @@ describe('a GitHub installation cannot be claimed by assertion (F-01)', () => {
       method: 'POST',
       url: '/v1/connections/github',
       headers: as(WS, ALICE),
-      payload: { installation_id: INSTALLATION, state: 'z'.repeat(32) },
+      payload: { installation_id: INSTALLATION, code: CODE, state: 'z'.repeat(32) },
     });
 
     expect(response.statusCode).toBe(400);
@@ -242,7 +246,7 @@ describe('a GitHub installation cannot be claimed by assertion (F-01)', () => {
       method: 'POST',
       url: '/v1/connections/github',
       headers: as(WS, ALICE),
-      payload: { installation_id: INSTALLATION, state },
+      payload: { installation_id: INSTALLATION, code: CODE, state },
     });
 
     expect(response.statusCode).toBe(400);
@@ -259,7 +263,7 @@ describe('a GitHub installation cannot be claimed by assertion (F-01)', () => {
       method: 'POST',
       url: '/v1/connections/github',
       headers: as(WS, ALICE),
-      payload: { installation_id: INSTALLATION, state },
+      payload: { installation_id: INSTALLATION, code: CODE, state },
     });
 
     expect(response.statusCode).toBe(400);
@@ -269,14 +273,14 @@ describe('a GitHub installation cannot be claimed by assertion (F-01)', () => {
     const state = 'e'.repeat(32);
     await redis.set(`veto:${WS}:ghinst:${state}`, ALICE, 'EX', 900);
 
-    // The first attempt gets past the state gate and fails later, at GitHub,
-    // because this test has no App configured. That is the point: the gate let
-    // it through exactly once.
+    // The first attempt gets past the state gate and fails after it, because
+    // this app has no GitHub configured. That is the point: the gate let it
+    // through exactly once, and `getdel` burned the state on the way.
     await app.inject({
       method: 'POST',
       url: '/v1/connections/github',
       headers: as(WS, ALICE),
-      payload: { installation_id: INSTALLATION, state },
+      payload: { installation_id: INSTALLATION, code: CODE, state },
     });
 
     expect(await redis.get(`veto:${WS}:ghinst:${state}`)).toBeNull();
@@ -285,7 +289,7 @@ describe('a GitHub installation cannot be claimed by assertion (F-01)', () => {
       method: 'POST',
       url: '/v1/connections/github',
       headers: as(WS, ALICE),
-      payload: { installation_id: INSTALLATION, state },
+      payload: { installation_id: INSTALLATION, code: CODE, state },
     });
 
     expect(replay.statusCode).toBe(400);
