@@ -23,7 +23,7 @@
 import type { FastifyRequest } from 'fastify';
 import type { Pool } from 'pg';
 import { withWorkspace } from '@veto/db';
-import { findAgent } from '@veto/identity';
+import { findAgent, observeClient, type ClientObservation } from '@veto/identity';
 import { verifyCapability } from '@veto/tokens';
 import { RPC, RpcError } from './jsonrpc.ts';
 import { GATEWAY_AUDIENCE, GATEWAY_SCOPE } from '@veto/tokens';
@@ -39,6 +39,15 @@ export interface GatewaySession {
   readonly humanId: string;
   readonly agentId: string;
   readonly clientId: string;
+  /**
+   * Which software sent this request, read from its `User-Agent`.
+   *
+   * Derived here because this is where the session is assembled, and recorded
+   * elsewhere — `resolveSession` performs no write. It changes no outcome: a
+   * fingerprint is a string the client chose to send, so it can tell an
+   * operator that the software changed and can never prove who is calling.
+   */
+  readonly client: ClientObservation;
 }
 
 /**
@@ -98,5 +107,9 @@ export async function resolveSession(
     humanId: claims.humanId,
     agentId: agent.id,
     clientId: agent.client_id,
+    // Parsed, not trusted. Every refusal above has already happened; this adds
+    // nothing to the decision and exists so the gateway can write down what
+    // connected.
+    client: observeClient(request.headers['user-agent']),
   };
 }

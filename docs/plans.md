@@ -62,20 +62,27 @@ that as a fact about the database, which was not.
 which agent, what it reaches, who granted it, when it was last actually used, and
 what a policy rule permits for it today. Revoke from the same row.
 
-`Agent Fingerprints` and `Shadow Agents` sit in the sidebar under the same badge
-and are **not built**. They are labels, not features.
+**Agent Fingerprints** (`/fingerprints`) — which software has been connecting as
+each agent, and whether a change is allowed to matter. Three settings per agent:
+record only, ask me, refuse. See `docs/fingerprints.md`, including what it
+honestly cannot do.
+
+`Shadow Agents` sits in the sidebar under the same badge and is **not built**.
+It is a label, not a feature.
 
 ## How the gate works
 
-`GET /v1/grants/consent` returns **402** before it lists, queries or joins
-anything. 402 rather than 403: the caller is permitted to ask, and the workspace
-is simply not on the tier that answers.
+`GET /v1/grants/consent` and `GET /v1/agents/fingerprints` return **402**
+before they list, query or join anything, and so do the two fingerprint
+mutations. 402 rather than 403: the caller is permitted to ask, and the
+workspace is simply not on the tier that answers.
 
 The sidebar hides the link on a free workspace and the page renders an
 explanation rather than an error, but neither of those is a control — anybody can
-type a URL. The route is the control. `apps/api/test/grants.test.ts` asserts the
-refusal happens before any work, because a gate applied afterwards still spends
-the Permit call.
+type a URL. The route is the control. `apps/api/test/grants.test.ts` and
+`apps/api/test/fingerprints.test.ts` each assert the refusal happens before any
+work, because a gate applied afterwards still spends the queries it was meant to
+prevent.
 
 The plan is read on every request, never sealed into the session cookie. A plan
 in a signed cookie is a plan the server cannot revoke until that cookie expires,

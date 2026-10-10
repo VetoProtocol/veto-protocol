@@ -28,6 +28,8 @@ const SPEC_TABLES = [
  */
 const JUSTIFIED_EXTRAS: Readonly<Record<string, string>> = {
   schema_migrations: 'the migration ledger itself',
+  agent_fingerprints:
+    'which software has been connecting as each agent, parsed from the request User-Agent — the one identifier an MCP client sends on every request rather than only at the handshake. Change detection and never authentication, because every value in it is one the client chose to send; read by nothing in the §3.3 pipeline',
   passkeys: 'WebAuthn credentials (§15, §7.1); §6 stores only passkey_enrolled on users',
   resource_labels: 'the §4.2 sensitivity attribute, attached to resources rather than repeated in every rule',
   webhook_endpoints: 'where §5.4 alerts are sent, and the per-endpoint signing secret',

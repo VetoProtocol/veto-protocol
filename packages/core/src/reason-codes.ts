@@ -96,6 +96,27 @@ const CODES = {
       'The person this agent acts for has not accepted the current terms of service and privacy policy.',
     source: 'Google API Services User Data Policy; §3.3.3 session standing',
   },
+  // A twenty-sixth and twenty-seventh code, and the bar for that is real: the
+  // schedule work argued its way *out* of a new code because "every rule's
+  // window is shut" genuinely is TOOL_NOT_ALLOWED. These earn one. Identity
+  // resolved perfectly — the human, the tenant and the agent are all known and
+  // active — and what changed is the *software*. IDENTITY_UNRESOLVED's message
+  // ("could not be linked to a known user and agent") would be plainly untrue
+  // on screen, and a reason code whose text lies is worse than a longer list.
+  AGENT_FINGERPRINT_UNRECOGNISED: {
+    result: 'challenge',
+    stage: 'session',
+    message:
+      'Approval is required because this agent is being used by software that has not been recognised before.',
+    source: 'FR-08 client binding; §3.3.3 session standing',
+  },
+  AGENT_FINGERPRINT_REJECTED: {
+    result: 'deny',
+    stage: 'session',
+    message: 'The software using this agent is not permitted to act for it.',
+    source: 'FR-08 client binding, invariant 1',
+  },
+
   AUTOMATION_WINDOW_VIOLATION: {
     result: 'deny',
     stage: 'session',

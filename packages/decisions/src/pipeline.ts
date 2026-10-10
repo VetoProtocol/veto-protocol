@@ -37,7 +37,12 @@ import {
 import type { Db } from '@veto/db';
 import { enqueue } from '@veto/webhooks';
 import { withWorkspace } from '@veto/db';
-import { writeAuditEvent, findAgent } from '@veto/identity';
+import {
+  writeAuditEvent,
+  findAgent,
+  fingerprintStanding,
+  fingerprintModeOf,
+} from '@veto/identity';
 import type { PolicyDecisions, PermitOutcome } from '@veto/permit';
 import type { Pool } from 'pg';
 import type Redis from 'ioredis';
@@ -135,6 +140,44 @@ export async function evaluate(deps: PipelineDeps, input: EvaluateInput): Promis
       if (agent.status === 'revoked') return deny('AGENT_REVOKED');
       if (agent.status !== 'active') return deny('AGENT_REVOKED');
       if (agent.owner_user_id !== input.humanId) return deny('IDENTITY_UNRESOLVED');
+
+      // Is the software using this agent the software we know?
+      //
+      // Step 3 because this is session standing — a fact about who is calling,
+      // like the agent's own status and the emergency lock — and not a fact
+      // about the request, which is what step 6 judges. It also means Permit is
+      // never consulted about a client this workspace has refused, the same
+      // reasoning the lock already uses.
+      //
+      // Skipped entirely in `observe`, which is every agent's default. A
+      // workspace that has not turned this on spends nothing on it, and this
+      // is the branch that keeps that promise literal: `observe` cannot change
+      // an answer because in `observe` nothing is even read.
+      // Read through a normaliser, never off the row directly: see
+      // `fingerprintModeOf` for why an absent column must mean `observe`.
+      const fingerprintMode = fingerprintModeOf(agent);
+      if (fingerprintMode !== 'observe') {
+        // A request that named no client is not pinned. Absence narrows, as it
+        // does for presence and for an unreadable schedule — and a `null`
+        // fingerprint reaching an enforcing agent means the caller was not an
+        // MCP session at all.
+        const standing =
+          typeof input.clientFingerprint === 'string' && input.clientFingerprint !== ''
+            ? await fingerprintStanding(db, input.workspaceId, input.agentId, input.clientFingerprint)
+            : null;
+
+        if (standing === 'refused') return deny('AGENT_FINGERPRINT_REJECTED');
+
+        if (standing !== 'pinned') {
+          // `deny` refuses outright; `challenge` holds and lets the rest of the
+          // pipeline run, because a later denial must still win over it. Held
+          // rather than returned for exactly the reason the presence gate is:
+          // challenge is the least permissive answer that is not a refusal,
+          // and anything stricter replaces it.
+          if (fingerprintMode === 'deny') return deny('AGENT_FINGERPRINT_REJECTED');
+          held = challenge('AGENT_FINGERPRINT_UNRECOGNISED');
+        }
+      }
 
       // Has the person this agent acts for agreed to the current terms?
       //

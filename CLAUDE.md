@@ -136,6 +136,26 @@ returns 402 before doing any work, because the sidebar hiding a link is not a
 control. The plan is read per request and never sealed into the session cookie,
 so an upgrade shows on the next page rather than the next sign-in.
 
+**Agent Fingerprints (`/fingerprints`) records which software connects as each
+agent, and can make a change matter.** The material is the request
+`User-Agent`, which a phase-0 measurement found on *every* request in an MCP
+connection — not only the handshake, where `clientInfo` lives. That is what
+makes it usable: the gateway is stateless per request, so anything keyed to
+`initialize` would need shared state and would be absent for a client that
+never handshakes.
+
+Only the stable half is hashed. `claude-code` + `sdk-cli` survives a release;
+`2.1.293` does not, so hashing the whole header would make every routine update
+look like a different program and the control would be switched off within a
+week. The version is recorded beside the digest as a note.
+
+**It is change detection, never authentication**, and that is asserted as a
+test rather than left in a comment: a thief who copies the token *and* the
+header is allowed, in the strictest mode there is
+(`apps/gateway/test/fingerprints.test.ts`). The screen says so in plain words.
+Three modes per agent, `observe` the default, so both migrations changed no
+decision anywhere.
+
 ### Commands
 
 ```bash
@@ -168,7 +188,7 @@ outside a test env, and the app `.env` sets `NODE_ENV=development`.
 
 | Package | Holds |
 | --- | --- |
-| `packages/core` | Branded ids, the 25 reason codes, action digest. No I/O. |
+| `packages/core` | Branded ids, the 27 reason codes, action digest. No I/O. |
 | `packages/db` | Pool, `withWorkspace`, migration runner, `migrations/*.sql` |
 | `packages/permit` | `PolicyFacts` and `PolicyDecisions` ports, real adapters, and test fakes |
 | `packages/identity` | Agent registration, revocation, sessions, audit writer |
@@ -184,7 +204,7 @@ outside a test env, and the app `.env` sets `NODE_ENV=development`.
 | `packages/health` | Startup probes. Reachability only — never validates a credential. |
 | `apps/api` | Fastify control plane (§5). Manages objects; not an enforcement point. |
 | `apps/gateway` | **The** MCP enforcement point (§3.1). Calls the pipeline in process. |
-| `apps/dashboard` | Next.js dashboard: agents, policies, connections, presence, labels, approvals, audit, alerts, consent. Dark only. |
+| `apps/dashboard` | Next.js dashboard: agents, policies, connections, presence, labels, approvals, audit, alerts, consent, fingerprints. Dark only. |
 
 Sign-in is OIDC against any conformant provider (`docs/auth-setup.md`).
 
@@ -322,6 +342,33 @@ since migration 0001 and nothing created the first kind until stage 4.
   hangs cannot spend the §11 200 ms budget. `@veto/webhooks` sits below
   `@veto/decisions` in the graph, so the SSRF check arrives as a port rather
   than an import.
+- **A fingerprint can only narrow an answer, and `observe` narrows nothing.**
+  In `observe` the fingerprint cannot change an outcome at all — not even for
+  software an operator marked `refused`. Letting a refusal bite in every mode
+  reads as the safer choice and is worse: it makes the mode's meaning
+  conditional, and a control whose effect depends on two settings at once is one
+  nobody can reason about at three in the morning. The screen therefore offers
+  **Refuse** only where enforcement is on, so no button promises something the
+  mode will ignore. It also makes the default free — step 3 skips the lookup
+  entirely under `observe`.
+- **The first software an agent ever uses is pinned; everything after it is
+  not.** Trust on first use, like an SSH host key. Without it, turning
+  enforcement on would immediately challenge the client the operator is sitting
+  in front of, which is how a control gets switched straight back off. The cost
+  is stated in `docs/fingerprints.md` rather than discovered: whoever connects
+  first is trusted. Turning enforcement on pins *nothing* — it is a statement
+  about what happens next, not a blessing of what is already on file.
+- **`agents.fingerprint` is legacy and deliberately still unread.** It is free
+  text an operator typed at registration, and it is not consumed even as a
+  constraint on the first sighting: unvalidated, never filled in with a real
+  digest, and turning a stale guess into a lockout is a worse failure than
+  leaving a dead field alone. `agent_fingerprints` is the record that decides.
+- **An attacker-controlled header gets a ceiling, not just a sanitiser.**
+  `MAX_FINGERPRINTS_PER_AGENT` is 20, enforced as a `where` clause *inside* the
+  upsert rather than by counting first — counting first would have frozen the
+  rows already on file once the ceiling was reached, instead of only stopping
+  new ones. Unbounded table growth driven by a request header is the cheapest
+  denial of service there is.
 - **A sensitivity label can only narrow an answer.** `public` is not permission: a
   resource no rule allows stays denied whatever it is labelled. Labels add a presence
   or intent requirement on top of a rule; they never grant. Most specific wins, and

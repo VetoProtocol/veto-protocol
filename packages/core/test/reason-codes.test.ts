@@ -36,6 +36,12 @@ describe('reason code registry', () => {
         'INTENT_MISMATCH',
         'USER_AWAY_SENSITIVE_RESOURCE',
         'USER_AWAY_WRITE_ACTION',
+        // Resolvable in the ordinary way: the delegating human approves this
+        // action with a passkey. Approving does not *pin* the software — that
+        // stays an explicit act on the fingerprints screen — so an unpinned
+        // client keeps asking until somebody decides about it, which is the
+        // intended pressure rather than an oversight.
+        'AGENT_FINGERPRINT_UNRECOGNISED',
       ].sort(),
     );
   });

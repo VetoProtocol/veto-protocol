@@ -106,6 +106,10 @@ export function normalize(
     // No tool sends anywhere yet. When one does, this carries the destination
     // into the SSRF check at step 6.
     destination: null,
+    // Observed at the edge, never taken from an argument. There is no field an
+    // agent could put another client's fingerprint in, for the same reason a
+    // mailbox id comes from the session.
+    clientFingerprint: session.client.fingerprint,
     occurredAt: new Date().toISOString(),
     // Carried beside the arguments, never inside them. The digest covers
     // `arguments`, so an approval id in there would change the digest of the

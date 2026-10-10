@@ -37,6 +37,10 @@ import { executeAllowed, type ExecuteDeps } from './execute.ts';
 import { RPC, RpcError, parseRpcRequest, rpcError, rpcResult, type RpcRequest } from './jsonrpc.ts';
 import { GATEWAY_AUDIENCE, resolveSession, unauthenticated, type GatewaySession } from './session.ts';
 import { findTool, toolListing } from './tools.ts';
+import { recordSighting, writeAuditEvent } from '@veto/identity';
+import { enqueue } from '@veto/webhooks';
+import { grantRef } from '@veto/core';
+import { withWorkspace } from '@veto/db';
 
 /** The MCP revision this server speaks. */
 export const PROTOCOL_VERSION = '2025-06-18';
@@ -176,13 +180,115 @@ export function createGateway(deps: GatewayDeps): FastifyInstance {
     }
   });
 
+  /**
+   * Write down which software is connecting as this agent.
+   *
+   * Observation, not enforcement. It runs outside the §3.3 pipeline and
+   * changes no outcome, so **a failure here must not fail the request.** The
+   * row this writes cannot deny or challenge anything at this phase; refusing
+   * a caller because a bookkeeping insert failed would invent a denial that no
+   * invariant asks for, and invariant 1 is about failing closed on *authority*
+   * — missing identity, an unreachable policy, an emergency lock — not on a
+   * statistic.
+   *
+   * The day this record does decide something, the check belongs at step 3 of
+   * the pipeline, where a read failure *must* deny. That is a different call
+   * site from this one, deliberately.
+   */
+  async function noteClient(
+    session: GatewaySession,
+    handshake: Parameters<typeof recordSighting>[1]['handshake'],
+    requestId: string,
+  ): Promise<void> {
+    try {
+      await withWorkspace(deps.pool, session.workspaceId, async (db) => {
+        const outcome = await recordSighting(db, {
+          workspaceId: session.workspaceId,
+          agentId: session.agentId,
+          observation: session.client,
+          handshake: handshake ?? null,
+        });
+
+        // Only genuinely new software is news.
+        //
+        // Not `first` — an agent's very first request is it starting to be
+        // used, not its client changing, and an alert on that would fire once
+        // per agent forever and teach an operator to ignore the channel. Not
+        // `repeat`, obviously. And this fires in **every** mode, `observe`
+        // included: observe must not change an *answer*, but it would be a
+        // strange kind of observation that declined to mention what it saw.
+        if (outcome.kind !== 'new') return;
+
+        await writeAuditEvent(db, {
+          workspaceId: session.workspaceId,
+          actor: session.humanId,
+          eventType: 'agent.fingerprint_changed',
+          resourceRef: grantRef('agent', session.agentId),
+          outcome: 'lifecycle',
+          correlationId: requestId,
+        });
+
+        // §5.4's set is closed at eight, and this is already one of them:
+        // "something unusual was spotted in a request" is exactly what a
+        // second piece of software on an existing agent is. The payload names
+        // the agent and stops there — the product string is attacker-chosen
+        // text, and a receiver that wants the detail asks the API with its own
+        // credentials, which is where authorization happens again.
+        await enqueue(db, {
+          workspaceId: session.workspaceId,
+          correlationId: requestId,
+          type: 'risk.anomaly_detected',
+          data: {
+            agent_id: session.agentId,
+            human_id: session.humanId,
+            resource_ref: grantRef('agent', session.agentId),
+          },
+        });
+      });
+    } catch (error) {
+      // The product name, never the raw header. A `User-Agent` is
+      // attacker-controlled, and `observeClient` has already stripped control
+      // characters and bounded the length — but a log line is still the wrong
+      // place to repeat an attacker's string in full.
+      app.log.warn(
+        { agent: session.agentId, product: session.client.product, err: error },
+        'could not record client fingerprint',
+      );
+    }
+  }
+
+  /**
+   * §8 wants one correlation id spanning request, decision, approval, upstream
+   * call and audit event. Derived from the request rather than minted twice, so
+   * a fingerprint audit event and the decision beside it agree.
+   */
+  const correlationId = (request: FastifyRequest): string =>
+    `req_${String(request.id).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40) || 'anon'}`;
+
   async function dispatch(
     rpc: RpcRequest,
     session: GatewaySession,
     request: FastifyRequest,
   ): Promise<unknown> {
     switch (rpc.method) {
-      case 'initialize':
+      case 'initialize': {
+        // The one request that carries `clientInfo`. Recorded for the richer
+        // detail; the decision path never reads it.
+        const info = rpc.params['clientInfo'];
+        const field = (key: string): string | null => {
+          if (typeof info !== 'object' || info === null || Array.isArray(info)) return null;
+          const value = (info as Record<string, unknown>)[key];
+          return typeof value === 'string' ? value : null;
+        };
+        const version = rpc.params['protocolVersion'];
+
+        await noteClient(session, {
+          clientName: field('name'),
+          clientTitle: field('title'),
+          clientVersion: field('version'),
+          protocolVersion: typeof version === 'string' ? version : null,
+        }, correlationId(request));
+
         return {
           protocolVersion: PROTOCOL_VERSION,
           capabilities: { tools: { listChanged: false } },
@@ -191,6 +297,7 @@ export function createGateway(deps: GatewayDeps): FastifyInstance {
             'Every tool call is authorized individually at call time. A previously listed ' +
             'or previously allowed tool is not permission for this call.',
         };
+      }
 
       case 'notifications/initialized':
         return {};
@@ -204,6 +311,7 @@ export function createGateway(deps: GatewayDeps): FastifyInstance {
         return { tools: toolListing() };
 
       case 'tools/call':
+        await noteClient(session, null, correlationId(request));
         return callTool(rpc, session, request);
 
       default:
@@ -240,7 +348,7 @@ export function createGateway(deps: GatewayDeps): FastifyInstance {
 
     // §8 requires a correlation id spanning request, decision, approval,
     // upstream call and audit event. It is minted here, at the edge.
-    const requestId = `req_${String(request.id).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40) || 'anon'}`;
+    const requestId = correlationId(request);
 
     // §5.3: a challenge resumes only with the grant. The client presents it at
     // the params level, outside `arguments`, so it stays out of the digest.

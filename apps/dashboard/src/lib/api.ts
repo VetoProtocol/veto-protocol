@@ -556,3 +556,62 @@ export const getLegalAcceptance = (credential: string): Promise<LegalAcceptance>
 
 export const acceptLegal = (credential: string): Promise<LegalAcceptance> =>
   request('/v1/legal/acceptance', { method: 'POST', credential, body: JSON.stringify({}) });
+
+/**
+ * Agent Fingerprints.
+ *
+ * `sightings` is how many requests carried this fingerprint, not how many
+ * distinct sessions. Nothing here proves identity — every value derives from a
+ * `User-Agent`, which the client chooses — so the screen is a record of what
+ * changed, never evidence of who called.
+ */
+export interface FingerprintView {
+  readonly fingerprint: string;
+  readonly product: string;
+  readonly channel: string | null;
+  readonly first_version: string | null;
+  readonly last_version: string | null;
+  readonly client_title: string | null;
+  readonly protocol_version: string | null;
+  readonly status: 'pinned' | 'seen' | 'refused';
+  readonly first_seen_at: string;
+  readonly last_seen_at: string;
+  readonly sightings: number;
+}
+
+export interface AgentFingerprintsView {
+  readonly agent_id: string;
+  readonly client_id: string;
+  readonly provider: string;
+  readonly status: string;
+  readonly fingerprint_mode: 'observe' | 'challenge' | 'deny';
+  readonly fingerprints: readonly FingerprintView[];
+}
+
+export const listAgentFingerprints = (
+  credential: string,
+): Promise<{ agents: readonly AgentFingerprintsView[] }> =>
+  request('/v1/agents/fingerprints', { method: 'GET', credential });
+
+export const setFingerprintMode = (
+  credential: string,
+  agentId: string,
+  mode: 'observe' | 'challenge' | 'deny',
+): Promise<{ agent_id: string; fingerprint_mode: string }> =>
+  request(`/v1/agents/${encodeURIComponent(agentId)}/fingerprint-mode`, {
+    method: 'POST',
+    credential,
+    body: JSON.stringify({ mode }),
+  });
+
+export const judgeFingerprint = (
+  credential: string,
+  agentId: string,
+  fingerprint: string,
+  status: 'pinned' | 'refused',
+): Promise<{ fingerprint: string; status: string }> =>
+  request(`/v1/agents/${encodeURIComponent(agentId)}/fingerprints`, {
+    method: 'POST',
+    credential,
+    body: JSON.stringify({ fingerprint, status }),
+  });

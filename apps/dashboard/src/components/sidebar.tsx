@@ -145,16 +145,16 @@ const OVERVIEW = [
 ] as const;
 
 /**
- * Paid tier. Route is null for the two that do not exist yet.
+ * Paid tier. A null route is a feature that does not exist yet.
  *
- * Consent Grants is built, so on a Pro workspace it becomes an ordinary link.
- * On a free one it stays a dead row with the badge, exactly like the other two
- * — and the API refuses the request regardless, because a hidden link is not a
- * control.
+ * Consent Grants and Agent Fingerprints are built, so on a Pro workspace each
+ * becomes an ordinary link. On a free one both stay dead rows with the badge,
+ * like Shadow Agents — and the API refuses the request regardless, because a
+ * hidden link is not a control.
  */
 const ENTERPRISE = [
   ['Consent Grants', 'shield', '/consent'],
-  ['Agent Fingerprints', 'fingerprint', null],
+  ['Agent Fingerprints', 'fingerprint', '/fingerprints'],
   ['Shadow Agents', 'shadow', null],
 ] as const;
 

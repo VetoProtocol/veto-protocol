@@ -13,6 +13,9 @@ import { writeAuditEvent } from './audit.ts';
 
 export type AgentStatus = 'active' | 'suspended' | 'revoked';
 
+/** §3.3 step 3. `observe` changes no answer; see docs/fingerprints.md. */
+export type FingerprintMode = 'observe' | 'challenge' | 'deny';
+
 export interface Agent {
   readonly id: string;
   readonly workspace_id: string;
@@ -20,7 +23,20 @@ export interface Agent {
   readonly client_id: string;
   readonly owner_user_id: string;
   readonly status: AgentStatus;
+  /**
+   * Legacy and unread. An operator-declared string from migration 0002 that
+   * nothing ever compared anything to. The *observed* record is
+   * `agent_fingerprints`; see docs/fingerprints.md.
+   */
   readonly fingerprint: string | null;
+  /**
+   * Whether an unrecognised client narrows this agent's answer (§3.3 step 3).
+   *
+   * Carried here because `findAgent` already reads the whole row at step 3, so
+   * the mode costs nothing extra — and because `observe`, the default, lets
+   * that step skip the fingerprint lookup altogether.
+   */
+  readonly fingerprint_mode: FingerprintMode;
   readonly created_at: Date;
   readonly revoked_at: Date | null;
 }

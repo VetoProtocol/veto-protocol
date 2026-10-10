@@ -32,6 +32,19 @@ export interface EvaluateInput {
   readonly declaredIntent: string | null;
   /** Where data would be sent, when the tool sends anywhere. Checked for SSRF. */
   readonly destination: string | null;
+  /**
+   * Which software sent this, as a digest of its stable half (§3.3 step 3).
+   *
+   * `null` means no MCP client identified the request at all — which is the
+   * case for the control plane's own `/v1/decisions/evaluate`, since it has no
+   * client behind it and cannot invent one. Absence narrows under enforcement,
+   * the same rule presence and schedules already follow: a preview cannot
+   * promise an allow it has no way to stand behind.
+   *
+   * Never proof of anything. A client chooses what to send here, so a match
+   * means only that nothing changed since last time.
+   */
+  readonly clientFingerprint?: string | null;
   readonly occurredAt: string;
   /**
    * A grant the client is presenting to resume a challenged action (§5.3).
