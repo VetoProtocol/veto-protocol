@@ -4,6 +4,7 @@ import { useActionState, useState } from 'react';
 import { Button } from '@/components/button';
 import { EMPTY, type ActionState } from '../agents/action-state';
 import {
+  applyTemplateAction,
   createGrantAction,
   createPolicyAction,
   deletePolicyAction,
@@ -440,3 +441,110 @@ export function DeletePolicy({ policyId, effect }: { policyId: string; effect: s
     </details>
   );
 }
+
+const REQUIRES_WORD: Record<string, string> = {
+  google: 'needs a Google connection',
+  github: 'needs a GitHub installation',
+  nothing: 'needs nothing connected',
+};
+
+/**
+ * Apply a set of starter rules to one agent.
+ *
+ * The agent is chosen every time and never defaulted. A one-click template
+ * that quietly applied to every agent would hand the whole workspace the same
+ * access, which is the opposite of what this product should make easy.
+ */
+export function ApplyTemplate({
+  templates,
+  agents,
+}: {
+  templates: readonly {
+    id: string;
+    title: string;
+    summary: string;
+    requires: string;
+    rules: readonly { explains: string }[];
+  }[];
+  agents: readonly { id: string; client_id: string }[];
+}) {
+  const [state, action, pending] = useActionState<ActionState, FormData>(
+    applyTemplateAction,
+    EMPTY,
+  );
+
+  if (agents.length === 0) {
+    return (
+      <p style={{ color: 'var(--text-faint)', fontSize: 12.5, margin: 0 }}>
+        Register an agent first — a starting point is a set of rules <em>about</em> an agent, so
+        there is nothing to apply them to yet.
+      </p>
+    );
+  }
+
+  return (
+    <form action={action} style={{ display: 'grid', gap: 14 }}>
+      <div style={{ display: 'grid', gap: 10 }}>
+        {templates.map((template) => (
+          <label
+            key={template.id}
+            style={{
+              display: 'grid',
+              gap: 4,
+              border: '1px solid var(--border)',
+              padding: '12px 14px',
+              cursor: 'pointer',
+            }}
+          >
+            <span style={{ display: 'flex', gap: 9, alignItems: 'baseline' }}>
+              <input type="radio" name="template_id" value={template.id} required />
+              <span style={{ fontSize: 12.5, color: 'var(--text)' }}>{template.title}</span>
+              <span style={{ fontSize: 10.5, color: 'var(--text-faint)' }}>
+                {template.rules.length} rule{template.rules.length === 1 ? '' : 's'} ·{' '}
+                {REQUIRES_WORD[template.requires] ?? template.requires}
+              </span>
+            </span>
+            <span style={{ fontSize: 11.5, color: 'var(--text-dim)', paddingLeft: 22 }}>
+              {template.summary}
+            </span>
+          </label>
+        ))}
+      </div>
+
+      <label style={label}>
+        <span className="label">
+          agent <span style={{ color: 'var(--text-faint)' }}>who these apply to</span>
+        </span>
+        <select name="subject" required style={field}>
+          <option value="">choose an agent…</option>
+          {agents.map((agent) => (
+            <option key={agent.id} value={agent.id}>
+              {agent.client_id}
+            </option>
+          ))}
+          {/* Available, but typed out rather than offered first: every agent
+              in the workspace is a real choice and a deliberate one. */}
+          <option value="*">* — every agent in this workspace</option>
+        </select>
+      </label>
+
+      <div>
+        <Button type="submit" variant="solid" disabled={pending}>
+          {pending ? 'applying…' : 'apply these rules'}
+        </Button>
+      </div>
+
+      {state.error ? (
+        <span role="alert" style={{ color: 'var(--deny)', fontSize: 11.5 }}>
+          {state.error}
+        </span>
+      ) : null}
+      {state.notice ? (
+        <span role="status" style={{ color: 'var(--text-dim)', fontSize: 11.5, lineHeight: 1.6 }}>
+          {state.notice}
+        </span>
+      ) : null}
+    </form>
+  );
+}
+

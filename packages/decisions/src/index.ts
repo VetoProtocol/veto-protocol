@@ -9,3 +9,4 @@ export * from './labels.ts';
 export * from './revocation.ts';
 export * from './timing.ts';
 export * from './schedule.ts';
+export * from './templates.ts';

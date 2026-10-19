@@ -22,9 +22,12 @@ import { withWorkspace } from '@veto/db';
 import {
   createPolicy,
   deletePolicy,
+  findTemplate,
   isValidSchedule,
   loadPolicies,
   POLICY_ACTIONS,
+  POLICY_TEMPLATES,
+  sameRule,
 } from '@veto/decisions';
 import { PRESENCE_STATES } from '@veto/presence';
 import { ERROR_SCHEMA, HttpError } from '../errors.ts';
@@ -244,6 +247,178 @@ export function registerPolicyRoutes(app: FastifyInstance, deps: { pool: Pool })
         effect: rule.effect,
         resource_filter: rule.resourceFilter,
         conditions: rule.conditions,
+      });
+    },
+  );
+
+
+  /**
+   * The starter rules on offer.
+   *
+   * A constant catalogue, not tenant data, so this reads nothing and is the
+   * same for every workspace. It exists as a route rather than a copy in the
+   * dashboard because two hand-kept copies of a list is how the tool
+   * catalogue, the label map and the policy form each drifted.
+   */
+  app.get(
+    '/v1/policies/templates',
+    {
+      schema: {
+        response: {
+          200: {
+            type: 'object',
+            properties: {
+              templates: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    id: { type: 'string' },
+                    title: { type: 'string' },
+                    summary: { type: 'string' },
+                    requires: { type: 'string' },
+                    rules: {
+                      type: 'array',
+                      items: {
+                        type: 'object',
+                        properties: {
+                          action: { type: 'string' },
+                          effect: { type: 'string' },
+                          resource_type: { type: 'string' },
+                          explains: { type: 'string' },
+                        },
+                        required: ['action', 'effect', 'resource_type', 'explains'],
+                      },
+                    },
+                  },
+                  required: ['id', 'title', 'summary', 'requires', 'rules'],
+                },
+              },
+            },
+            required: ['templates'],
+          },
+          '4xx': ERROR_SCHEMA,
+          '5xx': ERROR_SCHEMA,
+        },
+      },
+    },
+    async (request) => {
+      requireScope(request, SCOPE_CONTROL_PLANE);
+
+      return {
+        templates: POLICY_TEMPLATES.map((template) => ({
+          id: template.id,
+          title: template.title,
+          summary: template.summary,
+          requires: template.requires,
+          rules: template.rules.map((rule) => ({
+            action: rule.action,
+            effect: rule.effect,
+            resource_type: rule.resourceFilter.type ?? '',
+            explains: rule.explains,
+          })),
+        })),
+      };
+    },
+  );
+
+  /**
+   * Apply one, to one agent.
+   *
+   * The subject is named by the caller and never defaulted. A template that
+   * quietly applied to `*` would hand every agent in the workspace the same
+   * access on one click, which is the opposite of what an authorization
+   * product should make easy — and `*` remains available to somebody who types
+   * it, because that is a decision worth making deliberately.
+   *
+   * Applying twice is a no-op: a rule the workspace already has, meaning for
+   * meaning, is skipped rather than duplicated. Rules are created and deleted
+   * and never edited, so a duplicate would be a second row with a second
+   * version and no second effect — clutter that makes a policy list harder to
+   * read and tells nobody anything.
+   */
+  app.post(
+    '/v1/policies/templates',
+    {
+      schema: {
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['template_id', 'subject'],
+          properties: {
+            template_id: { type: 'string', minLength: 1, maxLength: 60 },
+            subject: { type: 'string', pattern: '^(\\*|agt_[A-Za-z0-9_-]{1,64})$' },
+          },
+        },
+        response: {
+          201: {
+            type: 'object',
+            properties: {
+              template_id: { type: 'string' },
+              subject: { type: 'string' },
+              created: { type: 'array', items: { type: 'string' } },
+              skipped: { type: 'integer' },
+            },
+            required: ['template_id', 'subject', 'created', 'skipped'],
+          },
+          '4xx': ERROR_SCHEMA,
+          '5xx': ERROR_SCHEMA,
+        },
+      },
+    },
+    async (
+      request: FastifyRequest<{ Body: { template_id: string; subject: string } }>,
+      reply,
+    ) => {
+      requireScope(request, SCOPE_CONTROL_PLANE);
+      const { workspaceId, userId } = request.principal;
+
+      const template = findTemplate(request.body.template_id);
+      if (!template) throw new HttpError(404, 'NOT_FOUND', 'No such template');
+
+      const result = await withWorkspace(deps.pool, workspaceId, async (db) => {
+        // Read once, compare in memory. The alternative is a query per rule,
+        // and a workspace's rule list is small enough that one read is both
+        // faster and easier to reason about.
+        const existing = await loadPolicies(db, workspaceId);
+
+        const created: string[] = [];
+        let skipped = 0;
+
+        for (const rule of template.rules) {
+          const candidate = {
+            subject: request.body.subject,
+            action: rule.action,
+            effect: rule.effect,
+            resourceFilter: rule.resourceFilter,
+            conditions: rule.conditions,
+          };
+
+          if (existing.some((have) => sameRule(have, candidate))) {
+            skipped += 1;
+            continue;
+          }
+
+          // One rule at a time, through the same function the create route
+          // uses: each gets its own version, and each writes its own audit
+          // event. A bulk path would be a second way to make a rule, and the
+          // two would drift.
+          const made = await createPolicy(db, {
+            workspaceId,
+            ...candidate,
+            actorUserId: userId,
+            correlationId: String(request.id),
+          });
+          created.push(made.id);
+        }
+
+        return { created, skipped };
+      });
+
+      return reply.code(201).send({
+        template_id: template.id,
+        subject: request.body.subject,
+        ...result,
       });
     },
   );

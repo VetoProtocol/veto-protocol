@@ -1,7 +1,14 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import { ApiError, createGrant, createPolicy, deletePolicy, revokeGrant } from '@/lib/api';
+import {
+  ApiError,
+  applyPolicyTemplate,
+  createGrant,
+  createPolicy,
+  deletePolicy,
+  revokeGrant,
+} from '@/lib/api';
 import { currentSession } from '@/lib/session';
 import type { ActionState } from '../agents/action-state';
 import { kindReach } from './resource-kinds';
@@ -216,3 +223,54 @@ function describe(error: unknown): string {
   if (error instanceof ApiError) return error.failure.message;
   return 'Something went wrong talking to the control plane.';
 }
+
+export async function applyTemplateAction(
+  _previous: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  const session = await currentSession();
+  if (!session) return { error: 'Your session has expired. Sign in again.', notice: null };
+
+  const templateId = String(form.get('template_id') ?? '').trim();
+  const subject = String(form.get('subject') ?? '').trim();
+
+  if (templateId === '' || subject === '') {
+    return { error: 'Pick a starting point and the agent it is for.', notice: null };
+  }
+
+  let result;
+  try {
+    result = await applyPolicyTemplate(session.credential, {
+      template_id: templateId,
+      subject,
+    });
+  } catch (error) {
+    return {
+      error: error instanceof ApiError ? error.failure.message : 'The API did not answer.',
+      notice: null,
+    };
+  }
+
+  revalidatePath('/policies');
+
+  // Nothing created means every rule was already there. Said plainly, because
+  // "applied" with no visible change reads as a failure.
+  if (result.created.length === 0) {
+    return {
+      error: null,
+      notice: `Already in place — all ${String(result.skipped)} rules existed, so nothing changed.`,
+    };
+  }
+
+  const added = `${String(result.created.length)} rule${result.created.length === 1 ? '' : 's'}`;
+  const already = result.skipped > 0 ? `, ${String(result.skipped)} already there` : '';
+
+  return {
+    error: null,
+    // The second sentence is the one that matters: a rule is necessary and not
+    // sufficient, and somebody who thinks they have just granted access will
+    // read the next denial as a bug.
+    notice: `${added} added${already}. A rule alone reaches nothing — the agent also needs a grant to the resource.`,
+  };
+}
+

@@ -283,6 +283,30 @@ export interface PolicyView {
   };
 }
 
+export interface PolicyTemplateView {
+  readonly id: string;
+  readonly title: string;
+  readonly summary: string;
+  readonly requires: 'google' | 'github' | 'nothing';
+  readonly rules: readonly {
+    readonly action: string;
+    readonly effect: string;
+    readonly resource_type: string;
+    readonly explains: string;
+  }[];
+}
+
+export const listPolicyTemplates = (
+  credential: string,
+): Promise<{ templates: PolicyTemplateView[] }> =>
+  request('/v1/policies/templates', { method: 'GET', credential });
+
+export const applyPolicyTemplate = (
+  credential: string,
+  body: { template_id: string; subject: string },
+): Promise<{ template_id: string; subject: string; created: string[]; skipped: number }> =>
+  request('/v1/policies/templates', { method: 'POST', credential, body: JSON.stringify(body) });
+
 export const listPolicies = (credential: string): Promise<{ policies: PolicyView[] }> =>
   request('/v1/policies', { method: 'GET', credential });
 

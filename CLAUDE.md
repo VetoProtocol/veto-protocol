@@ -383,6 +383,21 @@ since migration 0001 and nothing created the first kind until stage 4.
   rows already on file once the ceiling was reached, instead of only stopping
   new ones. Unbounded table growth driven by a request header is the cheapest
   denial of service there is.
+- **A starter rule must match a tool that exists.** `POLICY_TEMPLATES`
+  (`packages/decisions/src/templates.ts`) is a selection of primitives the rule
+  schema already has, so it invents no policy semantics and a template cannot
+  express a rule nobody could type. The trap it had to dodge is concrete:
+  `google_drive.list_folder` has action `read`, not `list`, and `list` is a
+  valid `POLICY_ACTION` — a template written from the tool's *name* would be
+  inert, deny silently, and look exactly like the deny-by-default confusion it
+  exists to cure. `apps/gateway/test/template-drift.test.ts` asserts both
+  directions: every starter rule matches a real tool, and every tool is
+  reachable by some starter rule. Applying one creates ordinary rows and is
+  idempotent — `sameRule` skips a rule the workspace already has, compared by
+  meaning rather than by text, so key order in a filter cannot duplicate it.
+  There is deliberately **no "working hours" template**: a narrower allow
+  beside a broader one narrows nothing, because both match and both are allows,
+  so it would appear to restrict and would not.
 - **A sensitivity label can only narrow an answer.** `public` is not permission: a
   resource no rule allows stays denied whatever it is labelled. Labels add a presence
   or intent requirement on top of a rule; they never grant. Most specific wins, and

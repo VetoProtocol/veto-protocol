@@ -6,11 +6,13 @@ import {
   listAgents,
   listGrants,
   listPolicies,
+  listPolicyTemplates,
   type GrantView,
+  type PolicyTemplateView,
   type PolicyView,
 } from '@/lib/api';
 import { currentSession } from '@/lib/session';
-import { CreateGrantForm, CreatePolicyForm, DeletePolicy, RevokeGrant } from './forms';
+import { ApplyTemplate, CreateGrantForm, CreatePolicyForm, DeletePolicy, RevokeGrant } from './forms';
 import { kindLabel } from './resource-kinds';
 
 export const dynamic = 'force-dynamic';
@@ -69,13 +71,18 @@ export default async function PoliciesPage() {
   let policies: PolicyView[];
   let agents: Array<{ id: string; client_id: string; status: string }>;
   let grants: GrantView[];
+  let templates: PolicyTemplateView[];
   try {
-    [policies, agents, grants] = await Promise.all([
+    [policies, agents, grants, templates] = await Promise.all([
       listPolicies(session.credential).then((r) => r.policies),
       listAgents(session.credential).then((r) => r.agents),
       // A Permit call, not a database read, so there is no local mirror to
       // drift. Slower than the other two and fine on a control-plane page.
       listGrants(session.credential).then((r) => r.grants),
+      // A constant catalogue served by the API rather than copied here: two
+      // hand-kept copies of a list is how the tool catalogue, the label map
+      // and this very form each drifted.
+      listPolicyTemplates(session.credential).then((r) => r.templates),
     ]);
   } catch (error) {
     return (
@@ -214,6 +221,21 @@ export default async function PoliciesPage() {
             </table>
           </div>
         ) : null}
+      </Panel>
+
+      <Panel title="START FROM SOMETHING" meta="RULES YOU CAN EDIT OR DELETE AFTERWARDS">
+        <div style={{ padding: '18px 18px 20px' }}>
+          <p style={{ color: 'var(--text-dim)', fontSize: 12.5, margin: '0 0 14px', maxWidth: 640, lineHeight: 1.7 }}>
+            Veto refuses anything no rule allows, so a workspace with no rules denies everything —
+            which looks exactly like a workspace that is broken. These are ordinary rules with a
+            name on them: applied, they are indistinguishable from ones you write yourself, and you
+            can delete any of them.
+          </p>
+          <ApplyTemplate
+            templates={templates}
+            agents={live.map((a) => ({ id: a.id, client_id: a.client_id }))}
+          />
+        </div>
       </Panel>
 
       <Panel title="ADD A RULE" meta="NECESSARY, NOT SUFFICIENT">

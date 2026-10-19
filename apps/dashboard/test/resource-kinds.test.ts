@@ -69,7 +69,14 @@ describe('the policy and grant forms offer every grantable type', () => {
   /** Every `resource_type` option value the forms actually render. */
   function offered(): Set<string> {
     const source = readFileSync(forms, 'utf8');
-    const selects = source.split('name="resource_type"').slice(1);
+    // `<select name="resource_type"`, not merely `name="resource_type"`. A
+    // hidden input carries that name too, and splitting on the bare attribute
+    // treated it as a dropdown — scooping up every `<option>` that happened to
+    // appear later in the file, from an unrelated form, until the next
+    // `</select>`. It passed for as long as nothing followed it, and failed
+    // the first time somebody added a select below. The thing being searched
+    // for is a dropdown, so say so.
+    const selects = source.split('<select name="resource_type"').slice(1);
     const values = new Set<string>();
     for (const block of selects) {
       // Stop at the closing tag so a later select's options are not counted
