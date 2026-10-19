@@ -335,7 +335,10 @@ export default async function PoliciesPage() {
           </div>
         )}
 
-        {live.length > 0 ? <CreateGrantForm agents={live.map((a) => ({ id: a.id, clientId: a.client_id }))} /> : null}
+        {live.length > 0 ? <CreateGrantForm
+            agents={live.map((a) => ({ id: a.id, clientId: a.client_id }))}
+            userId={session.userId}
+          /> : null}
       </Panel>
 
       <Panel title="WHY A RULE MIGHT NOT BE ENOUGH" meta="THREE LAYERS, ALL MUST AGREE">

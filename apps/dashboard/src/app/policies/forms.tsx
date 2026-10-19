@@ -1,6 +1,7 @@
 'use client';
 
 import { useActionState, useState } from 'react';
+import { kindKey } from './resource-kinds';
 import { Button } from '@/components/button';
 import { EMPTY, type ActionState } from '../agents/action-state';
 import {
@@ -289,8 +290,23 @@ export function CreatePolicyForm({ agents }: { agents: readonly AgentChoice[] })
   );
 }
 
-export function CreateGrantForm({ agents }: { agents: readonly AgentChoice[] }) {
+export function CreateGrantForm({
+  agents,
+  userId,
+}: {
+  agents: readonly AgentChoice[];
+  /** The signed-in person, for the kinds whose key is exactly that. */
+  userId: string;
+}) {
   const [state, action, pending] = useActionState<ActionState, FormData>(createGrantAction, EMPTY);
+
+  // The key field changes meaning with the kind, so it has to change with it.
+  // It said `drive id — not a path` for every kind, including a Slack
+  // workspace keyed by a Veto user id: a label naming the wrong thing is worse
+  // than a vague one, because somebody types what it asked for and the label
+  // is the last place they look afterwards.
+  const [kind, setKind] = useState('google_folder');
+  const key = kindKey(kind);
 
   return (
     <form action={action} style={{ padding: 18, display: 'grid', gap: 14 }}>
@@ -314,7 +330,14 @@ export function CreateGrantForm({ agents }: { agents: readonly AgentChoice[] }) 
 
         <label style={label}>
           <span className="label">kind</span>
-          <select name="resource_type" defaultValue="google_folder" style={field}>
+          <select
+            name="resource_type"
+            value={kind}
+            onChange={(event) => {
+              setKind(event.target.value);
+            }}
+            style={field}
+          >
             <option value="google_folder">folder — and the files inside it</option>
             <option value="google_file">file — just this one</option>
             <option value="gmail_mailbox">mailbox — one person&rsquo;s mail</option>
@@ -335,23 +358,31 @@ export function CreateGrantForm({ agents }: { agents: readonly AgentChoice[] }) 
 
         <label style={label}>
           <span className="label">
-            drive id <span style={{ color: 'var(--text-faint)' }}>not a path</span>
+            {key.keyLabel}{' '}
+            {key.keyHint === '' ? null : (
+              <span style={{ color: 'var(--text-faint)' }}>{key.keyHint}</span>
+            )}
           </span>
           <input
+            // Remounted when the kind changes, so a value typed for one kind
+            // is not left sitting under a label that now means something else.
+            key={kind}
             name="resource_key"
             required
             maxLength={512}
-            placeholder="1a2B3c-_9zYx"
-            style={field}
+            readOnly={key.userKeyed === true}
+            defaultValue={key.userKeyed === true ? userId : ''}
+            placeholder={key.userKeyed === true ? '' : 'the provider\u2019s own id'}
+            style={{
+              ...field,
+              ...(key.userKeyed === true ? { color: 'var(--text-dim)' } : {}),
+            }}
           />
         </label>
       </div>
 
       <p style={{ color: 'var(--text-faint)', fontSize: 11.5, margin: 0, maxWidth: 560 }}>
-        For Drive, the id is the long string in the URL after <code>/folders/</code> or{' '}
-        <code>/d/</code>. A path like <code>/Work</code> is not an id and will be refused. For a
-        mailbox or a calendar, the id is the person&rsquo;s Veto user id — an agent can only ever
-        reach the mailbox and calendar of the person who delegated to it.
+        {key.keyHelp}
       </p>
 
       <div>
