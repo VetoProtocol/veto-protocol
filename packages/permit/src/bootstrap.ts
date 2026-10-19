@@ -27,6 +27,8 @@ import {
   GITHUB_REPO_RESOURCE,
   HUMAN_RESOURCE,
   MAILBOX_RESOURCE,
+  SLACK_CHANNEL_RESOURCE,
+  SLACK_WORKSPACE_RESOURCE,
   RELATION_DELEGATOR,
   RELATION_PARENT,
   ROLE_READER,
@@ -358,6 +360,86 @@ export async function bootstrapPermitEnvironment(config: PermitConfig): Promise<
           {
             linked_by_relation: RELATION_PARENT,
             on_resource: GITHUB_ACCOUNT_RESOURCE,
+            role: ROLE_READER,
+          },
+        ],
+      },
+    }),
+  );
+
+  await step(`resource:${SLACK_WORKSPACE_RESOURCE}`, () =>
+    permit.api.resources.create({
+      key: SLACK_WORKSPACE_RESOURCE,
+      name: 'Slack workspace',
+      description:
+        'One installed Slack workspace, keyed by the Veto user id. Exists so "which channels can I see" has something to be authorised against, and so no argument could name somebody else\'s workspace.',
+      actions: { search: {} },
+      attributes: {
+        sensitivity: {
+          type: 'string',
+          description: 'Classification label, never the content itself.',
+        },
+      },
+    }),
+  );
+
+  await step(`resource:${SLACK_CHANNEL_RESOURCE}`, () =>
+    permit.api.resources.create({
+      key: SLACK_CHANNEL_RESOURCE,
+      name: 'Slack channel',
+      description:
+        "One conversation, keyed by Slack's own channel id. A channel is a resource where a message is not: its id is knowable before any call, which is how somebody grants one in advance.",
+      actions: { read: {} },
+      attributes: {
+        sensitivity: {
+          type: 'string',
+          description: 'Classification label, never the content itself.',
+        },
+      },
+    }),
+  );
+
+  // Declared on the channel, naming the workspace. Downward only, like the
+  // folder and repository relations: being granted one channel says nothing
+  // about the workspace, so it cannot be turned into a list of every
+  // conversation the bot can see.
+  await step(`relation:${SLACK_CHANNEL_RESOURCE}.${RELATION_PARENT}`, () =>
+    permit.api.resourceRelations.create(SLACK_CHANNEL_RESOURCE, {
+      key: RELATION_PARENT,
+      name: 'Owning workspace',
+      description:
+        'The workspace this channel belongs to. Access flows from workspace to channel, never upward.',
+      subject_resource: SLACK_WORKSPACE_RESOURCE,
+    }),
+  );
+
+  await step(`role:${SLACK_WORKSPACE_RESOURCE}.${ROLE_READER}`, () =>
+    permit.api.resourceRoles.create(SLACK_WORKSPACE_RESOURCE, {
+      key: ROLE_READER,
+      name: 'Workspace reader',
+      description: 'May list the channels this installation can see.',
+      permissions: ['search'],
+    }),
+  );
+
+  // Inheritance, with one honest limit: granting the workspace reaches every
+  // channel *Permit* knows about, and Permit only knows the ones something
+  // wrote an edge for. Nothing writes those edges yet — there is no Slack
+  // equivalent of `/v1/grants/github/sync` — so today a workspace grant
+  // reaches no channel and a channel must be granted directly. The relation
+  // exists so that sync, when it is written, has somewhere to write to.
+  await step(`role:${SLACK_CHANNEL_RESOURCE}.${ROLE_READER}`, () =>
+    permit.api.resourceRoles.create(SLACK_CHANNEL_RESOURCE, {
+      key: ROLE_READER,
+      name: 'Channel reader',
+      description:
+        'May read messages in this channel, within whatever window a Veto rule allows. Also held by anyone who reads the owning workspace.',
+      permissions: ['read'],
+      granted_to: {
+        users_with_role: [
+          {
+            linked_by_relation: RELATION_PARENT,
+            on_resource: SLACK_WORKSPACE_RESOURCE,
             role: ROLE_READER,
           },
         ],
