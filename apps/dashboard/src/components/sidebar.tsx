@@ -145,17 +145,14 @@ const OVERVIEW = [
 ] as const;
 
 /**
- * Paid tier. A null route is a feature that does not exist yet.
- *
- * Consent Grants and Agent Fingerprints are built, so on a Pro workspace each
- * becomes an ordinary link. On a free one both stay dead rows with the badge,
- * like Shadow Agents — and the API refuses the request regardless, because a
- * hidden link is not a control.
+ * Paid tier. All three are built now, so on a Pro workspace each is an
+ * ordinary link and on a free one each is a dead row with the badge — and the
+ * API refuses the request either way, because a hidden link is not a control.
  */
 const ENTERPRISE = [
   ['Consent Grants', 'shield', '/consent'],
   ['Agent Fingerprints', 'fingerprint', '/fingerprints'],
-  ['Shadow Agents', 'shadow', null],
+  ['Shadow Agents', 'shadow', '/shadow'],
 ] as const;
 
 const sectionLabel: React.CSSProperties = {

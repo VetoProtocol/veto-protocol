@@ -17,6 +17,7 @@ import { PolicyUnavailableError, type PolicyDecisions, type PolicyFacts } from '
 import {
   createDriveReader,
   createRepoReader,
+  type AppInventorySource,
   type GitHubUserAuthConfig,
 } from '@veto/connections';
 import type {
@@ -47,6 +48,7 @@ import { registerPolicyRoutes } from './routes/policies.ts';
 import { registerWebhookRoutes } from './routes/webhooks.ts';
 import { registerWorkspaceRoutes } from './routes/workspace.ts';
 import { registerFingerprintRoutes } from './routes/fingerprints.ts';
+import { registerShadowRoutes } from './routes/shadow.ts';
 
 export interface AppDeps {
   readonly pool: Pool;
@@ -68,6 +70,8 @@ export interface AppDeps {
   readonly github?: GitHubAppConfig | null;
   /** Dashboard origin, for the link on an approval alert. */
   readonly dashboardUrl?: string | null;
+  /** Inventory sources for Shadow Agents. Absent means the screen says it cannot see. */
+  readonly inventory?: readonly AppInventorySource[] | null;
   /** App user-authorization credentials. Absent means new installs cannot be proved, so they are refused. */
   readonly githubUserAuth?: GitHubUserAuthConfig | null;
   readonly githubExchange?: UpstreamTokenExchange | null;
@@ -160,6 +164,7 @@ export function createApp(deps: AppDeps): FastifyInstance {
   registerPolicyRoutes(app, { pool: deps.pool });
   registerWorkspaceRoutes(app, { pool: deps.pool });
   registerFingerprintRoutes(app, { pool: deps.pool });
+  registerShadowRoutes(app, { pool: deps.pool, inventory: deps.inventory ?? null });
 
   registerGrantRoutes(app, {
     pool: deps.pool,

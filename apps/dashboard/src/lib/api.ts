@@ -639,3 +639,36 @@ export const judgeFingerprint = (
     credential,
     body: JSON.stringify({ fingerprint, status }),
   });
+
+/**
+ * Shadow Agents.
+ *
+ * `state` is the field that matters. `read` with no apps means nothing but
+ * Veto reaches that account; `unavailable` means nobody looked. They render
+ * differently on purpose — collapsing them would print "no shadow agents
+ * found" over a question that was never asked.
+ */
+export interface ShadowAppView {
+  readonly app_id: string;
+  readonly display_name: string;
+  readonly scopes: readonly string[];
+  readonly is_veto: boolean;
+  readonly reaches_protected_data: boolean;
+}
+
+export interface ShadowProviderView {
+  readonly provider: string;
+  readonly state: 'read' | 'unavailable';
+  readonly reason: string | null;
+  readonly apps: readonly ShadowAppView[];
+}
+
+export interface ShadowView {
+  readonly providers: readonly ShadowProviderView[];
+  /** Null when any provider could not be read. Never silently zero. */
+  readonly shadow_count: number | null;
+}
+
+export const listShadowAgents = (credential: string): Promise<ShadowView> =>
+  request('/v1/shadow', { method: 'GET', credential });
+
