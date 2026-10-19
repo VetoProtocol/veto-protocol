@@ -57,3 +57,14 @@ claude.cmd
 
 # One-off operator script, not source
 scrub-and-republish.sh
+
+# Client-facing proposals and commercial documents.
+#
+# This repository is public. A proposal carries effort estimates, which
+# features do not exist yet, and commercial framing — none of it secret, all of
+# it a competitor's free roadmap. One got committed by a `git add -A` that swept
+# up a file left in the root for reference; this stops the next one.
+#
+# Keep them in ~/Documents, not here.
+Veto-*-Proposal.html
+Veto-*-Proposal.pdf
