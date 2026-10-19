@@ -213,6 +213,48 @@ const BODY = {
   },
 } as const;
 
+
+/**
+ * The shape a key must have for its resource type.
+ *
+ * `^[A-Za-z0-9_-]+$` is what Permit accepts, and it accepts far too much: a
+ * `slack_channel` granted the key `usr_abc` passes it, is stored, is listed on
+ * the screen as real access, and can never match anything — because the tool
+ * asks about `C0CB5PU9SSU`. The result is a `POLICY_DENIED` with a grant
+ * sitting right there appearing to permit it, which is the most confusing
+ * refusal this system can produce.
+ *
+ * That happened. So a type whose keys have a knowable shape says so, and an
+ * impossible grant is refused at creation with a message naming what was
+ * expected, rather than becoming a mystery denial later.
+ *
+ * Drive ids are deliberately absent: their alphabet is the general one and
+ * their length varies, so a pattern here would reject real ids. The four
+ * user-keyed types and the two with provider-defined shapes are the ones worth
+ * checking, and they are the ones that went wrong.
+ */
+const KEY_SHAPE: Readonly<Record<string, { readonly pattern: RegExp; readonly expected: string }>> =
+  {
+    // An agent can only ever reach the account of the person who delegated to
+    // it, so these are a Veto user id and nothing else.
+    [MAILBOX_RESOURCE]: { pattern: /^usr_[A-Za-z0-9_-]{1,64}$/, expected: 'a Veto user id (usr_…)' },
+    [CALENDAR_RESOURCE]: { pattern: /^usr_[A-Za-z0-9_-]{1,64}$/, expected: 'a Veto user id (usr_…)' },
+    [GITHUB_ACCOUNT_RESOURCE]: {
+      pattern: /^usr_[A-Za-z0-9_-]{1,64}$/,
+      expected: 'a Veto user id (usr_…)',
+    },
+    [SLACK_WORKSPACE_RESOURCE]: {
+      pattern: /^usr_[A-Za-z0-9_-]{1,64}$/,
+      expected: 'a Veto user id (usr_…)',
+    },
+    // Provider-defined, and stable enough to check.
+    [SLACK_CHANNEL_RESOURCE]: {
+      pattern: /^[CGD][A-Z0-9]{1,20}$/,
+      expected: 'a Slack channel id (C…)',
+    },
+    [GITHUB_REPO_RESOURCE]: { pattern: /^[0-9]+$/, expected: "GitHub's numeric repository id" },
+  };
+
 interface Body {
   agent_id: string;
   resource_type: string;
@@ -474,6 +516,17 @@ export function registerGrantRoutes(app: FastifyInstance, deps: GrantRoutesDeps)
       requireScope(request, SCOPE_CONTROL_PLANE);
       const { workspaceId, userId } = request.principal;
       const body = request.body;
+
+      // Refused before the agent is even looked up: a key that cannot match is
+      // not a question about this agent.
+      const shape = KEY_SHAPE[body.resource_type];
+      if (shape !== undefined && !shape.pattern.test(body.resource_key)) {
+        throw new HttpError(
+          400,
+          'ARGUMENT_SCHEMA_INVALID',
+          `A ${body.resource_type} grant needs ${shape.expected}. That value could never match, so it would appear on this screen as access and refuse every request.`,
+        );
+      }
 
       // The agent must exist here, and be live. Granting to an id from another
       // workspace would write a Permit fact this tenant can never see and never

@@ -508,3 +508,80 @@ describe('consent grants', () => {
     expect(row?.['inherits']).toBe(true);
   });
 });
+
+/**
+ * A grant whose key cannot match is refused at creation.
+ *
+ * `^[A-Za-z0-9_-]+$` is what Permit accepts, and it accepts far too much. A
+ * `slack_channel` granted the key `usr_abc` passed it, was stored, appeared on
+ * the screen as real access, and refused every request — because the tool asks
+ * about `C0CB5PU9SSU`. A `POLICY_DENIED` with a grant sitting right there
+ * appearing to permit it is the most confusing refusal this system produces,
+ * and it happened in production.
+ */
+describe('a grant that could never match', () => {
+  it('refuses a channel granted a user id', async () => {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/grants',
+      headers: as(WS, ALICE),
+      payload: grant({ resource_type: 'slack_channel', resource_key: ALICE }),
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error.message).toContain('Slack channel id');
+  });
+
+  it('refuses a mailbox granted something that is not a person', async () => {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/grants',
+      headers: as(WS, ALICE),
+      payload: grant({ resource_type: 'gmail_mailbox', resource_key: 'C0CB5PU9SSU' }),
+    });
+
+    expect(response.statusCode).toBe(400);
+  });
+
+  it('refuses a repository granted a name instead of its id', async () => {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/grants',
+      headers: as(WS, ALICE),
+      payload: grant({ resource_type: 'github_repo', resource_key: 'acme-api' }),
+    });
+
+    expect(response.statusCode).toBe(400);
+  });
+
+  it('accepts the shapes that can match', async () => {
+    for (const [type, key] of [
+      ['slack_channel', 'C0CB5PU9SSU'],
+      ['slack_workspace', ALICE],
+      ['github_repo', '289166878'],
+      ['gmail_mailbox', ALICE],
+    ] as const) {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/v1/grants',
+        headers: as(WS, ALICE),
+        payload: grant({ resource_type: type, resource_key: key }),
+      });
+
+      expect(response.statusCode, `${type}:${key} was refused`).toBe(201);
+    }
+  });
+
+  it('still accepts a Drive id, whose shape is not knowable', async () => {
+    // Deliberately unchecked: the Drive alphabet is the general one and the
+    // length varies, so a pattern here would reject real ids.
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/grants',
+      headers: as(WS, ALICE),
+      payload: grant({ resource_type: 'google_file', resource_key: '1a2B3c-_9zYxWvU8t' }),
+    });
+
+    expect(response.statusCode).toBe(201);
+  });
+});
