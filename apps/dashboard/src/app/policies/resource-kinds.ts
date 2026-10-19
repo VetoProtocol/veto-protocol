@@ -32,8 +32,17 @@ export interface ResourceKind {
    * place they look.
    */
   readonly keyLabel: string;
-  /** The small grey qualifier beside it. */
+  /**
+   * The small grey qualifier beside the label — where to find the value.
+   *
+   * Positive, never a negation. `not a path` told somebody what the field was
+   * not, which makes them check their input against a rule instead of
+   * recognising the right shape; and a warning about a likely mistake belongs
+   * in the sentence underneath, not in the name of the thing.
+   */
   readonly keyHint: string;
+  /** A real example, shown inside the empty field. Worth more than a rule. */
+  readonly keyExample?: string;
   /** One sentence saying where to find the value. */
   readonly keyHelp: string;
   /**
@@ -50,34 +59,36 @@ export const RESOURCE_KINDS: Readonly<Record<string, ResourceKind>> = {
   google_folder: {
     label: 'folder',
     reach: 'that folder',
-    keyLabel: 'drive folder id',
-    keyHint: 'not a path',
+    keyLabel: 'folder id',
+    keyHint: 'from the Drive URL',
+    keyExample: '1a2B3c-_9zYxWvU8t',
     keyHelp:
       'The long string in the Drive URL after /folders/. A path like /Work is not an id and will be refused.',
   },
   google_file: {
     label: 'file',
     reach: 'that file',
-    keyLabel: 'drive file id',
-    keyHint: 'not a path',
+    keyLabel: 'file id',
+    keyHint: 'from the Drive URL',
+    keyExample: '1a2B3c-_9zYxWvU8t',
     keyHelp: 'The long string in the Drive URL after /d/.',
   },
   gmail_mailbox: {
     label: 'mailbox',
     reach: 'that mailbox',
-    keyLabel: 'veto user id',
-    keyHint: 'the delegating person',
+    keyLabel: 'whose mailbox',
+    keyHint: 'filled in for you',
     keyHelp:
-      'An agent can only ever reach the mailbox of the person who delegated to it, so there is one correct value and it is filled in for you.',
+      'An agent can only ever reach the mailbox of the person who delegated to it, so there is one correct value and it is already here.',
     userKeyed: true,
   },
   google_calendar: {
     label: 'calendar',
     reach: 'that calendar',
-    keyLabel: 'veto user id',
-    keyHint: 'the delegating person',
+    keyLabel: 'whose calendar',
+    keyHint: 'filled in for you',
     keyHelp:
-      'An agent can only ever reach the calendar of the person who delegated to it, so there is one correct value and it is filled in for you.',
+      'An agent can only ever reach the calendar of the person who delegated to it, so there is one correct value and it is already here.',
     userKeyed: true,
   },
   // A GitHub grant names a repository by its numeric id, so the label is the
@@ -86,7 +97,8 @@ export const RESOURCE_KINDS: Readonly<Record<string, ResourceKind>> = {
     label: 'repository',
     reach: 'that repository',
     keyLabel: 'repository id',
-    keyHint: 'numeric, not owner/name',
+    keyHint: 'the number, not the name',
+    keyExample: '289166878',
     keyHelp:
       "GitHub's numeric id for the repository — a name would silently follow whoever registered it next after a rename. `github_repo.list_repos` returns it.",
   },
@@ -96,8 +108,8 @@ export const RESOURCE_KINDS: Readonly<Record<string, ResourceKind>> = {
   github_account: {
     label: 'GitHub account',
     reach: 'every repository under that account',
-    keyLabel: 'veto user id',
-    keyHint: 'the delegating person',
+    keyLabel: 'whose account',
+    keyHint: 'filled in for you',
     keyHelp:
       'Keyed by the person who installed it, not by the GitHub login — a login in the key would be a value an agent could name.',
     userKeyed: true,
@@ -109,15 +121,16 @@ export const RESOURCE_KINDS: Readonly<Record<string, ResourceKind>> = {
     label: 'channel',
     reach: 'that channel, if the bot is in it',
     keyLabel: 'channel id',
-    keyHint: 'starts with C',
+    keyHint: 'from Slack, starts with C',
+    keyExample: 'C01ABCDEF2G',
     keyHelp:
       'Slack\u2019s own channel id, from `slack_channel.list_channels` or from the channel details in Slack. Granting it permits reading; the bot still has to be in the channel.',
   },
   slack_workspace: {
     label: 'Slack workspace',
     reach: 'the list of channels \u2014 not the messages in them',
-    keyLabel: 'veto user id',
-    keyHint: 'the delegating person',
+    keyLabel: 'whose workspace',
+    keyHint: 'filled in for you',
     keyHelp:
       'Keyed by the person who connected Slack, so no argument could name somebody else\u2019s workspace. Note this grants the channel *list* only \u2014 reading a channel is a separate grant today.',
     userKeyed: true,
@@ -137,7 +150,7 @@ export const kindReach = (resourceType: string): string =>
 /** How to ask for this kind's key. Falls back to something true but vague. */
 export const kindKey = (resourceType: string): Pick<
   ResourceKind,
-  'keyLabel' | 'keyHint' | 'keyHelp' | 'userKeyed'
+  'keyLabel' | 'keyHint' | 'keyHelp' | 'keyExample' | 'userKeyed'
 > =>
   RESOURCE_KINDS[resourceType] ?? {
     keyLabel: 'resource id',

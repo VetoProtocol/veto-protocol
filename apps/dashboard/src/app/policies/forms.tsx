@@ -372,7 +372,7 @@ export function CreateGrantForm({
             maxLength={512}
             readOnly={key.userKeyed === true}
             defaultValue={key.userKeyed === true ? userId : ''}
-            placeholder={key.userKeyed === true ? '' : 'the provider\u2019s own id'}
+            placeholder={key.keyExample ?? ''}
             style={{
               ...field,
               ...(key.userKeyed === true ? { color: 'var(--text-dim)' } : {}),
