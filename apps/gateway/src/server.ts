@@ -100,8 +100,17 @@ const execute =
             }),
       };
 
+// Where the dashboard lives, for the link on an approval alert.
+//
+// The same variable the dashboard builds its own public origin from, so the
+// two cannot drift into pointing at different hosts. Configuration, never a
+// request value: an origin a caller could name is an origin a caller could put
+// in an alert somebody is about to click. Empty means alerts carry no link.
+const dashboardUrl = (process.env['DASHBOARD_PUBLIC_URL'] ?? '').trim() || null;
+
 const app = createGateway({
   pool,
+  dashboardUrl,
   redis,
   policy,
   execute,

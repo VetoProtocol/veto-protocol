@@ -93,4 +93,20 @@ export interface WebhookEventData {
   readonly sessions_dropped?: number | null;
   /** OAuth refresh chains killed. A chain outlives every token it issued. */
   readonly oauth_chains_revoked?: number | null;
+  /**
+   * Where the delegating user goes to resolve this approval.
+   *
+   * A Veto-controlled dashboard URL and never a third party's (invariant 8),
+   * carrying an approval id and nothing else — no challenge, no arguments, no
+   * resource contents. It is safe to send because it confers nothing:
+   * `routes/approvals.ts` refuses anyone but the delegator with
+   * `APPROVER_NOT_DELEGATOR`, and refuses them too without a passkey assertion
+   * over that approval's own stored challenge. The link saves somebody finding
+   * the page; it is not a way in.
+   *
+   * Absent when the emitter has no dashboard origin configured. A missing link
+   * makes the alert less useful, never less safe, so it is omitted rather than
+   * guessed.
+   */
+  readonly approval_url?: string | null;
 }

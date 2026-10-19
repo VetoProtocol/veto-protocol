@@ -65,6 +65,8 @@ interface Body {
 }
 
 export interface DecisionRoutesDeps {
+  /** Dashboard origin, for the link on an approval alert. Configuration only. */
+  readonly dashboardUrl?: string | null;
   readonly pool: Pool;
   readonly redis: Redis;
   readonly decisions: PolicyDecisions;
@@ -124,7 +126,12 @@ export function registerDecisionRoutes(app: FastifyInstance, deps: DecisionRoute
       let decision;
       try {
         decision = await evaluate(
-          { pool: deps.pool, redis: deps.redis, policy: deps.decisions },
+          {
+            pool: deps.pool,
+            redis: deps.redis,
+            policy: deps.decisions,
+            dashboardUrl: deps.dashboardUrl ?? null,
+          },
           input,
         );
       } catch (error) {

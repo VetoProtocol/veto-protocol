@@ -38,6 +38,7 @@ const ENDPOINT_SCHEMA = {
     url: { type: 'string' },
     events: { type: 'array', items: { type: 'string' } },
     status: { type: 'string' },
+    route_to_user_id: { type: 'string', nullable: true },
     created_at: { type: 'string' },
     disabled_at: { type: 'string', nullable: true },
   },
@@ -58,12 +59,23 @@ const CREATE_BODY = {
       // nothing and look like a delivery bug for as long as nobody checked.
       items: { type: 'string', enum: [...WEBHOOK_EVENTS] },
     },
+    /**
+     * Narrow this endpoint to one person's events.
+     *
+     * `"me"` rather than a user id, and deliberately so. A caller naming an
+     * arbitrary id would be asking to receive somebody else's alerts, and the
+     * only safe answer to that is a refusal — so the field has no way to say
+     * it. The server substitutes the authenticated user. An operator setting
+     * one up for a colleague is a different feature with a different check.
+     */
+    route_to: { type: 'string', enum: ['me'] },
   },
 } as const;
 
 interface CreateBody {
   url: string;
   events: WebhookEventType[];
+  route_to?: 'me';
 }
 
 /** Digits as a string: `coerceTypes` is off app-wide. See routes/audit.ts. */
@@ -108,6 +120,7 @@ export function registerWebhookRoutes(app: FastifyInstance, deps: WebhookRoutesD
           url: e.url,
           events: [...e.events],
           status: e.status,
+          route_to_user_id: e.routeToUserId,
           created_at: e.createdAt.toISOString(),
           disabled_at: e.disabledAt === null ? null : e.disabledAt.toISOString(),
         })),
@@ -128,6 +141,7 @@ export function registerWebhookRoutes(app: FastifyInstance, deps: WebhookRoutesD
               url: { type: 'string' },
               events: { type: 'array', items: { type: 'string' } },
               status: { type: 'string' },
+              route_to_user_id: { type: 'string', nullable: true },
               created_at: { type: 'string' },
               // Returned here and never again. The response schema is the only
               // place in this API where a secret appears, deliberately marked.
@@ -163,6 +177,11 @@ export function registerWebhookRoutes(app: FastifyInstance, deps: WebhookRoutesD
           url: request.body.url,
           events: request.body.events,
           createdBy: userId,
+          // The authenticated user, never a value from the body. `route_to`
+          // can only say "me", so there is no field an attacker could put
+          // somebody else's id in — the same shape as a mailbox tool taking
+          // its resource from the session rather than an argument.
+          routeToUserId: request.body.route_to === 'me' ? userId : null,
         }),
       );
 
@@ -171,6 +190,7 @@ export function registerWebhookRoutes(app: FastifyInstance, deps: WebhookRoutesD
         url: created.endpoint.url,
         events: [...created.endpoint.events],
         status: created.endpoint.status,
+        route_to_user_id: created.endpoint.routeToUserId,
         created_at: created.endpoint.createdAt.toISOString(),
         secret: created.secret,
       });

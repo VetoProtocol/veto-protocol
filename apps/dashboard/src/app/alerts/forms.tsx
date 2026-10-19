@@ -79,6 +79,31 @@ export function AddEndpointForm() {
         </div>
       </fieldset>
 
+      {/* Routing. A checkbox rather than a person picker, because the only
+          value the API accepts is "me" — there is no way to ask for somebody
+          else's alerts, so there is nothing to pick. */}
+      <label
+        style={{
+          display: 'flex',
+          gap: 9,
+          alignItems: 'baseline',
+          fontSize: 12,
+          border: '1px solid var(--border)',
+          padding: '12px 14px',
+        }}
+      >
+        <input type="checkbox" name="route_to_me" value="1" />
+        <span>
+          only my own events
+          <span style={{ color: 'var(--text-faint)' }}>
+            {' '}
+            — an approval can only be resolved by the person it belongs to, so send mine here and
+            nobody else&rsquo;s. Leave this off and the endpoint receives the whole
+            workspace&rsquo;s.
+          </span>
+        </span>
+      </label>
+
       <div>
         <Button type="submit" variant="solid" disabled={pending}>
           {pending ? 'adding…' : 'add endpoint'}

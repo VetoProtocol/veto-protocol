@@ -128,3 +128,71 @@ and a worker drains it. Two consequences worth knowing:
 
 `POST /v1/webhooks/drain` runs the worker for your workspace, for a deployment
 with no scheduler.
+
+## Routing an endpoint to one person
+
+An endpoint is workspace-wide by default: every active endpoint subscribed to
+an event receives every one of them. That is right for `workspace.locked` and
+`decision.denied`, which are facts about the tenant.
+
+It is wrong for `approval.requested`. Only the delegating user can resolve
+their own challenge (invariant 7), so that alert has exactly one correct
+recipient — and a workspace-wide endpoint either reaches everybody or reaches a
+channel nobody is watching. The event has carried `human_id` since it was
+written, with the comment *"an alert about an approval nobody can route is
+noise"*. Migration 0029 is the column that routes it.
+
+```
+POST /v1/webhooks   { "url": "...", "events": ["approval.requested"], "route_to": "me" }
+```
+
+**`route_to` can only say `"me"`.** There is no field for another person's id,
+because the only safe answer to "send me somebody else's alerts" is a refusal —
+so the request has no way to ask. The server substitutes the authenticated
+user, the same shape as a mailbox tool taking its resource from the session
+rather than an argument.
+
+Selection happens in SQL, not by filtering afterwards, so an endpoint an event
+is not for is never loaded and cannot be delivered to by a later edit that
+forgets the check:
+
+```sql
+and (route_to_user_id is null or route_to_user_id is not distinct from $3)
+```
+
+An event carrying no `human_id` reaches **no** routed endpoint rather than all
+of them. A routed endpoint is somebody asking for their own things; an event
+about nobody in particular is not one, and failing to deliver is quieter than
+failing to withhold.
+
+`(workspace_id, route_to_user_id)` is a composite foreign key, so an endpoint
+in one workspace cannot be routed to a user in another — unrepresentable rather
+than merely untested.
+
+### The link
+
+`approval.requested` carries `approval_url`, built from `DASHBOARD_PUBLIC_URL`
+— the same variable the dashboard builds its own origin from, so the two cannot
+drift. It is configuration and never a request value: an origin a caller could
+name is an origin a caller could put in an alert somebody is about to click.
+Absent configuration means no link, which costs convenience and never safety.
+
+**The link confers nothing.** It carries an approval id and nothing else — no
+challenge, no arguments, no resource contents. Resolving still demands a
+passkey assertion from the delegating user over that approval's own stored
+challenge, and the API refuses anybody else with `APPROVER_NOT_DELEGATOR`. The
+page highlights the linked row rather than reordering the list, so two people
+looking at the same screen see the same thing.
+
+### What this is not
+
+A Slack **app**. Slack's incoming webhooks are ordinary HTTPS endpoints, so
+pasting one in works today — but there is no in-Slack approve button, and the
+message is a link that opens the dashboard. An interactive Slack approval is a
+different piece of work.
+
+Email is deliberately **not** a channel here. An approval lives five minutes
+(`approvalTtlMs`, `pipeline.ts`), nothing in this system stores an email
+address, and adding one is a data-minimisation decision rather than a build
+task. A notification that lands after the approval expired is worse than none.
+

@@ -18,6 +18,10 @@ export async function createEndpointAction(
     .map(String)
     .filter((e) => e !== '');
 
+  // A checkbox, so the only values are present or absent. The user id is
+  // never carried from the browser — the API substitutes whoever is signed in.
+  const mine = form.get('route_to_me') !== null;
+
   if (url === '') return fail('An endpoint needs a URL.');
   if (events.length === 0) {
     // Not a default. An endpoint subscribed to everything because nobody chose
@@ -26,12 +30,18 @@ export async function createEndpointAction(
   }
 
   try {
-    const created = await createEndpoint(session.credential, { url, events });
+    const created = await createEndpoint(session.credential, {
+      url,
+      events,
+      ...(mine ? { route_to: 'me' as const } : {}),
+    });
     revalidatePath('/alerts');
 
     return {
       error: null,
-      notice: `Endpoint added for ${created.events.length} event${created.events.length === 1 ? '' : 's'}.`,
+      notice: mine
+        ? `Endpoint added for ${created.events.length} event${created.events.length === 1 ? '' : 's'} — yours only.`
+        : `Endpoint added for ${created.events.length} event${created.events.length === 1 ? '' : 's'}.`,
       // The one and only time this value is available. It is not stored here,
       // not logged, and there is no route that reads it back.
       secret: created.secret,

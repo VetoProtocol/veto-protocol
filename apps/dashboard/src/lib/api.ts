@@ -146,6 +146,8 @@ export const getDecision = (credential: string, decisionId: string): Promise<Dec
   request(`/v1/decisions/${encodeURIComponent(decisionId)}`, { method: 'GET', credential });
 
 export interface EndpointView {
+  /** Who this endpoint is for. Null means the whole workspace. */
+  readonly route_to_user_id?: string | null;
   readonly id: string;
   readonly url: string;
   readonly events: string[];
@@ -174,7 +176,10 @@ export const listEndpoints = (credential: string): Promise<{ endpoints: Endpoint
 /** The only response in this API that carries a secret, and only this once. */
 export const createEndpoint = (
   credential: string,
-  body: { url: string; events: string[] },
+  // `route_to` can only say "me". There is no field for another person's id,
+  // because the only safe answer to "send me somebody else's alerts" is a
+  // refusal — so the request has no way to ask it.
+  body: { url: string; events: string[]; route_to?: 'me' },
 ): Promise<EndpointView & { secret: string }> =>
   request('/v1/webhooks', { method: 'POST', credential, body: JSON.stringify(body) });
 

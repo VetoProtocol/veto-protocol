@@ -67,6 +67,15 @@ export interface PipelineDeps {
   readonly policy: PolicyDecisions;
   /** How long an approval stays open. §5.2 shows minutes, not hours. */
   readonly approvalTtlMs?: number;
+  /**
+   * Where the dashboard lives, for the link on an approval alert.
+   *
+   * Configuration, never derived from a request: a caller that could name this
+   * origin could put its own address in an alert the delegating user is about
+   * to click. Absent means the alert carries no link, which is the honest
+   * degradation — a missing link costs convenience, a wrong one costs trust.
+   */
+  readonly dashboardUrl?: string | null;
 }
 
 interface Outcome {
@@ -557,7 +566,7 @@ async function persist(
       correlationId: input.requestId,
     });
 
-    await announce(db, input, args, approvalId);
+    await announce(db, input, args, approvalId, deps.dashboardUrl ?? null);
 
     return approvalId;
   });
@@ -580,6 +589,7 @@ async function announce(
   input: EvaluateInput,
   args: PersistArgs,
   approvalId: string | null,
+  dashboardUrl: string | null,
 ): Promise<void> {
   const shared = {
     workspaceId: input.workspaceId,
@@ -613,10 +623,20 @@ async function announce(
   }
 
   if (args.outcome.result === 'challenge' && approvalId !== null) {
+    // The id goes in the path, encoded. It is ours — `newId` made it — but a
+    // value interpolated into a URL somebody is about to click gets encoded
+    // whatever its provenance, because the habit is what survives a refactor
+    // that changes where the id comes from.
+    const approvalUrl =
+      dashboardUrl === null || dashboardUrl === ''
+        ? null
+        : `${dashboardUrl.replace(/\/+$/, '')}/approvals?id=${encodeURIComponent(approvalId)}`;
+
     await enqueue(db, {
       ...shared,
       type: 'approval.requested',
       data: {
+        ...(approvalUrl === null ? {} : { approval_url: approvalUrl }),
         agent_id: input.agentId,
         // Who has to act. An alert about an approval nobody can route is noise.
         human_id: input.humanId,

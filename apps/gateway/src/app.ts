@@ -61,6 +61,13 @@ export interface GatewayDeps {
   readonly publicUrl: string;
   /** Where a client goes to obtain a token. */
   readonly authorizationServer: string;
+  /**
+   * Where the dashboard lives, for the link on an approval alert.
+   *
+   * Configuration, not a request value. Absent means the alert carries no
+   * link — less useful, never less safe.
+   */
+  readonly dashboardUrl?: string | null;
   readonly logger?: boolean;
 }
 
@@ -366,7 +373,12 @@ export function createGateway(deps: GatewayDeps): FastifyInstance {
     );
 
     const decision = await evaluate(
-      { pool: deps.pool, redis: deps.redis, policy: deps.policy },
+      {
+        pool: deps.pool,
+        redis: deps.redis,
+        policy: deps.policy,
+        dashboardUrl: deps.dashboardUrl ?? null,
+      },
       input,
     );
 

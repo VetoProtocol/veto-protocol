@@ -66,6 +66,8 @@ export interface AppDeps {
   readonly google?: GoogleOAuthConfig | null;
   /** Null when the GitHub App is not configured. Same rule. */
   readonly github?: GitHubAppConfig | null;
+  /** Dashboard origin, for the link on an approval alert. */
+  readonly dashboardUrl?: string | null;
   /** App user-authorization credentials. Absent means new installs cannot be proved, so they are refused. */
   readonly githubUserAuth?: GitHubUserAuthConfig | null;
   readonly githubExchange?: UpstreamTokenExchange | null;
@@ -143,7 +145,12 @@ export function createApp(deps: AppDeps): FastifyInstance {
 
   registerAgentRoutes(app, { pool: deps.pool, redis: deps.redis, policy: deps.policy });
   registerAuthRoutes(app, { pool: deps.pool });
-  registerDecisionRoutes(app, { pool: deps.pool, redis: deps.redis, decisions: deps.decisions });
+  registerDecisionRoutes(app, {
+    pool: deps.pool,
+    redis: deps.redis,
+    decisions: deps.decisions,
+    dashboardUrl: deps.dashboardUrl ?? null,
+  });
   registerApprovalRoutes(app, { pool: deps.pool, webauthn: deps.webauthn ?? null });
   registerPasskeyRoutes(app, { pool: deps.pool, redis: deps.redis, webauthn: deps.webauthn ?? null });
   registerPresenceRoutes(app, { pool: deps.pool, redis: deps.redis });

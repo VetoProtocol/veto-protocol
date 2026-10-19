@@ -397,3 +397,108 @@ describe('endpoints', () => {
     await expect(register(['agent.revoked'])).rejects.toThrow();
   });
 });
+
+/**
+ * Routing an endpoint to one person (migration 0029).
+ *
+ * Only the delegating user can resolve their own challenge (invariant 7), so
+ * an `approval.requested` alert has exactly one correct recipient. These cover
+ * the selection: who receives a routed event, who does not, and that an
+ * unrouted endpoint behaves exactly as it did before the column existed.
+ */
+describe('routing an endpoint to a person', () => {
+  const routed = (events: string[], toUser: string, url = RECEIVER) =>
+    inWorkspace(WS, (db) =>
+      createEndpoint(db, wrapper, {
+        workspaceId: WS,
+        url,
+        events: events as never,
+        createdBy: USER,
+        routeToUserId: toUser,
+      }),
+    );
+
+  const approvalFor = (human: string) =>
+    inWorkspace(WS, (db) =>
+      enqueue(db, {
+        workspaceId: WS,
+        type: 'approval.requested',
+        data: { human_id: human, approval_id: 'apr_x', agent_id: 'agt_x' },
+      }),
+    );
+
+  it('delivers to the person the event is about', async () => {
+    await routed(['approval.requested'], USER);
+    expect(await approvalFor(USER)).toHaveLength(1);
+  });
+
+  it('withholds from an endpoint routed to somebody else', async () => {
+    // The whole point. A routed endpoint is one person saying "send me my
+    // approvals", and another person's approval is not one of them.
+    await routed(['approval.requested'], USER);
+
+    const second = `usr_second${s}`;
+    await inWorkspace(WS, (db) =>
+      db.query(`insert into users (id,workspace_id,identity_subject) values ($1,$2,$3)`, [
+        second,
+        WS,
+        `oidc|${second}`,
+      ]),
+    );
+
+    expect(await approvalFor(second)).toHaveLength(0);
+  });
+
+  it('leaves an unrouted endpoint exactly as it was', async () => {
+    // The promise the migration rests on: every endpoint that existed before
+    // 0029 has a null routing target and must keep receiving everything it
+    // subscribed to, for anyone.
+    await register(['approval.requested']);
+
+    expect(await approvalFor(USER)).toHaveLength(1);
+    expect(await approvalFor(`usr_anyone${s}`)).toHaveLength(1);
+  });
+
+  it('sends an event about nobody to the workspace, not to a routed endpoint', async () => {
+    // `workspace.locked` carries no `human_id`. A routed endpoint asked for
+    // one person's things; an event about nobody in particular is not one, and
+    // failing to deliver is quieter than failing to withhold.
+    await routed(['workspace.locked'], USER);
+    await register(['workspace.locked'], OTHER_RECEIVER);
+
+    const created = await inWorkspace(WS, (db) =>
+      enqueue(db, { workspaceId: WS, type: 'workspace.locked', data: {} }),
+    );
+
+    expect(created).toHaveLength(1);
+  });
+
+  it('reports the routing target back, so a screen can show who it is for', async () => {
+    await routed(['approval.requested'], USER);
+    const [endpoint] = await inWorkspace(WS, (db) => listEndpoints(db, WS));
+
+    expect(endpoint?.routeToUserId).toBe(USER);
+  });
+
+  it('refuses a routing target from another workspace', async () => {
+    // The composite foreign key is the control: an endpoint in this workspace
+    // cannot be routed to a user in another, and that is unrepresentable
+    // rather than merely untested (invariant 4).
+    await expect(routed(['approval.requested'], OTHER_USER)).rejects.toThrow();
+  });
+
+  it('still refuses to deliver across workspaces', async () => {
+    // Routing narrows within a tenant; it must not become a way out of one.
+    await routed(['approval.requested'], USER);
+
+    const created = await inWorkspace(OTHER_WS, (db) =>
+      enqueue(db, {
+        workspaceId: OTHER_WS,
+        type: 'approval.requested',
+        data: { human_id: USER, approval_id: 'apr_y' },
+      }),
+    );
+
+    expect(created).toHaveLength(0);
+  });
+});

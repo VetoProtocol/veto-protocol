@@ -7,7 +7,22 @@ import { EnrolPasskey, Expiry, ResolveApproval } from './ceremony';
 
 export const dynamic = 'force-dynamic';
 
-export default async function ApprovalsPage() {
+export default async function ApprovalsPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  // The id an alert linked to. A convenience for finding the right row in a
+  // list — it grants nothing, because resolving still demands a passkey
+  // assertion from the delegating user over that approval's own stored
+  // challenge, and the API refuses anybody else with APPROVER_NOT_DELEGATOR.
+  //
+  // The list is already scoped to the signed-in user, so an id belonging to
+  // somebody else simply matches no row and highlights nothing. No lookup is
+  // performed on it and it is never echoed back into the page.
+  const raw = (await searchParams)['id'];
+  const linked = typeof raw === 'string' && /^apr_[A-Za-z0-9_-]{1,64}$/.test(raw) ? raw : null;
+
   const session = await currentSession();
   if (!session) redirect('/signed-out');
 
@@ -63,7 +78,21 @@ export default async function ApprovalsPage() {
             {waiting.map((approval) => (
               <li
                 key={approval.id}
-                style={{ borderTop: '1px solid var(--border)', padding: '18px' }}
+                id={approval.id}
+                style={{
+                  borderTop: '1px solid var(--border)',
+                  padding: '18px',
+                  // The row an alert pointed at, marked rather than reordered:
+                  // moving it would make the list order depend on how somebody
+                  // arrived, and two people looking at the same screen would
+                  // see different things.
+                  ...(approval.id === linked
+                    ? {
+                        borderLeft: '2px solid var(--challenge)',
+                        background: 'var(--challenge-bg)',
+                      }
+                    : {}),
+                }}
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
                   <Chip tone="challenge">approval required</Chip>

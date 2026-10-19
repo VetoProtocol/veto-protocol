@@ -33,6 +33,14 @@ export interface Endpoint {
   readonly url: string;
   readonly events: readonly WebhookEventType[];
   readonly status: 'active' | 'disabled';
+  /**
+   * Who this endpoint is for, or null for the whole workspace.
+   *
+   * Null is how every endpoint behaved before migration 0029 and remains the
+   * default. A value here narrows delivery to events about that person — it
+   * grants nothing and authorises nobody.
+   */
+  readonly routeToUserId: string | null;
   readonly createdAt: Date;
   readonly disabledAt: Date | null;
 }
@@ -42,6 +50,14 @@ export interface CreateEndpointInput {
   readonly url: string;
   readonly events: readonly WebhookEventType[];
   readonly createdBy: string;
+  /**
+   * Narrow this endpoint to one person's events. Absent means the workspace.
+   *
+   * Separate from `createdBy`, which records who made the endpoint and is not a
+   * routing instruction: an operator may set one up on somebody else's behalf,
+   * and the two answers would silently diverge if one stood in for the other.
+   */
+  readonly routeToUserId?: string | null;
 }
 
 export interface CreatedEndpoint {
@@ -70,10 +86,19 @@ export async function createEndpoint(
 
   const { rows } = await db.query<EndpointRow>(
     `insert into webhook_endpoints
-       (id, workspace_id, url, secret_sealed, secret_key_id, events, created_by)
-     values ($1,$2,$3,$4,$5,$6,$7)
-     returning id, url, events, status, created_at, disabled_at`,
-    [id, input.workspaceId, input.url, sealed.blob, sealed.keyId, [...input.events], input.createdBy],
+       (id, workspace_id, url, secret_sealed, secret_key_id, events, created_by, route_to_user_id)
+     values ($1,$2,$3,$4,$5,$6,$7,$8)
+     returning id, url, events, status, route_to_user_id, created_at, disabled_at`,
+    [
+      id,
+      input.workspaceId,
+      input.url,
+      sealed.blob,
+      sealed.keyId,
+      [...input.events],
+      input.createdBy,
+      input.routeToUserId ?? null,
+    ],
   );
 
   const row = rows[0];
@@ -84,7 +109,7 @@ export async function createEndpoint(
 
 export async function listEndpoints(db: Db, workspaceId: string): Promise<Endpoint[]> {
   const { rows } = await db.query<EndpointRow>(
-    `select id, url, events, status, created_at, disabled_at
+    `select id, url, events, status, route_to_user_id, created_at, disabled_at
        from webhook_endpoints where workspace_id = $1 order by created_at desc`,
     [workspaceId],
   );
@@ -129,14 +154,31 @@ export interface EnqueueInput {
  * `on conflict do nothing` against the (endpoint, event) uniqueness makes this
  * safe to call twice for the same event id: a caller retrying after a partial
  * failure produces one delivery, not two.
+ *
+ * ## Routing
+ *
+ * An endpoint with `route_to_user_id` set receives an event only when the
+ * event is *about* that person — `data.human_id`. An endpoint without one is
+ * workspace-wide and unchanged, which is every endpoint that existed before
+ * migration 0029.
+ *
+ * The comparison is deliberately strict. An event carrying no `human_id` — a
+ * workspace lock, say — reaches no routed endpoint at all, rather than reaching
+ * all of them. A routed endpoint is somebody saying "send me *my* things"; an
+ * event about nobody in particular is not one of them, and the failure to
+ * deliver is quieter than the failure to withhold.
  */
 export async function enqueue(db: Db, input: EnqueueInput): Promise<readonly string[]> {
   const eventId = newId('evt_');
 
+  // Done in SQL rather than by filtering in JS, so an endpoint this event is
+  // not for is never loaded, never iterated, and cannot be delivered to by a
+  // later edit that forgets the check.
   const { rows: endpoints } = await db.query<{ id: string }>(
     `select id from webhook_endpoints
-      where workspace_id = $1 and status = 'active' and $2 = any (events)`,
-    [input.workspaceId, input.type],
+      where workspace_id = $1 and status = 'active' and $2 = any (events)
+        and (route_to_user_id is null or route_to_user_id is not distinct from $3)`,
+    [input.workspaceId, input.type, input.data.human_id ?? null],
   );
 
   if (endpoints.length === 0) return [];
@@ -236,6 +278,7 @@ interface EndpointRow {
   url: string;
   events: string[];
   status: 'active' | 'disabled';
+  route_to_user_id: string | null;
   created_at: Date;
   disabled_at: Date | null;
 }
@@ -243,6 +286,7 @@ interface EndpointRow {
 const toEndpoint = (row: EndpointRow): Endpoint => ({
   id: row.id,
   url: row.url,
+  routeToUserId: row.route_to_user_id,
   // Filtered rather than cast. A row written by an older build could name an
   // event this build does not have, and silently claiming it does would be
   // worse than dropping it.
