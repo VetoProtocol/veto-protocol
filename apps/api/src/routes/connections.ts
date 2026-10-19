@@ -25,10 +25,14 @@ import { withWorkspace } from '@veto/db';
 import {
   GOOGLE_SERVICES,
   GOOGLE_SERVICE_NAMES,
+  SLACK_SERVICES,
+  SLACK_SERVICE_NAMES,
   buildConsentUrl,
   buildInstallUrl,
+  buildSlackInstallUrl,
   createConnection,
   exchangeAuthorizationCode,
+  exchangeSlackCode,
   findConnection,
   listConnections,
   readInstallation,
@@ -38,6 +42,8 @@ import {
   type GitHubAppConfig,
   type GitHubUserAuthConfig,
   type GoogleOAuthConfig,
+  type SlackAppConfig,
+  type SlackService,
   type UpstreamTokenExchange,
   userControlsInstallation,
 } from '@veto/connections';
@@ -72,6 +78,8 @@ export interface ConnectionRoutesDeps {
    * `github` and is what the gateway holds.
    */
   readonly githubUserAuth: GitHubUserAuthConfig | null;
+  /** Slack app credentials. Absent means every Slack route refuses. */
+  readonly slack: SlackAppConfig | null;
   /**
    * Revocation has to reach the provider the connection actually belongs to.
    * Handing an installation id to Google's revoke endpoint fails quietly and
@@ -322,6 +330,152 @@ export function registerConnectionRoutes(app: FastifyInstance, deps: ConnectionR
           // grant must not be recorded as a full one (§9.1 granular permissions).
           scopes: exchanged.scopes,
           refreshToken: exchanged.refreshToken,
+          correlationId: String(request.id),
+        }),
+      );
+
+      return reply.code(201).send(serialize(connection));
+    },
+  );
+
+
+  /**
+   * Begin a Slack install.
+   *
+   * The state is minted here, never accepted from the caller — the F-01
+   * lesson, applied before it could be repeated. CSRF protection the client
+   * chooses is a token the client can replay against itself, and the side that
+   * checks a value should be the side that issues it.
+   *
+   * One service per call, like Google's consent URL: "read our public
+   * channels" and "read our private channels" are different conversations, and
+   * a flow that took a list could ask for both while appearing to ask for one.
+   */
+  app.get(
+    '/v1/connections/slack/install-url',
+    {
+      schema: {
+        querystring: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['service'],
+          properties: { service: { type: 'string', enum: [...SLACK_SERVICE_NAMES] } },
+        },
+        response: {
+          200: {
+            type: 'object',
+            properties: {
+              url: { type: 'string' },
+              state: { type: 'string' },
+              scopes: { type: 'array', items: { type: 'string' } },
+            },
+            required: ['url', 'state', 'scopes'],
+          },
+          '4xx': ERROR_SCHEMA,
+          '5xx': ERROR_SCHEMA,
+        },
+      },
+    },
+    async (request: FastifyRequest<{ Querystring: { service: SlackService } }>) => {
+      requireScope(request, SCOPE_CONTROL_PLANE);
+      const { workspaceId, userId } = request.principal;
+
+      if (!deps.slack) {
+        throw new HttpError(503, 'CONNECTION_EXPIRED', 'Slack is not configured on this server');
+      }
+
+      const state = randomBytes(32).toString('base64url');
+      await deps.redis.set(installKey(workspaceId, state), userId, 'EX', INSTALL_STATE_TTL_SECONDS);
+
+      // Only the client id and redirect cross this line, never the secret —
+      // the same narrowing `ConsentConfig` does for Google.
+      return {
+        url: buildSlackInstallUrl(
+          { clientId: deps.slack.clientId, redirectUri: deps.slack.redirectUri },
+          { service: request.query.service, state },
+        ),
+        state,
+        scopes: [...SLACK_SERVICES[request.query.service]],
+      };
+    },
+  );
+
+  /**
+   * Finish one.
+   *
+   * No equivalent of F-01 here, and worth saying why: Slack returns an
+   * authorization *code*, which cannot be forged, and exchanging it with the
+   * client secret is itself the proof that whoever completed this flow holds
+   * the workspace. GitHub was the odd provider — an installation id is a small
+   * integer anybody can type, so it needed a separate ownership check. The
+   * state below is CSRF protection and nothing more, which is all it ever was.
+   */
+  app.post(
+    '/v1/connections/slack',
+    {
+      schema: {
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['code', 'state'],
+          properties: {
+            code: { type: 'string', minLength: 8, maxLength: 512, pattern: '^[A-Za-z0-9._~-]+$' },
+            state: {
+              type: 'string',
+              minLength: 16,
+              maxLength: 128,
+              pattern: '^[A-Za-z0-9._~-]+$',
+            },
+          },
+        },
+        response: { 201: CONNECTION_SCHEMA, '4xx': ERROR_SCHEMA, '5xx': ERROR_SCHEMA },
+      },
+    },
+    async (request: FastifyRequest<{ Body: { code: string; state: string } }>, reply) => {
+      requireScope(request, SCOPE_CONTROL_PLANE);
+      const { workspaceId, userId } = request.principal;
+
+      // Redeemed first, and single-use: a replayed callback is refused as
+      // firmly as an invented one.
+      const began = await deps.redis.getdel(installKey(workspaceId, request.body.state));
+      if (began !== userId) {
+        throw new HttpError(
+          400,
+          'ARGUMENT_SCHEMA_INVALID',
+          'That install was not started from this account',
+        );
+      }
+
+      if (!deps.slack) {
+        throw new HttpError(503, 'CONNECTION_EXPIRED', 'Slack is not configured on this server');
+      }
+
+      let installed;
+      try {
+        installed = await exchangeSlackCode(deps.slack, request.body.code);
+      } catch (error) {
+        // The caller learns nothing; the operator learns everything. Slack's
+        // own code names the cause — `invalid_code`, `bad_redirect_uri`, or
+        // the missing-rotation refusal — and the three have three different
+        // fixes. The first version of the GitHub equivalent swallowed this and
+        // cost two round trips to diagnose.
+        request.log.warn({ err: error }, 'slack install could not be completed');
+        throw new HttpError(
+          400,
+          'ARGUMENT_SCHEMA_INVALID',
+          'That authorization could not be completed',
+        );
+      }
+
+      const connection = await withWorkspace(deps.pool, workspaceId, (db) =>
+        createConnection(db, deps.wrapper, {
+          workspaceId,
+          userId,
+          provider: 'slack',
+          // What Slack actually granted, not what was asked for.
+          scopes: installed.scopes,
+          // The rotating refresh token. The broker replaces it on every use.
+          refreshToken: installed.refreshToken,
           correlationId: String(request.id),
         }),
       );

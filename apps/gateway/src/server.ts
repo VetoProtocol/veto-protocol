@@ -13,14 +13,17 @@ import { createPool, loadRepoEnv } from '@veto/db';
 import { createPermitPolicyDecisions, permitConfigFromEnv } from '@veto/permit';
 import {
   createCalendarReader,
+  createChannelReader,
   createDriveReader,
   createGitHubExchange,
   createGmailReader,
   createGoogleExchange,
   createIssueReader,
   createRepoReader,
+  createSlackExchange,
   type GitHubAppConfig,
   type GoogleOAuthConfig,
+  type SlackAppConfig,
 } from '@veto/connections';
 import { createLocalKeyWrapper } from '@veto/vault';
 import { createGateway } from './app.ts';
@@ -82,6 +85,19 @@ const github: GitHubAppConfig | null =
         privateKeyPem: readFileSync(required('GITHUB_PRIVATE_KEY_PATH'), 'utf8'),
       };
 
+// Slack. Token rotation must be on for the app, or the install is refused —
+// see docs/slack-setup.md. Empty client id disables Slack entirely, and every
+// Slack route then refuses rather than half-working.
+const slackClientId = (process.env['SLACK_CLIENT_ID'] ?? '').trim();
+const slack: SlackAppConfig | null =
+  slackClientId === ''
+    ? null
+    : {
+        clientId: slackClientId,
+        clientSecret: required('SLACK_CLIENT_SECRET'),
+        redirectUri: required('SLACK_REDIRECT_URI'),
+      };
+
 const execute =
   google === null
     ? null
@@ -98,6 +114,16 @@ const execute =
               repos: createRepoReader(),
               issues: createIssueReader(),
             }),
+        // Slack is a third provider on the same terms: its own exchange,
+        // because a rotated bot token is traded for a short-lived one and the
+        // broker persists the replacement. Absent until the app is configured,
+        // and then every Slack tool refuses rather than half-working.
+        ...(slack === null
+          ? {}
+          : {
+              slackExchange: createSlackExchange(slack),
+              channels: createChannelReader(),
+            }),
       };
 
 // Where the dashboard lives, for the link on an approval alert.
@@ -107,6 +133,7 @@ const execute =
 // request value: an origin a caller could name is an origin a caller could put
 // in an alert somebody is about to click. Empty means alerts carry no link.
 const dashboardUrl = (process.env['DASHBOARD_PUBLIC_URL'] ?? '').trim() || null;
+
 
 const app = createGateway({
   pool,

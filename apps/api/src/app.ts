@@ -19,6 +19,7 @@ import {
   createRepoReader,
   type AppInventorySource,
   type GitHubUserAuthConfig,
+  type SlackAppConfig,
 } from '@veto/connections';
 import type {
   DriveReader,
@@ -74,6 +75,8 @@ export interface AppDeps {
   readonly inventory?: readonly AppInventorySource[] | null;
   /** App user-authorization credentials. Absent means new installs cannot be proved, so they are refused. */
   readonly githubUserAuth?: GitHubUserAuthConfig | null;
+  /** Slack app credentials. Absent means every Slack route refuses. */
+  readonly slack?: SlackAppConfig | null;
   readonly githubExchange?: UpstreamTokenExchange | null;
   /** Overridable so a test can sync repositories without a live GitHub. */
   readonly repos?: RepoReader | null;
@@ -193,6 +196,7 @@ export function createApp(deps: AppDeps): FastifyInstance {
     google: deps.google ?? null,
     github: deps.github ?? null,
     githubUserAuth: deps.githubUserAuth ?? null,
+    slack: deps.slack ?? null,
     exchange: deps.exchange ?? null,
     githubExchange: deps.githubExchange ?? null,
   });

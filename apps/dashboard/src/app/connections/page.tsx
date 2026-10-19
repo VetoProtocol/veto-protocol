@@ -33,15 +33,15 @@ const ERRORS: Record<string, string> = {
   declined: 'You declined at the provider\u2019s screen. Nothing was connected.',
   refused: 'The provider refused that authorization. Nothing was connected.',
   mismatch: 'That response did not match the attempt that started here, so it was rejected.',
-  nocode: 'Google sent no authorization code back. Nothing was connected.',
-  // GitHub's equivalent is `nouserauth` below: a different cause and a
-  // different fix, so a different message.
+  // Google and Slack both land here. GitHub's equivalent is `nouserauth`
+  // below: a different cause with a different fix, so a different message.
+  nocode: 'The provider sent no authorization code back. Nothing was connected.',
   exchange: 'That authorization could not be completed. Start again, and grant offline access.',
   unknownservice:
     'That is not a service this dashboard knows how to connect. Nothing was connected — and nothing else was connected in its place.',
   noinstallation:
     'GitHub sent no installation back. Nothing was connected. If you cancelled on the GitHub screen, that is why.',
-  // Distinct from `nocode`, which is Google's. This one almost always means a
+  // Distinct from `nocode`, which Google and Slack share. This one almost always means a
   // settings change was missed rather than anything the person did wrong, so it
   // says which setting.
   nouserauth:
@@ -63,6 +63,7 @@ const ERRORS: Record<string, string> = {
 const CONNECTED: Record<string, string> = {
   google: 'Connected. What Google actually granted is listed below.',
   github: 'Connected. The repositories and permissions you picked are listed below.',
+  slack: 'Connected. Add the bot to a channel to let an agent read it \u2014 a Slack install on its own reaches no conversation.',
   ok: 'Connected. What the provider actually granted is listed below.',
 };
 
@@ -115,6 +116,22 @@ const SERVICES = [
     label: 'Connect GitHub',
     href: '/connections/github/start',
     detail: 'Read-only. You choose which repositories; code, issues and pull requests.',
+  },
+  {
+    // A third provider. The grant is made on Slack's side, by inviting the bot
+    // to a channel — so the detail says that rather than implying this screen
+    // is where access is chosen.
+    key: 'slack',
+    label: 'Connect Slack',
+    href: '/connections/slack/start?service=channels',
+    detail:
+      'Read-only, public channels. An agent reads a channel only once you invite the bot to it.',
+  },
+  {
+    key: 'slack_private',
+    label: 'Connect Slack private channels',
+    href: '/connections/slack/start?service=private_channels',
+    detail: 'A separate decision from public channels, and a separate consent screen.',
   },
 ] as const;
 

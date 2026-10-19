@@ -51,7 +51,7 @@ export interface ConnectFlow {
    * either must not open the other. The same separation the sign-in and
    * connect cookies already keep between themselves.
    */
-  readonly provider?: 'google' | 'github';
+  readonly provider?: 'google' | 'github' | 'slack';
 }
 
 function secret(): Buffer {

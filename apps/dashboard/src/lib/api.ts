@@ -672,3 +672,19 @@ export interface ShadowView {
 export const listShadowAgents = (credential: string): Promise<ShadowView> =>
   request('/v1/shadow', { method: 'GET', credential });
 
+/** Slack. One service per call, like Google's consent URL. */
+export const slackInstallUrl = (
+  credential: string,
+  query: { service: string },
+): Promise<{ url: string; state: string; scopes: string[] }> =>
+  request(`/v1/connections/slack/install-url?${new URLSearchParams(query).toString()}`, {
+    method: 'GET',
+    credential,
+  });
+
+export const connectSlack = (
+  credential: string,
+  body: { code: string; state: string },
+): Promise<ConnectionView> =>
+  request('/v1/connections/slack', { method: 'POST', credential, body: JSON.stringify(body) });
+

@@ -20,6 +20,7 @@ import {
   type GitHubAppConfig,
   type GitHubUserAuthConfig,
   type GoogleOAuthConfig,
+  type SlackAppConfig,
 } from '@veto/connections';
 import type { WebAuthnConfig } from '@veto/passkeys';
 import { createPermitPolicyDecisions, createPermitPolicyFacts, permitConfigFromEnv } from '@veto/permit';
@@ -125,8 +126,22 @@ if (webauthn !== null && webauthn.origins.length === 0) {
 // in an alert somebody is about to click. Empty means alerts carry no link.
 const dashboardUrl = (process.env['DASHBOARD_PUBLIC_URL'] ?? '').trim() || null;
 
+// Slack. Token rotation must be on for the app, or the install is refused —
+// see docs/slack-setup.md. Empty client id disables Slack entirely, and every
+// Slack route then refuses rather than half-working.
+const slackClientId = (process.env['SLACK_CLIENT_ID'] ?? '').trim();
+const slack: SlackAppConfig | null =
+  slackClientId === ''
+    ? null
+    : {
+        clientId: slackClientId,
+        clientSecret: required('SLACK_CLIENT_SECRET'),
+        redirectUri: required('SLACK_REDIRECT_URI'),
+      };
+
 const app = createApp({
   pool,
+  slack,
   dashboardUrl,
   redis,
   policy,

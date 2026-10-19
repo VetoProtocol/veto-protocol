@@ -208,7 +208,7 @@ outside a test env, and the app `.env` sets `NODE_ENV=development`.
 | `packages/health` | Startup probes. Reachability only — never validates a credential. |
 | `apps/api` | Fastify control plane (§5). Manages objects; not an enforcement point. |
 | `apps/gateway` | **The** MCP enforcement point (§3.1). Calls the pipeline in process. |
-| `apps/dashboard` | Next.js dashboard: agents, policies, connections, presence, labels, approvals, audit, alerts, consent, fingerprints. Dark only. |
+| `apps/dashboard` | Next.js dashboard: agents, policies, connections, presence, labels, approvals, audit, alerts, consent, fingerprints, shadow. Dark only. |
 
 Sign-in is OIDC against any conformant provider (`docs/auth-setup.md`).
 
@@ -313,6 +313,21 @@ since migration 0001 and nothing created the first kind until stage 4.
   separate comments here have described a control that did not exist, which is
   why `apps/api/test/github-install.test.ts` asserts the attack rather than the
   presence of a check. Console side: `docs/github-setup.md`.
+- **Slack is a bot, and the grant has two halves.** A user token reaches every
+  channel that person is in, with no narrowing available; a bot reads only the
+  conversations it was invited to. So a Slack install grants nothing on its own
+  — inviting the bot makes a channel reachable, a Veto rule permits reading it,
+  and neither alone is access. A channel *is* a Permit resource where a file is
+  not: `C…` fits the instance-key grammar unchanged and its id is knowable
+  before any call. Token rotation is **required**, because a classic bot token
+  never expires and storing one in the column that promises a rotating
+  credential would be holding one kind of secret while claiming another — and
+  rotation is why `AccessGrant.rotatedRefreshToken` and `rotateRefreshToken`
+  exist at all. Google's token is stable and GitHub's durable value is an
+  installation id, so the credential column had no writer until Slack needed
+  one; dropping a replacement does not fail now, it fails on the *next*
+  refresh. `MAX_HISTORY_DAYS` bounds a read in step 8, and no code here
+  resolves a Slack user id to a name. Console side: `docs/slack-setup.md`.
 - **A GitHub repository is keyed by its numeric id, never `owner/repo`.** The
   slash does not survive Permit's instance-key grammar, and an id survives a
   rename where a name would silently follow whoever registered it next. Files,
