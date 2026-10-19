@@ -41,6 +41,11 @@ const RESOURCE_ARGUMENT: Readonly<Record<string, string>> = {
   'github_issue.read': 'repo_id',
   'github_pull.read': 'repo_id',
   'github_pull.read_diff': 'repo_id',
+  // A channel is a policy resource in its own right: its id is knowable
+  // before the call, it fits Permit's key grammar unchanged, and granting one
+  // channel without granting the workspace is the whole point of the
+  // integration.
+  'slack_channel.read_history': 'channel_id',
 };
 
 /**
@@ -65,6 +70,10 @@ const MAILBOX_TOOLS = new Set([
   // the one the delegating human connected, and there is no argument an agent
   // could put somebody else's organisation in.
   'github_repo.list_repos',
+  // Same shape again: the workspace reached is the one the delegating human
+  // connected, and there is no argument an agent could put another Slack
+  // workspace's id in.
+  'slack_channel.list_channels',
 ]);
 
 const invalid = (): RpcError =>

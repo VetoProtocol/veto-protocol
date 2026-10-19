@@ -119,6 +119,8 @@ export function CreatePolicyForm({ agents }: { agents: readonly AgentChoice[] })
             <option value="google_calendar">google_calendar</option>
             <option value="github_repo">github_repo</option>
             <option value="github_account">github_account</option>
+            <option value="slack_channel">slack_channel</option>
+            <option value="slack_workspace">slack_workspace</option>
           </select>
         </label>
       </div>
@@ -320,6 +322,13 @@ export function CreateGrantForm({ agents }: { agents: readonly AgentChoice[] }) 
             <option value="github_repo">repository — one repo, by its numeric id</option>
             <option value="github_account">
               GitHub account — and every repository under it
+            </option>
+            {/* The reach is honest only if it names the invitation: a grant
+                permits reading, but the bot being in the channel is what makes
+                it reachable at all. */}
+            <option value="slack_channel">channel — if the bot is in it</option>
+            <option value="slack_workspace">
+              Slack workspace — the channel list, not the messages
             </option>
           </select>
         </label>

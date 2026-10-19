@@ -107,6 +107,34 @@ export const CALENDAR_RESOURCE = 'google_calendar';
 export const GITHUB_REPO_RESOURCE = 'github_repo';
 
 /**
+ * One Slack conversation.
+ *
+ * Keyed by Slack's own channel id (`C…`), which fits Permit's instance-key
+ * grammar with no translation — unlike a GitHub `owner/repo`, whose slash does
+ * not survive it.
+ *
+ * A channel is a real policy resource where a file is not, because its id is
+ * knowable before any call: somebody granting access picks a channel from a
+ * list. That is also how the customer grants it on Slack's side — by inviting
+ * the bot — so the two halves line up, and a grant here names a conversation
+ * the bot can actually reach.
+ *
+ * Individual messages are not resources, for the reason files are not. Permit
+ * answers whether this channel is reachable; how far back and how many is the
+ * Veto rule's job at step 4.
+ */
+export const SLACK_CHANNEL_RESOURCE = 'slack_channel';
+
+/**
+ * The installed Slack workspace.
+ *
+ * Keyed by the **Veto user id**, like the mailbox and the GitHub account, so
+ * "list the channels I can see" has something to be authorised against and no
+ * argument could name somebody else's workspace.
+ */
+export const SLACK_WORKSPACE_RESOURCE = 'slack_workspace';
+
+/**
  * The installation account — one GitHub org or user that installed the app.
  *
  * Exists so "list the repositories I can see" has a resource to be authorised

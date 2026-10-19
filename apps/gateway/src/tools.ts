@@ -326,6 +326,50 @@ export const TOOLS: readonly ToolDefinition[] = [
       },
     },
   },
+
+  {
+    name: 'slack_channel.list_channels',
+    title: 'List Slack channels',
+    description:
+      'List the conversations this installation can see. Names and ids only \u2014 never a ' +
+      'message. A channel can be read only if the bot was invited to it, and that is shown. ' +
+      'Every call is authorized individually.',
+    action: 'search',
+    resourceType: 'slack_workspace',
+    inputSchema: {
+      type: 'object',
+      additionalProperties: false,
+      required: [],
+      properties: {
+        page_size: { type: 'integer', minimum: 1, maximum: 200 },
+        declared_intent: { type: 'string', maxLength: 500 },
+      },
+    },
+  },
+  {
+    name: 'slack_channel.read_history',
+    title: 'Read a channel',
+    description:
+      'Read messages from one channel in a bounded time window. The bot must have been ' +
+      'invited to that channel. Author ids are returned, never names. Every call is ' +
+      'authorized individually.',
+    action: 'read',
+    resourceType: 'slack_channel',
+    inputSchema: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['channel_id', 'oldest', 'latest'],
+      properties: {
+        // Slack's own id shape. A value that cannot be one should not travel
+        // as far as the API.
+        channel_id: { type: 'string', pattern: '^[CGD][A-Z0-9]{1,20}$' },
+        oldest: { type: 'string', pattern: RFC3339 },
+        latest: { type: 'string', pattern: RFC3339 },
+        page_size: { type: 'integer', minimum: 1, maximum: 100 },
+        declared_intent: { type: 'string', maxLength: 500 },
+      },
+    },
+  },
 ];
 
 export const findTool = (name: string): ToolDefinition | undefined =>

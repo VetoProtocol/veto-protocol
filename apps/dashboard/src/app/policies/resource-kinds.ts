@@ -36,6 +36,14 @@ export const RESOURCE_KINDS: Readonly<Record<string, ResourceKind>> = {
   // as one thing; it reaches every repository beneath it, and somebody about to
   // click should see that in the sentence rather than discover it later.
   github_account: { label: 'GitHub account', reach: 'every repository under that account' },
+  // A channel is granted on Slack's side by inviting the bot, so the reach is
+  // honest only if it says that: the grant permits reading, the invitation is
+  // what makes the channel reachable at all.
+  slack_channel: { label: 'channel', reach: 'that channel, if the bot is in it' },
+  slack_workspace: {
+    label: 'Slack workspace',
+    reach: 'the list of channels \u2014 not the messages in them',
+  },
 };
 
 /**

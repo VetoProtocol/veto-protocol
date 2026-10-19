@@ -68,7 +68,7 @@ export interface PolicyTemplate {
    * apply a Drive template to a workspace with no Drive connection and read the
    * resulting silence as a bug.
    */
-  readonly requires: 'google' | 'github' | 'nothing';
+  readonly requires: 'google' | 'github' | 'slack' | 'nothing';
   readonly rules: readonly PolicyTemplateRule[];
 }
 
@@ -88,6 +88,8 @@ const WRITABLE_TYPES = [
   'google_calendar',
   'github_repo',
   'github_account',
+  'slack_workspace',
+  'slack_channel',
 ] as const;
 
 export const POLICY_TEMPLATES: readonly PolicyTemplate[] = [
@@ -194,6 +196,29 @@ export const POLICY_TEMPLATES: readonly PolicyTemplate[] = [
         resourceFilter: { type: 'github_repo' },
         conditions: WHILE_PRESENT,
         explains: 'Search issues in a granted repository.',
+      },
+    ],
+  },
+  {
+    id: 'slack-read',
+    title: 'Read Slack channels, while you are there',
+    summary:
+      'Lets an agent list the conversations the bot can see, and read the ones it has been invited to. A channel is granted by adding the bot to it.',
+    requires: 'slack',
+    rules: [
+      {
+        action: 'search',
+        effect: 'allow',
+        resourceFilter: { type: 'slack_workspace' },
+        conditions: WHILE_PRESENT,
+        explains: 'List the channels this installation can see.',
+      },
+      {
+        action: 'read',
+        effect: 'allow',
+        resourceFilter: { type: 'slack_channel' },
+        conditions: WHILE_PRESENT,
+        explains: 'Read messages in a granted channel, within a bounded window.',
       },
     ],
   },

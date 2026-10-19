@@ -23,21 +23,26 @@
 
 import {
   BrokerError,
-  CalendarError,
-  DriveError,
-  findConnectionForScope,
-  mintUpstreamToken,
   CALENDAR_READONLY_SCOPE,
+  CalendarError,
   DRIVE_READONLY_SCOPE,
-  GMAIL_READONLY_SCOPE,
-  GmailError,
-  MAX_WINDOW_DAYS,
-  RepoError,
+  DriveError,
   GITHUB_CONTENTS_READ,
   GITHUB_ISSUES_READ,
   GITHUB_METADATA_READ,
   GITHUB_PULL_REQUESTS_READ,
+  GMAIL_READONLY_SCOPE,
+  GmailError,
+  MAX_HISTORY_DAYS,
+  MAX_WINDOW_DAYS,
+  RepoError,
+  SLACK_CHANNELS_HISTORY,
+  SLACK_CHANNELS_READ,
+  SlackError,
+  findConnectionForScope,
+  mintUpstreamToken,
   type CalendarReader,
+  type ChannelReader,
   type DriveReader,
   type GmailReader,
   type IssueReader,
@@ -87,6 +92,31 @@ const badArgument = (): PrecheckError => new PrecheckError('ARGUMENT_SCHEMA_INVA
 /** Asking for more than the agent may have at once is a volume limit. */
 const tooMuch = (): PrecheckError => new PrecheckError('VOLUME_LIMIT_EXCEEDED');
 
+/** What to say when a provider has nothing connected for this person. */
+const NO_CONNECTION: Readonly<Record<Provider, string>> = {
+  google: 'No connected Google account for this user.',
+  github: 'No connected GitHub installation for this user.',
+  slack: 'No connected Slack workspace for this user.',
+};
+
+/**
+ * Which exchange mints this provider's token.
+ *
+ * The guards upstream already refused a provider whose exchange is absent, so
+ * the fall-through to Google is unreachable for the other two rather than a
+ * silent default.
+ */
+function exchangeFor(
+  provider: Provider,
+  deps: ExecuteDeps,
+  github: UpstreamTokenExchange | undefined,
+  slack: UpstreamTokenExchange | undefined,
+): UpstreamTokenExchange {
+  if (provider === 'github' && github !== undefined) return github;
+  if (provider === 'slack' && slack !== undefined) return slack;
+  return deps.exchange;
+}
+
 export interface ExecuteDeps {
   readonly pool: Pool;
   readonly wrapper: KeyWrapper;
@@ -106,9 +136,19 @@ export interface ExecuteDeps {
   readonly githubExchange?: UpstreamTokenExchange;
   readonly repos?: RepoReader;
   readonly issues?: IssueReader;
+  /**
+   * Slack is a third provider on the same terms.
+   *
+   * Its own exchange because a rotated bot token is traded for a short-lived
+   * one — the broker persists the replacement, which no other provider here
+   * needs. Absent until the app is configured, and then every Slack tool
+   * refuses rather than half-works.
+   */
+  readonly slackExchange?: UpstreamTokenExchange;
+  readonly channels?: ChannelReader;
 }
 
-type Provider = 'google' | 'github';
+type Provider = 'google' | 'github' | 'slack';
 
 interface Upstream {
   readonly provider: Provider;
@@ -125,6 +165,16 @@ interface Upstream {
  * wider.
  */
 const UPSTREAM_FOR_TOOL: Readonly<Record<string, Upstream>> = {
+  // Slack narrows at install, like Google and unlike GitHub: a rotated token
+  // carries whatever the installation was granted, so naming the scopes here
+  // is the broker's check that this connection holds them rather than a
+  // request for a smaller token. See the note in `slack.ts`.
+  'slack_channel.list_channels': { provider: 'slack', scopes: [SLACK_CHANNELS_READ] },
+  'slack_channel.read_history': {
+    provider: 'slack',
+    scopes: [SLACK_CHANNELS_READ, SLACK_CHANNELS_HISTORY],
+  },
+
   'google_drive.read_file': { provider: 'google', scopes: [DRIVE_READONLY_SCOPE] },
   'google_drive.list_folder': { provider: 'google', scopes: [DRIVE_READONLY_SCOPE] },
   'google_gmail.search_messages': { provider: 'google', scopes: [GMAIL_READONLY_SCOPE] },
@@ -240,6 +290,15 @@ export async function executeAllowed(
     };
   }
 
+  const slackExchange = deps.slackExchange;
+  if (upstream.provider === 'slack' && (slackExchange === undefined || deps.channels === undefined)) {
+    return {
+      ok: false,
+      reasonCode: 'TOOL_NOT_ALLOWED',
+      message: 'Slack is not configured on this server.',
+    };
+  }
+
   // The connection that holds this tool's scope, not merely the newest one.
   // Consent is per service (§9.1), so an account that activated Drive, Gmail
   // and Calendar has three single-scope connections; asking for "the newest
@@ -262,10 +321,7 @@ export async function executeAllowed(
     return {
       ok: false,
       reasonCode: 'CONNECTION_EXPIRED',
-      message:
-        upstream.provider === 'github'
-          ? 'No connected GitHub installation for this user.'
-          : 'No connected Google account for this user.',
+      message: NO_CONNECTION[upstream.provider],
     };
   }
 
@@ -295,9 +351,10 @@ export async function executeAllowed(
       mintUpstreamToken(
         db,
         deps.wrapper,
-        upstream.provider === 'github' && githubExchange !== undefined
-          ? githubExchange
-          : deps.exchange,
+        // Three providers now, so a conditional expression stops being
+        // readable. The guards above already refused a provider whose
+        // exchange is missing, which is why this can fall through to Google.
+        exchangeFor(upstream.provider, deps, githubExchange, slackExchange),
         {
           workspaceId: input.workspaceId,
           connectionId: connection.id,
@@ -403,6 +460,46 @@ async function carryOut(
   }
 
   if (input.tool.startsWith('github_')) return carryOutGitHub(deps, input, accessToken);
+
+  if (input.tool.startsWith('slack_')) {
+    const channels = deps.channels;
+    if (!channels) throw new SlackError('not_configured');
+
+    const pageSize = input.arguments['page_size'];
+    const bounded = typeof pageSize === 'number' ? pageSize : 25;
+
+    if (input.tool === 'slack_channel.list_channels') {
+      // The workspace reached is the one the delegating human connected, taken
+      // from the session, so there is no argument naming whose Slack this is.
+      // Names and ids; reading any channel is a separate call and a separate
+      // decision (invariant 9).
+      return { channels: await channels.listChannels(accessToken, bounded) };
+    }
+
+    const oldest = input.arguments['oldest'];
+    const latest = input.arguments['latest'];
+    if (typeof oldest !== 'string' || typeof latest !== 'string') throw badArgument();
+
+    // Bounded here, not only in the schema — the calendar's rule applied to
+    // conversation. A schema can check two timestamps are timestamps; only
+    // this can check they are not a year apart, which is the difference
+    // between reading a thread and exporting a workspace.
+    const span = Date.parse(latest) - Date.parse(oldest);
+    if (!Number.isFinite(span) || span <= 0) throw badArgument();
+    if (span > MAX_HISTORY_DAYS * 24 * 60 * 60 * 1000) throw tooMuch();
+
+    return {
+      messages: await channels.readHistory(
+        accessToken,
+        // The channel the decision authorised, read from the resource rather
+        // than from `arguments` — that id and no other.
+        input.resource.id,
+        new Date(oldest),
+        new Date(latest),
+        bounded,
+      ),
+    };
+  }
 
   if (input.tool.startsWith('google_calendar.')) {
     const calendar = deps.calendar;

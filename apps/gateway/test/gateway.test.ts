@@ -270,6 +270,8 @@ describe('a client can connect and list', () => {
       'github_issue.read',
       'github_pull.read',
       'github_pull.read_diff',
+      'slack_channel.list_channels',
+      'slack_channel.read_history',
     ]);
   });
 

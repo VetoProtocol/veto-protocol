@@ -9,3 +9,4 @@ export * from './repos.ts';
 export * from './issues.ts';
 export * from './inventory.ts';
 export * from './slack.ts';
+export * from './channels.ts';
