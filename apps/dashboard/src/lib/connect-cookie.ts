@@ -29,6 +29,36 @@ export const CONNECT_TTL_MS = 5 * 60 * 1000;
 /** Mixed into the MAC so this cookie can only ever be read as a connect flow. */
 const DOMAIN = 'veto.connect.v1';
 
+/**
+ * Every flow this cookie may belong to.
+ *
+ * One list, and both the type and the runtime check derive from it — because
+ * they did not, twice. GitHub was added to the type while `openConnect` still
+ * refused anything that was not Google, and the callback reported the refusal
+ * as "that attempt timed out"; Slack was added to the type months later and
+ * did exactly the same thing. A widened type is not a widened check, and the
+ * failure looks like an expiry rather than a rejection, which is why it costs
+ * a round trip to find every time.
+ *
+ * Adding a provider is now one edit here.
+ */
+export const CONNECT_PROVIDERS = ['google', 'github', 'slack'] as const;
+
+export type ConnectProvider = (typeof CONNECT_PROVIDERS)[number];
+
+const isConnectProvider = (value: string): value is ConnectProvider =>
+  (CONNECT_PROVIDERS as readonly string[]).includes(value);
+
+/**
+ * Which flows have a code to exchange, and therefore need PKCE.
+ *
+ * Google does. GitHub hands back an installation id, worth nothing without the
+ * App private key. Slack returns a code but has no PKCE in its OAuth, and the
+ * secret never leaves the control plane — so an empty verifier is correct for
+ * both, and required for neither.
+ */
+const NEEDS_VERIFIER: ReadonlySet<ConnectProvider> = new Set<ConnectProvider>(['google']);
+
 export interface ConnectFlow {
   /**
    * The PKCE verifier. Empty only for a provider that has no code to exchange.
@@ -45,13 +75,13 @@ export interface ConnectFlow {
    * Absent means `google`, because that is the only flow that existed when
    * these cookies were first minted and one may still be in a browser.
    *
-   * It exists so the two callbacks cannot satisfy each other. They are
-   * different round trips with different security properties — one ends in an
-   * OAuth grant, the other in a GitHub installation — and a cookie minted for
-   * either must not open the other. The same separation the sign-in and
-   * connect cookies already keep between themselves.
+   * It exists so the callbacks cannot satisfy each other. They are different
+   * round trips with different security properties — one ends in a Google
+   * grant, one in a GitHub installation, one in a Slack bot token — and a
+   * cookie minted for any of them must not open another. The same separation
+   * the sign-in and connect cookies already keep between themselves.
    */
-  readonly provider?: 'google' | 'github' | 'slack';
+  readonly provider?: ConnectProvider;
 }
 
 function secret(): Buffer {
@@ -85,11 +115,9 @@ export function openConnect(raw: string, now: number = Date.now()): ConnectFlow 
     typeof flow.verifier !== 'string' ||
     typeof flow.state !== 'string' ||
     flow.state === '' ||
-    (provider !== 'google' && provider !== 'github') ||
-    // PKCE is required where there is a code to exchange, and meaningless
-    // where there is not. GitHub hands back an installation id, which is worth
-    // nothing without the App private key.
-    (provider === 'google' && flow.verifier === '') ||
+    !isConnectProvider(provider) ||
+    // PKCE where it means something, and nowhere else. See NEEDS_VERIFIER.
+    (NEEDS_VERIFIER.has(provider) && flow.verifier === '') ||
     !Number.isFinite(flow.expiresAt) ||
     flow.expiresAt <= now
   ) {

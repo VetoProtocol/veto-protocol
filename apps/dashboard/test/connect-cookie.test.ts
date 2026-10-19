@@ -109,3 +109,44 @@ describe('connect cookie', () => {
     expect(openConnect('bm90anNvbg.mac')).toBeNull();
   });
 });
+
+/**
+ * The drift that has now bitten twice.
+ *
+ * Both times the shape was identical: a provider was added to the *type* while
+ * `openConnect` still refused anything outside a hardcoded pair. A widened type
+ * is not a widened check — and the callback reports the refusal as "that
+ * attempt timed out", so it reads as an expiry rather than a rejection and
+ * costs a round trip with a real user to find.
+ *
+ * The existing tests above named Google and GitHub one at a time, which is why
+ * they stayed green while Slack was broken. This one iterates the list, so it
+ * fails the moment a fourth provider is added and something else is forgotten.
+ */
+describe('every provider the module admits to', () => {
+  let providers: readonly string[];
+
+  beforeAll(async () => {
+    providers = (await import('../src/lib/connect-cookie.ts')).CONNECT_PROVIDERS;
+  });
+
+  it('survives a round trip', () => {
+    for (const provider of providers) {
+      const sealed = sealConnect({
+        // Only a flow with a code challenge carries a verifier.
+        verifier: provider === 'google' ? 'v'.repeat(43) : '',
+        state: 'state-abc',
+        provider: provider as 'google',
+        expiresAt: Date.now() + 60_000,
+      });
+
+      expect(openConnect(sealed), `${provider} was sealed and then refused`).not.toBeNull();
+    }
+  });
+
+  it('is the set the connect routes actually mint', () => {
+    // The other direction: a provider a start route seals but this list does
+    // not admit would be refused on the way back, which is the exact bug.
+    expect([...providers].sort()).toEqual(['github', 'google', 'slack']);
+  });
+});
