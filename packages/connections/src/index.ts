@@ -8,3 +8,4 @@ export * from './github.ts';
 export * from './repos.ts';
 export * from './issues.ts';
 export * from './inventory.ts';
+export * from './slack.ts';

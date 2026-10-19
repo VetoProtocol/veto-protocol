@@ -23,12 +23,24 @@
 
 import type { Db } from '@veto/db';
 import type { KeyWrapper } from '@veto/vault';
-import { findConnection, revealRefreshTokenForBroker } from './store.ts';
+import { findConnection, revealRefreshTokenForBroker, rotateRefreshToken } from './store.ts';
 
 export interface AccessGrant {
   readonly accessToken: string;
   readonly expiresAt: Date;
   readonly scopes: readonly string[];
+  /**
+   * A replacement credential, when the provider rotates on every refresh.
+   *
+   * Optional because most do not: Google's refresh token is stable, and
+   * GitHub's durable value is an installation id. Slack with token rotation
+   * invalidates the old one as it issues the new, so dropping this does not
+   * fail now — it fails on the *next* refresh, hours later, as a connection
+   * that expired while nobody was using it.
+   *
+   * The broker persists it. A provider adapter returns it and never writes.
+   */
+  readonly rotatedRefreshToken?: string;
 }
 
 /**
@@ -89,6 +101,21 @@ export async function mintUpstreamToken(
   const missing = input.requiredScopes.filter((scope) => !connection.scopes.includes(scope));
   if (missing.length > 0) throw new BrokerError('SCOPE_NOT_GRANTED');
 
+  // Serialise refreshes of one connection.
+  //
+  // Only matters for a provider that rotates: two refreshes in flight together
+  // both spend the stored token, the provider honours one, and whichever
+  // write lands last may store the loser's — leaving a dead credential on a
+  // connection nobody touched. The lock is per connection and held across the
+  // provider call, which is a real cost and a smaller one than that failure.
+  //
+  // It is also why this is outside the §11 budget: step 8 happens after the
+  // decision, so a wait here delays an upstream call rather than an answer.
+  await db.query(`select 1 from connections where workspace_id = $1 and id = $2 for update`, [
+    input.workspaceId,
+    input.connectionId,
+  ]);
+
   const refreshToken = await revealRefreshTokenForBroker(
     db,
     wrapper,
@@ -97,15 +124,28 @@ export async function mintUpstreamToken(
   );
   if (refreshToken === null) throw new BrokerError('CREDENTIAL_REVOKED');
 
+  let grant: AccessGrant;
   try {
     // Ask for what the action needs, not for what the connection holds.
-    return await exchange.refresh(refreshToken, input.requiredScopes);
+    grant = await exchange.refresh(refreshToken, input.requiredScopes);
   } catch {
     // The provider's error text is not propagated: it is written for a
     // developer reading a console, and it can contain the request that carried
     // the credential.
     throw new BrokerError('EXCHANGE_FAILED');
   }
+
+  // Persisted before the token is handed out, so a caller can never act on a
+  // grant whose replacement credential was lost.
+  if (grant.rotatedRefreshToken !== undefined && grant.rotatedRefreshToken !== refreshToken) {
+    await rotateRefreshToken(db, wrapper, {
+      workspaceId: input.workspaceId,
+      connectionId: input.connectionId,
+      refreshToken: grant.rotatedRefreshToken,
+    });
+  }
+
+  return grant;
 }
 
 /**

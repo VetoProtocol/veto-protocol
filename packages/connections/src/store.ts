@@ -269,6 +269,47 @@ export interface RevokeConnectionResult {
  * The provider-side revocation call is the caller's job and happens after this
  * commits, so a failure there leaves the credential already unusable here.
  */
+/**
+ * Replace a connection's stored credential with the one the provider just
+ * issued.
+ *
+ * Only Slack needs this today. Google's refresh token does not rotate, and
+ * GitHub's durable value is an installation id that never changes — so for
+ * fifteen months the credential column has been write-once and nothing noticed
+ * it had no writer.
+ *
+ * A provider that rotates invalidates the old token as it issues the new one.
+ * Losing the new one therefore does not fail now: it fails on the *next*
+ * refresh, hours later, as `CONNECTION_EXPIRED` on a connection nobody
+ * touched. That is the kind of bug that reaches production looking fine.
+ *
+ * Re-sealed under the same encryption context as the original, because the
+ * context binds workspace, purpose and connection id — a rotated token is the
+ * same credential for the same connection, not a new one.
+ */
+export async function rotateRefreshToken(
+  db: Db,
+  wrapper: KeyWrapper,
+  input: {
+    readonly workspaceId: string;
+    readonly connectionId: string;
+    readonly refreshToken: string;
+  },
+): Promise<void> {
+  const sealed = await seal(
+    wrapper,
+    input.refreshToken,
+    contextFor(input.workspaceId, input.connectionId),
+  );
+
+  await db.query(
+    `update connections
+        set encrypted_refresh_token = $3, encryption_key_id = $4
+      where workspace_id = $1 and id = $2 and status = 'active'`,
+    [input.workspaceId, input.connectionId, sealed.blob, sealed.keyId],
+  );
+}
+
 export async function revokeConnection(
   db: Db,
   workspaceId: string,
