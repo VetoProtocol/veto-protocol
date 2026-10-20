@@ -60,20 +60,33 @@ const RESOURCE_ARGUMENT: Readonly<Record<string, string>> = {
  * agent asking for somebody else's mail: there is no argument to put another
  * person's id in. The message id still travels in `arguments`, so it is covered
  * by the digest and an approval stays bound to one exact message.
+ *
+ * ## Derived from the resource type, not from a list of tool names
+ *
+ * This was a hand-kept set of tool names, and a hand-kept list is a list that
+ * drifts: adding the four Microsoft tools left them out of it, every call then
+ * looked for a resource argument that does not exist, and all four refused
+ * with `ARGUMENT_SCHEMA_INVALID` — a schema complaint about a request whose
+ * schema was fine.
+ *
+ * So the fact is stated once, about **resource types**. A type is either keyed
+ * by the delegating human or it is not, and every tool on it inherits that. A
+ * new tool on an existing type now works with no edit here, and a new type has
+ * to be classified in one place where the question is obvious.
  */
-const MAILBOX_TOOLS = new Set([
-  'google_gmail.search_messages',
-  'google_gmail.read_message',
-  'google_calendar.list_events',
-  'google_calendar.read_event',
+const PERSON_KEYED_RESOURCES: ReadonlySet<string> = new Set([
+  'gmail_mailbox',
+  'google_calendar',
   // "Which repositories can I see" is the same shape: the account reached is
   // the one the delegating human connected, and there is no argument an agent
   // could put somebody else's organisation in.
-  'github_repo.list_repos',
+  'github_account',
   // Same shape again: the workspace reached is the one the delegating human
   // connected, and there is no argument an agent could put another Slack
   // workspace's id in.
-  'slack_channel.list_channels',
+  'slack_workspace',
+  'outlook_mailbox',
+  'outlook_calendar',
 ]);
 
 const invalid = (): RpcError =>
@@ -94,7 +107,7 @@ export function normalize(
   if (!validate) throw new RpcError(RPC.INVALID_PARAMS, 'Unknown tool');
   if (!validate(rawArguments)) throw invalid();
 
-  const resourceId = MAILBOX_TOOLS.has(tool.name)
+  const resourceId = PERSON_KEYED_RESOURCES.has(tool.resourceType)
     ? session.humanId
     : resourceFromArgument(tool.name, rawArguments);
   if (typeof resourceId !== 'string' || resourceId === '') throw invalid();

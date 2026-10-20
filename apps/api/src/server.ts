@@ -20,6 +20,7 @@ import {
   type GitHubAppConfig,
   type GitHubUserAuthConfig,
   type GoogleOAuthConfig,
+  type MicrosoftOAuthConfig,
   type SlackAppConfig,
 } from '@veto/connections';
 import type { WebAuthnConfig } from '@veto/passkeys';
@@ -139,9 +140,25 @@ const slack: SlackAppConfig | null =
         redirectUri: required('SLACK_REDIRECT_URI'),
       };
 
+// Microsoft 365. Empty client id disables it entirely, and every Microsoft
+// route then refuses rather than half-working. See docs/microsoft-setup.md,
+// which also states the gap this provider cannot close: there is no way to
+// revoke a single refresh token, so revocation here is local only.
+const microsoftClientId = (process.env['MICROSOFT_CLIENT_ID'] ?? '').trim();
+const microsoft: MicrosoftOAuthConfig | null =
+  microsoftClientId === ''
+    ? null
+    : {
+        clientId: microsoftClientId,
+        clientSecret: required('MICROSOFT_CLIENT_SECRET'),
+        redirectUri: required('MICROSOFT_REDIRECT_URI'),
+      };
+
+
 const app = createApp({
   pool,
   slack,
+  microsoft,
   dashboardUrl,
   redis,
   policy,

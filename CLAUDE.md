@@ -328,6 +328,52 @@ since migration 0001 and nothing created the first kind until stage 4.
   one; dropping a replacement does not fail now, it fails on the *next*
   refresh. `MAX_HISTORY_DAYS` bounds a read in step 8, and no code here
   resolves a Slack user id to a name. Console side: `docs/slack-setup.md`.
+- **Microsoft 365 is the fourth provider, and the first whose revocation is
+  local only.** Four read-only tools — `microsoft_mail.search_messages`,
+  `.read_message`, `microsoft_calendar.list_events`, `.read_event` — against
+  `outlook_mailbox` and `outlook_calendar`, each keyed by the delegating human
+  like their Google counterparts. Its own resource types rather than more
+  instances of `gmail_mailbox`: one key space for both providers would make
+  "this agent may read user X's mail" ambiguous, and revoking Google would
+  leave a grant that still read as access to something. No `microsoft_tenant`,
+  because no tool lists across an account — a grantable type nothing checks is
+  a row that reads as access and reaches nothing.
+
+  Three facts were measured against §15 before any of it was written, and each
+  changed the code. **It narrows at mint time**, like GitHub and unlike Google
+  or Slack: the refresh grant takes "equivalent to or a subset of" the
+  consented scopes, so a mail read receives a token that physically cannot read
+  the calendar (asserted in `apps/gateway/test/microsoft.test.ts` against a
+  connection holding both, so narrowness is a choice). Every scope in one
+  refresh must belong to **one** resource, or Microsoft silently returns a
+  token for the first and ignores the rest — `assertOneResource` makes that an
+  assertion rather than a hope. **It rotates on every refresh** and leaves the
+  old token working, so `rotatedRefreshToken` is mandatory here and
+  `offline_access` is forwarded on every mint: without it in the request there
+  is no replacement, and the chain stops days later on an idle connection.
+  **There is no way to revoke one refresh token** — no RFC 7009 endpoint, and
+  Graph's `revokeSignInSessions` kills every application's tokens for that
+  person and needs an administrator permission, so revoking one Veto connection
+  would sign them out of Outlook and Teams. `revoke()` therefore makes no
+  provider call and says why; `docs/microsoft-setup.md` states the gap and the
+  `/connections` screen repeats it to whoever is revoking.
+
+  Graph answers with scopes in two spellings, `Mail.Read` and the full URI, and
+  the broker compares against the URI — so `normalizeMicrosoftScopes` stores
+  the long form. Unnormalised, every call fails `SCOPE_NOT_GRANTED` on a
+  perfectly good connection, which reads as a consent problem and is a string
+  format. OneDrive and SharePoint are deliberately absent: item ids of the form
+  `0123456789abcdef!123` and drive ids like `b!…` carry a `!`, which Permit's
+  instance-key grammar refuses — the same wall real Drive *paths* hit, and a
+  measurement on a live tenant decides it rather than an assumption here.
+- **`normalize.ts` classifies resource *types*, not tool names.** Which tools
+  take their resource from the session rather than from an argument was a
+  hand-kept set of tool names, and adding Microsoft's four left them out of it:
+  every call then looked for a resource argument that does not exist and
+  refused with `ARGUMENT_SCHEMA_INVALID` — a schema complaint about a request
+  whose schema was fine. `PERSON_KEYED_RESOURCES` states it once per type, so a
+  new tool on an existing type needs no edit there. That was the fifth
+  hand-kept list to drift; the fix is the one `CONNECT_PROVIDERS` got.
 - **A GitHub repository is keyed by its numeric id, never `owner/repo`.** The
   slash does not survive Permit's instance-key grammar, and an id survives a
   rename where a name would silently follow whoever registered it next. Files,

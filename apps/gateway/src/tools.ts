@@ -370,6 +370,112 @@ export const TOOLS: readonly ToolDefinition[] = [
       },
     },
   },
+
+  // Microsoft 365. The mailbox and the calendar belong to the session's human
+  // and are read from `GatewaySession`, so no tool here has a field anybody
+  // could put somebody else's address in — the same rule the Google pair keeps.
+  //
+  // Graph ids are long base64-ish strings that routinely carry `=` padding,
+  // which is why the pattern below is wider than Gmail's. It is still a closed
+  // alphabet: a caller must not be able to smuggle a path segment or a query
+  // string into the URL step 8 builds. If a real tenant ever returns an id
+  // containing `+` or `/`, this pattern rejects it and the tool refuses rather
+  // than mangling the request — stated here because it is the one thing about
+  // these ids a live call has not yet confirmed (`docs/microsoft-setup.md`).
+  {
+    name: 'microsoft_mail.search_messages',
+    title: 'Search Outlook mail',
+    description:
+      'Find messages in the connected Microsoft 365 mailbox. Returns ids, senders, subjects ' +
+      'and dates — never message bodies. Reading a message is a separate, separately ' +
+      'authorized call.',
+    action: 'search',
+    resourceType: 'outlook_mailbox',
+    inputSchema: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['query'],
+      properties: {
+        // A search phrase, passed through as one opaque string. It is a query,
+        // not a destination, and nothing here interprets it.
+        query: { type: 'string', minLength: 1, maxLength: 500 },
+        page_size: { type: 'integer', minimum: 1, maximum: 50 },
+        declared_intent: { type: 'string', maxLength: 500 },
+      },
+    },
+  },
+  {
+    name: 'microsoft_mail.read_message',
+    title: 'Read one Outlook message',
+    description:
+      'Read one message from the connected Microsoft 365 mailbox by id. Ask for the body only ' +
+      'when you need it. Every call is authorized individually.',
+    action: 'read',
+    resourceType: 'outlook_mailbox',
+    inputSchema: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['message_id'],
+      properties: {
+        message_id: { type: 'string', minLength: 1, maxLength: 512, pattern: '^[A-Za-z0-9_=-]+$' },
+        fields: {
+          type: 'array',
+          maxItems: 5,
+          items: { type: 'string', enum: ['from', 'subject', 'date', 'preview', 'body'] },
+        },
+        declared_intent: { type: 'string', maxLength: 500 },
+      },
+    },
+  },
+  {
+    name: 'microsoft_calendar.list_events',
+    title: 'List Outlook calendar events',
+    description:
+      'List events in a bounded time window from the connected Microsoft 365 calendar. ' +
+      'Returns times, titles, locations and how many people are invited — never event ' +
+      'bodies, and never who the other guests are. Reading one event is a separate call.',
+    action: 'search',
+    resourceType: 'outlook_calendar',
+    inputSchema: {
+      type: 'object',
+      additionalProperties: false,
+      // Both ends required, as for Google. "Everything from the beginning of
+      // time" is not a request this tool can express.
+      required: ['time_min', 'time_max'],
+      properties: {
+        time_min: { type: 'string', pattern: RFC3339, maxLength: 40 },
+        time_max: { type: 'string', pattern: RFC3339, maxLength: 40 },
+        page_size: { type: 'integer', minimum: 1, maximum: 100 },
+        declared_intent: { type: 'string', maxLength: 500 },
+      },
+    },
+  },
+  {
+    name: 'microsoft_calendar.read_event',
+    title: 'Read one Outlook event',
+    description:
+      'Read one event from the connected Microsoft 365 calendar by id. Ask for the body only ' +
+      'when you need it. Every call is authorized individually.',
+    action: 'read',
+    resourceType: 'outlook_calendar',
+    inputSchema: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['event_id'],
+      properties: {
+        event_id: { type: 'string', minLength: 1, maxLength: 512, pattern: '^[A-Za-z0-9_=-]+$' },
+        fields: {
+          type: 'array',
+          maxItems: 6,
+          items: {
+            type: 'string',
+            enum: ['subject', 'start', 'end', 'location', 'organizer', 'body'],
+          },
+        },
+        declared_intent: { type: 'string', maxLength: 500 },
+      },
+    },
+  },
 ];
 
 export const findTool = (name: string): ToolDefinition | undefined =>

@@ -272,6 +272,10 @@ describe('a client can connect and list', () => {
       'github_pull.read_diff',
       'slack_channel.list_channels',
       'slack_channel.read_history',
+      'microsoft_mail.search_messages',
+      'microsoft_mail.read_message',
+      'microsoft_calendar.list_events',
+      'microsoft_calendar.read_event',
     ]);
   });
 

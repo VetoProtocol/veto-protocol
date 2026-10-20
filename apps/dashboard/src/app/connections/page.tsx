@@ -46,6 +46,11 @@ const ERRORS: Record<string, string> = {
   // says which setting.
   nouserauth:
     'GitHub did not confirm who owns that installation, so nothing was connected. The GitHub App needs \u201cRequest user authorization (OAuth) during installation\u201d switched on.',
+  // Microsoft's own. Distinct from `refused` because the cause and the fix are
+  // both specific: this tenant does not let people approve apps for
+  // themselves, and nothing the person does differently will change that.
+  adminconsent:
+    'Your Microsoft tenant requires an administrator to approve this app before anyone can connect it. Nothing was connected \u2014 ask an administrator to approve it once, then try again.',
 };
 
 /**
@@ -64,6 +69,12 @@ const CONNECTED: Record<string, string> = {
   google: 'Connected. What Google actually granted is listed below.',
   github: 'Connected. The repositories and permissions you picked are listed below.',
   slack: 'Connected. Add the bot to a channel to let an agent read it \u2014 a Slack install on its own reaches no conversation.',
+  // Says the one thing about this provider that is not true of the others:
+  // revoking here stops Veto using the credential, but Microsoft offers no way
+  // to invalidate a single refresh token, so the grant on their side outlives
+  // it. Better said on the screen than discovered later.
+  microsoft:
+    'Connected. What Microsoft actually granted is listed below. Revoking here stops Veto using it \u2014 to remove the grant on Microsoft\u2019s side as well, use myapplications.microsoft.com.',
   ok: 'Connected. What the provider actually granted is listed below.',
 };
 
@@ -79,6 +90,13 @@ const SCOPE_MEANING: Record<string, string> = {
   'https://www.googleapis.com/auth/gmail.readonly': 'read and search mail — no sending, no deleting',
   'https://www.googleapis.com/auth/calendar.readonly':
     'read the calendar — no creating, changing or cancelling',
+  'https://graph.microsoft.com/Mail.Read': 'read and search mail — no sending, no deleting',
+  'https://graph.microsoft.com/Calendars.Read':
+    'read the calendar — no creating, changing or cancelling',
+  'https://graph.microsoft.com/User.Read': 'read this account’s own name and address',
+  // Not a permission on anything. It is what makes the connection outlive one
+  // hour, and saying so stops it reading like an unexplained extra.
+  offline_access: 'keep the connection working after the first hour — grants no access by itself',
 };
 
 /**
@@ -132,6 +150,21 @@ const SERVICES = [
     label: 'Connect Slack private channels',
     href: '/connections/slack/start?service=private_channels',
     detail: 'A separate decision from public channels, and a separate consent screen.',
+  },
+  {
+    // A fourth provider, and the nearest in shape to Google: an ordinary
+    // consent screen, per service, read-only. Work and school accounts only —
+    // a personal Microsoft account is refused at Microsoft's own sign-in.
+    key: 'microsoft_mail',
+    label: 'Connect Outlook mail',
+    href: '/connections/microsoft/start?service=mail',
+    detail: 'Read-only. Searching and reading; there is no send permission to grant.',
+  },
+  {
+    key: 'microsoft_calendar',
+    label: 'Connect Outlook calendar',
+    href: '/connections/microsoft/start?service=calendar',
+    detail: 'Read-only. A separate decision from mail, and a separate consent screen.',
   },
 ] as const;
 

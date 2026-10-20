@@ -25,13 +25,17 @@ import { withWorkspace } from '@veto/db';
 import {
   GOOGLE_SERVICES,
   GOOGLE_SERVICE_NAMES,
+  MICROSOFT_SERVICES,
+  MICROSOFT_SERVICE_NAMES,
   SLACK_SERVICES,
   SLACK_SERVICE_NAMES,
   buildConsentUrl,
   buildInstallUrl,
+  buildMicrosoftConsentUrl,
   buildSlackInstallUrl,
   createConnection,
   exchangeAuthorizationCode,
+  exchangeMicrosoftCode,
   exchangeSlackCode,
   findConnection,
   listConnections,
@@ -42,6 +46,7 @@ import {
   type GitHubAppConfig,
   type GitHubUserAuthConfig,
   type GoogleOAuthConfig,
+  type MicrosoftOAuthConfig,
   type SlackAppConfig,
   type SlackService,
   type UpstreamTokenExchange,
@@ -80,6 +85,17 @@ export interface ConnectionRoutesDeps {
   readonly githubUserAuth: GitHubUserAuthConfig | null;
   /** Slack app credentials. Absent means every Slack route refuses. */
   readonly slack: SlackAppConfig | null;
+  /**
+   * Microsoft 365 app registration. Absent means every Microsoft route
+   * refuses rather than half-working.
+   *
+   * Revocation for this provider is **local only** — Microsoft exposes no way
+   * to invalidate one refresh token, and the only broader mechanism would sign
+   * the person out of every application they use. There is deliberately no
+   * `microsoftExchange` beside this for the revoke path to reach for, because
+   * there is nothing honest for it to call. See `docs/microsoft-setup.md`.
+   */
+  readonly microsoft: MicrosoftOAuthConfig | null;
   /**
    * Revocation has to reach the provider the connection actually belongs to.
    * Handing an installation id to Google's revoke endpoint fails quietly and
@@ -194,6 +210,33 @@ interface AuthorizeQuery {
   code_challenge: string;
   service?: string;
 }
+
+/**
+ * The same shape as Google's, with its own closed service set.
+ *
+ * Its own constant rather than a shared one with a wider enum: a single schema
+ * covering both would accept `drive` on the Microsoft route and `mail` on the
+ * Google one, and the fallback service would then quietly decide what the
+ * person actually consented to. That is exactly how "connect Calendar" once
+ * opened a consent screen for Drive.
+ */
+const MICROSOFT_AUTHORIZE_QUERY = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['state', 'code_challenge'],
+  properties: {
+    state: { type: 'string', minLength: 16, maxLength: 128, pattern: '^[A-Za-z0-9._~-]+$' },
+    code_challenge: {
+      type: 'string',
+      minLength: 43,
+      maxLength: 128,
+      pattern: '^[A-Za-z0-9._~-]+$',
+    },
+    service: { type: 'string', enum: [...MICROSOFT_SERVICE_NAMES] },
+  },
+} as const;
+
+type MicrosoftAuthorizeQuery = AuthorizeQuery;
 
 interface ConnectBody {
   code: string;
@@ -338,6 +381,125 @@ export function registerConnectionRoutes(app: FastifyInstance, deps: ConnectionR
     },
   );
 
+
+  /**
+   * The Microsoft consent URL, built here for the reason Google's is.
+   *
+   * `redirect_uri` has to be identical at consent time and at exchange time,
+   * and the exchange happens in this process — so there is exactly one copy of
+   * it and the dashboard has none to get wrong.
+   *
+   * `state` and `code_challenge` come from the caller, as they do for Google
+   * and unlike Slack's server-minted state. That is not the F-01 shape: the
+   * caller here is the dashboard, which seals both into a signed five-minute
+   * cookie and compares them on the way back, so the value is checked against
+   * something the client cannot forge. Slack needed a server-minted state
+   * because its install flow has no PKCE and no verifier to bind.
+   */
+  app.get(
+    '/v1/connections/microsoft/authorize-url',
+    {
+      schema: {
+        querystring: MICROSOFT_AUTHORIZE_QUERY,
+        response: {
+          200: {
+            type: 'object',
+            properties: {
+              url: { type: 'string' },
+              scopes: { type: 'array', items: { type: 'string' } },
+            },
+            required: ['url', 'scopes'],
+          },
+          '4xx': ERROR_SCHEMA,
+          '5xx': ERROR_SCHEMA,
+        },
+      },
+    },
+    async (request: FastifyRequest<{ Querystring: MicrosoftAuthorizeQuery }>) => {
+      requireScope(request, SCOPE_CONTROL_PLANE);
+
+      if (!deps.microsoft) {
+        throw new HttpError(
+          503,
+          'CONNECTION_EXPIRED',
+          'Microsoft 365 is not configured on this server',
+        );
+      }
+
+      // Exactly one service's scopes (§9.1). A closed set, so a caller names a
+      // feature this product enforces rules on and never a scope.
+      const service = request.query.service ?? 'mail';
+      const scopes = [...(MICROSOFT_SERVICES[service as keyof typeof MICROSOFT_SERVICES] ?? [])];
+
+      return {
+        url: buildMicrosoftConsentUrl(deps.microsoft, {
+          state: request.query.state,
+          codeChallenge: request.query.code_challenge,
+          scopes,
+        }),
+        scopes,
+      };
+    },
+  );
+
+  app.post(
+    '/v1/connections/microsoft',
+    {
+      schema: {
+        body: CONNECT_BODY,
+        response: { 201: CONNECTION_SCHEMA, '4xx': ERROR_SCHEMA, '5xx': ERROR_SCHEMA },
+      },
+    },
+    async (request: FastifyRequest<{ Body: ConnectBody }>, reply) => {
+      requireScope(request, SCOPE_CONTROL_PLANE);
+      const { workspaceId, userId } = request.principal;
+
+      if (!deps.microsoft) {
+        throw new HttpError(
+          503,
+          'CONNECTION_EXPIRED',
+          'Microsoft 365 is not configured on this server',
+        );
+      }
+
+      let exchanged;
+      try {
+        exchanged = await exchangeMicrosoftCode(
+          deps.microsoft,
+          request.body.code,
+          request.body.code_verifier,
+        );
+      } catch (error) {
+        // Logged, not propagated. Microsoft's error text echoes the request —
+        // which carried the code — and is written for a developer's console.
+        // But the code behind it decides what the operator should do, and
+        // `consent_required` versus `invalid_client` need opposite responses.
+        // Swallowing it bare is what cost a round trip on GitHub's secret.
+        request.log.warn({ err: error }, 'microsoft connection could not be completed');
+        throw new HttpError(
+          400,
+          'ARGUMENT_SCHEMA_INVALID',
+          'That authorization could not be completed. Start again, and make sure offline access is granted.',
+        );
+      }
+
+      const connection = await withWorkspace(deps.pool, workspaceId, (db) =>
+        createConnection(db, deps.wrapper, {
+          workspaceId,
+          userId,
+          provider: 'microsoft',
+          // What Microsoft actually granted, normalised to the long scope
+          // spelling the broker compares against. A partial grant must not be
+          // recorded as a full one (§9.1).
+          scopes: exchanged.scopes,
+          refreshToken: exchanged.refreshToken,
+          correlationId: String(request.id),
+        }),
+      );
+
+      return reply.code(201).send(serialize(connection));
+    },
+  );
 
   /**
    * Begin a Slack install.

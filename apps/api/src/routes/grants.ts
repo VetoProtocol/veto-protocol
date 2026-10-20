@@ -34,6 +34,8 @@ import {
   MAILBOX_RESOURCE,
   SLACK_CHANNEL_RESOURCE,
   SLACK_WORKSPACE_RESOURCE,
+  OUTLOOK_MAILBOX_RESOURCE,
+  OUTLOOK_CALENDAR_RESOURCE,
   type PolicyFacts,
 } from '@veto/permit';
 import type { KeyWrapper } from '@veto/vault';
@@ -112,6 +114,8 @@ const GRANTABLE = [
   GITHUB_REPO_RESOURCE,
   SLACK_WORKSPACE_RESOURCE,
   SLACK_CHANNEL_RESOURCE,
+  OUTLOOK_MAILBOX_RESOURCE,
+  OUTLOOK_CALENDAR_RESOURCE,
 ] as const;
 
 const CONSENT_SCHEMA = {
@@ -253,6 +257,17 @@ const KEY_SHAPE: Readonly<Record<string, { readonly pattern: RegExp; readonly ex
       expected: 'a Slack channel id (C…)',
     },
     [GITHUB_REPO_RESOURCE]: { pattern: /^[0-9]+$/, expected: "GitHub's numeric repository id" },
+    // Microsoft's two, keyed by the delegating person for the reason Google's
+    // pair is: an agent reaches the mailbox and calendar of whoever delegated
+    // to it, and no argument anywhere can name somebody else's.
+    [OUTLOOK_MAILBOX_RESOURCE]: {
+      pattern: /^usr_[A-Za-z0-9_-]{1,64}$/,
+      expected: 'a Veto user id (usr_\u2026)',
+    },
+    [OUTLOOK_CALENDAR_RESOURCE]: {
+      pattern: /^usr_[A-Za-z0-9_-]{1,64}$/,
+      expected: 'a Veto user id (usr_\u2026)',
+    },
   };
 
 interface Body {

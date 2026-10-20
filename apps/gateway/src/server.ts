@@ -19,10 +19,13 @@ import {
   createGmailReader,
   createGoogleExchange,
   createIssueReader,
+  createMicrosoftExchange,
+  createOutlookReader,
   createRepoReader,
   createSlackExchange,
   type GitHubAppConfig,
   type GoogleOAuthConfig,
+  type MicrosoftOAuthConfig,
   type SlackAppConfig,
 } from '@veto/connections';
 import { createLocalKeyWrapper } from '@veto/vault';
@@ -98,6 +101,20 @@ const slack: SlackAppConfig | null =
         redirectUri: required('SLACK_REDIRECT_URI'),
       };
 
+// Microsoft 365. Empty client id disables it entirely, and every Microsoft
+// tool then refuses rather than half-working. See docs/microsoft-setup.md —
+// including the one thing this provider cannot do, which is revoke a single
+// refresh token.
+const microsoftClientId = (process.env['MICROSOFT_CLIENT_ID'] ?? '').trim();
+const microsoft: MicrosoftOAuthConfig | null =
+  microsoftClientId === ''
+    ? null
+    : {
+        clientId: microsoftClientId,
+        clientSecret: required('MICROSOFT_CLIENT_SECRET'),
+        redirectUri: required('MICROSOFT_REDIRECT_URI'),
+      };
+
 const execute =
   google === null
     ? null
@@ -123,6 +140,16 @@ const execute =
           : {
               slackExchange: createSlackExchange(slack),
               channels: createChannelReader(),
+            }),
+        // Microsoft is a fourth provider, and the second that rotates. Its own
+        // exchange because the refresh grant forwards the tool's scopes —
+        // Microsoft honours a subset — and because it returns a replacement
+        // refresh token every time, which the broker persists.
+        ...(microsoft === null
+          ? {}
+          : {
+              microsoftExchange: createMicrosoftExchange(microsoft),
+              outlook: createOutlookReader(),
             }),
       };
 

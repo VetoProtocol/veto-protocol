@@ -27,6 +27,8 @@ import {
   GITHUB_REPO_RESOURCE,
   HUMAN_RESOURCE,
   MAILBOX_RESOURCE,
+  OUTLOOK_CALENDAR_RESOURCE,
+  OUTLOOK_MAILBOX_RESOURCE,
   SLACK_CHANNEL_RESOURCE,
   SLACK_WORKSPACE_RESOURCE,
   RELATION_DELEGATOR,
@@ -276,6 +278,63 @@ export async function bootstrapPermitEnvironment(config: PermitConfig): Promise<
     permit.api.resourceRoles.create(CALENDAR_RESOURCE, {
       key: ROLE_READER,
       name: 'Calendar reader',
+      description: 'May list and read this calendar. Cannot create or change events.',
+      permissions: ['read', 'search'],
+    }),
+  );
+
+  // Microsoft 365: the same two shapes again, as their own resource types.
+  //
+  // Not extra instances of `gmail_mailbox` and `google_calendar`, because a
+  // grant has to say which account it reaches. One key space holding both
+  // providers would make "this agent may read user X's mail" ambiguous, and
+  // revoking the Google connection would leave a grant that still read as
+  // access to something.
+  //
+  // No `microsoft_tenant` beside them: mail and calendar have no
+  // cross-account listing tool, so a tenant type would be grantable and never
+  // checked. See the note in `model.ts`.
+  await step(`resource:${OUTLOOK_MAILBOX_RESOURCE}`, () =>
+    permit.api.resources.create({
+      key: OUTLOOK_MAILBOX_RESOURCE,
+      name: 'Outlook mailbox',
+      description:
+        "One person's Microsoft 365 mail. Keyed by Veto user id. Messages are not modelled: their ids cannot be known before a search runs, so which messages is a Veto rule's job.",
+      actions: { read: {}, search: {} },
+      attributes: {
+        sensitivity: { type: 'string', description: 'Classification label, never the content itself.' },
+      },
+    }),
+  );
+
+  await step(`role:${OUTLOOK_MAILBOX_RESOURCE}.${ROLE_READER}`, () =>
+    permit.api.resourceRoles.create(OUTLOOK_MAILBOX_RESOURCE, {
+      key: ROLE_READER,
+      name: 'Outlook mailbox reader',
+      description: 'May search and read this mailbox. Cannot send: no send action exists.',
+      permissions: ['read', 'search'],
+    }),
+  );
+
+  // Read only (§9.1). No create or update action is declared, so the later
+  // release that adds writes has to come back here and say so out loud.
+  await step(`resource:${OUTLOOK_CALENDAR_RESOURCE}`, () =>
+    permit.api.resources.create({
+      key: OUTLOOK_CALENDAR_RESOURCE,
+      name: 'Outlook calendar',
+      description:
+        "One person's Microsoft 365 calendar. Keyed by Veto user id, not by a Microsoft calendar id: an agent reaches the calendar of the person who delegated to it.",
+      actions: { read: {}, search: {} },
+      attributes: {
+        sensitivity: { type: 'string', description: 'Classification label, never the content itself.' },
+      },
+    }),
+  );
+
+  await step(`role:${OUTLOOK_CALENDAR_RESOURCE}.${ROLE_READER}`, () =>
+    permit.api.resourceRoles.create(OUTLOOK_CALENDAR_RESOURCE, {
+      key: ROLE_READER,
+      name: 'Outlook calendar reader',
       description: 'May list and read this calendar. Cannot create or change events.',
       permissions: ['read', 'search'],
     }),

@@ -135,6 +135,43 @@ export const SLACK_CHANNEL_RESOURCE = 'slack_channel';
 export const SLACK_WORKSPACE_RESOURCE = 'slack_workspace';
 
 /**
+ * An Outlook mailbox, §4.2's `mail` resource type again — on Microsoft.
+ *
+ * Its own type rather than a second instance of `gmail_mailbox`, because a
+ * grant has to say which account it reaches. One key space holding both would
+ * make "this agent may read user X's mail" ambiguous between two providers, and
+ * revoking the Google connection would leave a grant that still reads as access
+ * to something.
+ *
+ * Keyed by the **Veto user id**, for the reason the Gmail mailbox is: an agent
+ * acts for one person and reaches that person's mail. Microsoft's own mailbox
+ * identifiers are never used, so there is no argument an agent could put
+ * somebody else's address in.
+ *
+ * Individual messages are not resources. Their ids are not knowable before a
+ * search runs, so a per-message grant could never be written in advance;
+ * Permit answers "may this agent reach that mailbox at all", and which
+ * messages, how many and when is the Veto rule's job at step 4.
+ *
+ * There is deliberately no `microsoft_tenant` beside these two. GitHub needed
+ * an account resource because repositories declare `parent` against it, and
+ * Slack needed a workspace because "list the channels I can see" must be
+ * authorised against something. Mail and calendar have no cross-account
+ * listing tool, so a tenant type would be grantable and never checked — a row
+ * on the policies screen that reads as access and reaches nothing.
+ */
+export const OUTLOOK_MAILBOX_RESOURCE = 'outlook_mailbox';
+
+/**
+ * An Outlook calendar. Same reasoning as the mailbox above, and the same key.
+ *
+ * Microsoft's own calendar ids would not survive Permit's instance-key grammar
+ * in every form, but the reason not to use them is the delegation model rather
+ * than the character set — identical to the note on `google_calendar`.
+ */
+export const OUTLOOK_CALENDAR_RESOURCE = 'outlook_calendar';
+
+/**
  * The installation account — one GitHub org or user that installed the app.
  *
  * Exists so "list the repositories I can see" has a resource to be authorised

@@ -33,8 +33,13 @@ import {
   GITHUB_PULL_REQUESTS_READ,
   GMAIL_READONLY_SCOPE,
   GmailError,
+  GraphError,
   MAX_HISTORY_DAYS,
+  MAX_OUTLOOK_WINDOW_DAYS,
   MAX_WINDOW_DAYS,
+  MICROSOFT_CALENDAR_READ_SCOPE,
+  MICROSOFT_MAIL_READ_SCOPE,
+  MICROSOFT_OFFLINE_SCOPE,
   RepoError,
   SLACK_CHANNELS_HISTORY,
   SLACK_CHANNELS_READ,
@@ -46,6 +51,7 @@ import {
   type DriveReader,
   type GmailReader,
   type IssueReader,
+  type OutlookReader,
   type RepoReader,
   type UpstreamTokenExchange,
 } from '@veto/connections';
@@ -97,6 +103,7 @@ const NO_CONNECTION: Readonly<Record<Provider, string>> = {
   google: 'No connected Google account for this user.',
   github: 'No connected GitHub installation for this user.',
   slack: 'No connected Slack workspace for this user.',
+  microsoft: 'No connected Microsoft 365 account for this user.',
 };
 
 /**
@@ -111,9 +118,11 @@ function exchangeFor(
   deps: ExecuteDeps,
   github: UpstreamTokenExchange | undefined,
   slack: UpstreamTokenExchange | undefined,
+  microsoft: UpstreamTokenExchange | undefined,
 ): UpstreamTokenExchange {
   if (provider === 'github' && github !== undefined) return github;
   if (provider === 'slack' && slack !== undefined) return slack;
+  if (provider === 'microsoft' && microsoft !== undefined) return microsoft;
   return deps.exchange;
 }
 
@@ -146,9 +155,20 @@ export interface ExecuteDeps {
    */
   readonly slackExchange?: UpstreamTokenExchange;
   readonly channels?: ChannelReader;
+  /**
+   * Microsoft 365 is a fourth provider, and the second that rotates.
+   *
+   * Its own exchange because the refresh grant forwards the tool's scopes —
+   * Microsoft honours a subset, so a mail read gets a token that cannot read
+   * the calendar — and because it returns a replacement refresh token every
+   * time. Absent until the app registration is configured, and then every
+   * Microsoft tool refuses rather than half-works.
+   */
+  readonly microsoftExchange?: UpstreamTokenExchange;
+  readonly outlook?: OutlookReader;
 }
 
-type Provider = 'google' | 'github' | 'slack';
+type Provider = 'google' | 'github' | 'slack' | 'microsoft';
 
 interface Upstream {
   readonly provider: Provider;
@@ -173,6 +193,33 @@ const UPSTREAM_FOR_TOOL: Readonly<Record<string, Upstream>> = {
   'slack_channel.read_history': {
     provider: 'slack',
     scopes: [SLACK_CHANNELS_READ, SLACK_CHANNELS_HISTORY],
+  },
+
+  // Microsoft narrows at mint time, like GitHub and unlike Google or Slack:
+  // the refresh grant accepts "equivalent to or a subset of" what was
+  // consented, so these scopes are forwarded and a mail read receives a token
+  // that physically cannot read the calendar.
+  //
+  // `offline_access` rides along on purpose. Microsoft issues a replacement
+  // refresh token *only* when it is requested, so leaving it out would mint a
+  // working access token and quietly stop the rotation chain. The resource
+  // scope stays last because `findConnectionForScope` discriminates on the
+  // final entry, and `offline_access` is on both Microsoft connections.
+  'microsoft_mail.search_messages': {
+    provider: 'microsoft',
+    scopes: [MICROSOFT_OFFLINE_SCOPE, MICROSOFT_MAIL_READ_SCOPE],
+  },
+  'microsoft_mail.read_message': {
+    provider: 'microsoft',
+    scopes: [MICROSOFT_OFFLINE_SCOPE, MICROSOFT_MAIL_READ_SCOPE],
+  },
+  'microsoft_calendar.list_events': {
+    provider: 'microsoft',
+    scopes: [MICROSOFT_OFFLINE_SCOPE, MICROSOFT_CALENDAR_READ_SCOPE],
+  },
+  'microsoft_calendar.read_event': {
+    provider: 'microsoft',
+    scopes: [MICROSOFT_OFFLINE_SCOPE, MICROSOFT_CALENDAR_READ_SCOPE],
   },
 
   'google_drive.read_file': { provider: 'google', scopes: [DRIVE_READONLY_SCOPE] },
@@ -299,6 +346,18 @@ export async function executeAllowed(
     };
   }
 
+  const microsoftExchange = deps.microsoftExchange;
+  if (
+    upstream.provider === 'microsoft' &&
+    (microsoftExchange === undefined || deps.outlook === undefined)
+  ) {
+    return {
+      ok: false,
+      reasonCode: 'TOOL_NOT_ALLOWED',
+      message: 'Microsoft 365 is not configured on this server.',
+    };
+  }
+
   // The connection that holds this tool's scope, not merely the newest one.
   // Consent is per service (§9.1), so an account that activated Drive, Gmail
   // and Calendar has three single-scope connections; asking for "the newest
@@ -351,10 +410,10 @@ export async function executeAllowed(
       mintUpstreamToken(
         db,
         deps.wrapper,
-        // Three providers now, so a conditional expression stops being
+        // Four providers now, so a conditional expression stops being
         // readable. The guards above already refused a provider whose
         // exchange is missing, which is why this can fall through to Google.
-        exchangeFor(upstream.provider, deps, githubExchange, slackExchange),
+        exchangeFor(upstream.provider, deps, githubExchange, slackExchange, microsoftExchange),
         {
           workspaceId: input.workspaceId,
           connectionId: connection.id,
@@ -403,6 +462,7 @@ export async function executeAllowed(
       error instanceof DriveError ||
       error instanceof GmailError ||
       error instanceof CalendarError ||
+      error instanceof GraphError ||
       error instanceof RepoError
         ? error.status
         : 0;
@@ -499,6 +559,65 @@ async function carryOut(
         bounded,
       ),
     };
+  }
+
+  if (input.tool.startsWith('microsoft_')) {
+    const outlook = deps.outlook;
+    if (!outlook) throw new GraphError(503);
+
+    const pageSize = input.arguments['page_size'];
+
+    if (input.tool === 'microsoft_mail.search_messages') {
+      const query = input.arguments['query'];
+      if (typeof query !== 'string') throw badArgument();
+
+      // Headers only. The tool's description promises no bodies, and
+      // `searchMessages` cannot return one — it asks Graph for a `$select`
+      // that does not include the body.
+      return {
+        messages: await outlook.searchMessages(
+          accessToken,
+          query,
+          typeof pageSize === 'number' ? pageSize : 10,
+        ),
+      };
+    }
+
+    if (input.tool === 'microsoft_mail.read_message') {
+      // The mailbox is the resource; the message id is an argument, so it is
+      // covered by the digest and an approval stays bound to one exact
+      // message. The mailbox itself comes from the session, never an argument.
+      const messageId = input.arguments['message_id'];
+      if (typeof messageId !== 'string') throw badArgument();
+      return await outlook.readMessage(accessToken, messageId, fields);
+    }
+
+    if (input.tool === 'microsoft_calendar.list_events') {
+      const timeMin = input.arguments['time_min'];
+      const timeMax = input.arguments['time_max'];
+      if (typeof timeMin !== 'string' || typeof timeMax !== 'string') throw badArgument();
+
+      // Bounded here, not only in the schema — the same rule Google's calendar
+      // and Slack's history keep. A schema can check that two timestamps are
+      // timestamps; only this can check they are not two years apart, which is
+      // the difference between "my week" and "everything I have ever done".
+      const span = Date.parse(timeMax) - Date.parse(timeMin);
+      if (!Number.isFinite(span) || span <= 0) throw badArgument();
+      if (span > MAX_OUTLOOK_WINDOW_DAYS * 24 * 60 * 60 * 1000) throw tooMuch();
+
+      return {
+        events: await outlook.listEvents(
+          accessToken,
+          { start: timeMin, end: timeMax },
+          typeof pageSize === 'number' ? pageSize : 25,
+        ),
+      };
+    }
+
+    // microsoft_calendar.read_event
+    const eventId = input.arguments['event_id'];
+    if (typeof eventId !== 'string') throw badArgument();
+    return await outlook.readEvent(accessToken, eventId, fields);
   }
 
   if (input.tool.startsWith('google_calendar.')) {

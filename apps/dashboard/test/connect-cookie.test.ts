@@ -130,11 +130,14 @@ describe('every provider the module admits to', () => {
     providers = (await import('../src/lib/connect-cookie.ts')).CONNECT_PROVIDERS;
   });
 
+  /** The flows that run PKCE, and therefore must carry a verifier. */
+  const PKCE = new Set(['google', 'microsoft']);
+
   it('survives a round trip', () => {
     for (const provider of providers) {
       const sealed = sealConnect({
         // Only a flow with a code challenge carries a verifier.
-        verifier: provider === 'google' ? 'v'.repeat(43) : '',
+        verifier: PKCE.has(provider) ? 'v'.repeat(43) : '',
         state: 'state-abc',
         provider: provider as 'google',
         expiresAt: Date.now() + 60_000,
@@ -144,9 +147,39 @@ describe('every provider the module admits to', () => {
     }
   });
 
+  /**
+   * The other half of that: a PKCE flow whose verifier went missing must be
+   * refused, not opened with an empty one.
+   *
+   * Without this, dropping a provider out of `NEEDS_VERIFIER` would pass both
+   * other tests here — and the exchange would then fail at the provider, with a
+   * message about a code verifier, on a round trip that cost a real user.
+   */
+  it('refuses a PKCE flow with no verifier', () => {
+    for (const provider of providers) {
+      const sealed = sealConnect({
+        verifier: '',
+        state: 'state-abc',
+        provider: provider as 'google',
+        expiresAt: Date.now() + 60_000,
+      });
+
+      const opened = openConnect(sealed);
+      if (PKCE.has(provider)) {
+        expect(opened, `${provider} runs PKCE and must not open without a verifier`).toBeNull();
+      } else {
+        expect(opened, `${provider} has no verifier to carry`).not.toBeNull();
+      }
+    }
+  });
+
   it('is the set the connect routes actually mint', () => {
     // The other direction: a provider a start route seals but this list does
     // not admit would be refused on the way back, which is the exact bug.
-    expect([...providers].sort()).toEqual(['github', 'google', 'slack']);
+    //
+    // Hardcoded on purpose. It fails whenever a provider is added, which forces
+    // whoever added it to come back here and confirm the rest of this file was
+    // updated too — the check that caught Slack, and then Microsoft.
+    expect([...providers].sort()).toEqual(['github', 'google', 'microsoft', 'slack']);
   });
 });

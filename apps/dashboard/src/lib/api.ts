@@ -370,6 +370,29 @@ export const connectGoogle = (
   request('/v1/connections/google', { method: 'POST', credential, body: JSON.stringify(body) });
 
 /**
+ * The Microsoft 365 consent URL. Same division of labour as Google's.
+ *
+ * The API assembles it because the API exchanges the code afterwards, and
+ * Microsoft compares `redirect_uri` across both halves. The dashboard supplies
+ * only the two values it has to recognise on the way back.
+ */
+export const microsoftAuthorizeUrl = (
+  credential: string,
+  query: { state: string; code_challenge: string; service?: string },
+): Promise<{ url: string; scopes: string[] }> =>
+  request(`/v1/connections/microsoft/authorize-url?${new URLSearchParams(query).toString()}`, {
+    method: 'GET',
+    credential,
+  });
+
+/** Hands the authorization code across. Nothing comes back but the connection row. */
+export const connectMicrosoft = (
+  credential: string,
+  body: { code: string; code_verifier: string },
+): Promise<ConnectionView> =>
+  request('/v1/connections/microsoft', { method: 'POST', credential, body: JSON.stringify(body) });
+
+/**
  * Where to send someone to install the GitHub App.
  *
  * No PKCE and no scope list, unlike the Google pair: an installation's reach is

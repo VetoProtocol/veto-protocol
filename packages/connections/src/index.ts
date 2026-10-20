@@ -10,3 +10,5 @@ export * from './issues.ts';
 export * from './inventory.ts';
 export * from './slack.ts';
 export * from './channels.ts';
+export * from './microsoft.ts';
+export * from './outlook.ts';

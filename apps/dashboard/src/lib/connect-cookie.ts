@@ -42,7 +42,7 @@ const DOMAIN = 'veto.connect.v1';
  *
  * Adding a provider is now one edit here.
  */
-export const CONNECT_PROVIDERS = ['google', 'github', 'slack'] as const;
+export const CONNECT_PROVIDERS = ['google', 'github', 'slack', 'microsoft'] as const;
 
 export type ConnectProvider = (typeof CONNECT_PROVIDERS)[number];
 
@@ -52,12 +52,21 @@ const isConnectProvider = (value: string): value is ConnectProvider =>
 /**
  * Which flows have a code to exchange, and therefore need PKCE.
  *
- * Google does. GitHub hands back an installation id, worth nothing without the
- * App private key. Slack returns a code but has no PKCE in its OAuth, and the
- * secret never leaves the control plane — so an empty verifier is correct for
- * both, and required for neither.
+ * Google and Microsoft do. GitHub hands back an installation id, worth nothing
+ * without the App private key. Slack returns a code but has no PKCE in its
+ * OAuth, and the secret never leaves the control plane — so an empty verifier
+ * is correct for those two, and required for neither.
+ *
+ * Microsoft belongs here rather than beside Slack: its authorize endpoint takes
+ * `code_challenge` and its token endpoint takes `code_verifier`, so a flow
+ * reaching the callback with an empty verifier means somebody dropped it, and
+ * the exchange would fail at Microsoft with a message about the verifier
+ * instead of here with one about the cookie.
  */
-const NEEDS_VERIFIER: ReadonlySet<ConnectProvider> = new Set<ConnectProvider>(['google']);
+const NEEDS_VERIFIER: ReadonlySet<ConnectProvider> = new Set<ConnectProvider>([
+  'google',
+  'microsoft',
+]);
 
 export interface ConnectFlow {
   /**

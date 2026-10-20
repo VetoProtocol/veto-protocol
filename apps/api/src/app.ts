@@ -19,6 +19,7 @@ import {
   createRepoReader,
   type AppInventorySource,
   type GitHubUserAuthConfig,
+  type MicrosoftOAuthConfig,
   type SlackAppConfig,
 } from '@veto/connections';
 import type {
@@ -77,6 +78,8 @@ export interface AppDeps {
   readonly githubUserAuth?: GitHubUserAuthConfig | null;
   /** Slack app credentials. Absent means every Slack route refuses. */
   readonly slack?: SlackAppConfig | null;
+  /** Microsoft 365 app registration. Absent means every Microsoft route refuses. */
+  readonly microsoft?: MicrosoftOAuthConfig | null;
   readonly githubExchange?: UpstreamTokenExchange | null;
   /** Overridable so a test can sync repositories without a live GitHub. */
   readonly repos?: RepoReader | null;
@@ -197,6 +200,7 @@ export function createApp(deps: AppDeps): FastifyInstance {
     github: deps.github ?? null,
     githubUserAuth: deps.githubUserAuth ?? null,
     slack: deps.slack ?? null,
+    microsoft: deps.microsoft ?? null,
     exchange: deps.exchange ?? null,
     githubExchange: deps.githubExchange ?? null,
   });

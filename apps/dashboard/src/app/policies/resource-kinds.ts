@@ -135,6 +135,24 @@ export const RESOURCE_KINDS: Readonly<Record<string, ResourceKind>> = {
       'Keyed by the person who connected Slack, so no argument could name somebody else\u2019s workspace. Note this grants the channel *list* only \u2014 reading a channel is a separate grant today.',
     userKeyed: true,
   },
+  outlook_mailbox: {
+    label: 'Outlook mailbox',
+    reach: 'that mailbox',
+    keyLabel: 'whose mailbox',
+    keyHint: 'filled in for you',
+    keyHelp:
+      'An agent can only ever reach the Microsoft 365 mailbox of the person who delegated to it, so there is one correct value and it is already here. Separate from the Gmail mailbox on purpose \u2014 a grant has to say which account it reaches.',
+    userKeyed: true,
+  },
+  outlook_calendar: {
+    label: 'Outlook calendar',
+    reach: 'that calendar',
+    keyLabel: 'whose calendar',
+    keyHint: 'filled in for you',
+    keyHelp:
+      'An agent can only ever reach the Microsoft 365 calendar of the person who delegated to it, so there is one correct value and it is already here.',
+    userKeyed: true,
+  },
 };
 
 /**

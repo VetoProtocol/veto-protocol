@@ -67,3 +67,48 @@ describe('the connect route’s service allowlist', () => {
     expect(source).not.toMatch(/asked === 'gmail' \? 'gmail' : 'drive'/);
   });
 });
+
+/**
+ * The same guard for Microsoft, because the same copy exists for the same
+ * reason and would drift the same way.
+ *
+ * Repeated rather than generalised: the regexes name the real constant in each
+ * route, and a generalised version would have to find that constant by
+ * convention — which is how a drift test comes to pass by matching nothing.
+ */
+describe('the Microsoft connect route’s service allowlist', () => {
+  const msRoute = path.join(here, '..', 'src/app/connections/microsoft/start/route.ts');
+  const msSource = path.join(here, '../../..', 'packages/connections/src/microsoft.ts');
+
+  /** The real list, read from the package that owns it. */
+  function apiMicrosoftServices(): string[] {
+    const source = readFileSync(msSource, 'utf8');
+    const match = /export const MICROSOFT_SERVICES = \{([\s\S]*?)\n\} as const/.exec(source);
+    if (!match?.[1]) throw new Error('could not find MICROSOFT_SERVICES in @veto/connections');
+    return [...match[1].matchAll(/^\s*([a-z_]+):/gm)].map((m) => m[1] as string).sort();
+  }
+
+  /** The literal set the route actually checks against. */
+  function declaredMicrosoftServices(): string[] {
+    const source = readFileSync(msRoute, 'utf8');
+    const match = /MICROSOFT_SERVICES:\s*ReadonlySet<string>\s*=\s*new Set\(\[([^\]]*)\]\)/.exec(
+      source,
+    );
+    if (!match?.[1]) throw new Error('could not find the service set in the start route');
+    return [...match[1].matchAll(/'([^']+)'/g)].map((m) => m[1] as string).sort();
+  }
+
+  it('finds both lists, so this test cannot silently pass on nothing', () => {
+    expect(declaredMicrosoftServices().length).toBeGreaterThan(0);
+    expect(apiMicrosoftServices().length).toBeGreaterThan(0);
+  });
+
+  it('lists exactly the services the API accepts', () => {
+    expect(declaredMicrosoftServices()).toEqual(apiMicrosoftServices());
+  });
+
+  it('refuses an unknown service instead of substituting one', () => {
+    const source = readFileSync(msRoute, 'utf8');
+    expect(source).toMatch(/if \(!MICROSOFT_SERVICES\.has\(asked\)\) return back\(/);
+  });
+});
