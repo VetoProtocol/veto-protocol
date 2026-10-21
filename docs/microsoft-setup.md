@@ -1,5 +1,13 @@
 # Microsoft 365 app setup
 
+> **Withdrawn from Iteration Two.** The client removed Microsoft 365 from scope
+> after this was built, so nothing in the product offers it: no connect button,
+> no policy option, no starter rule, and no tool in the gateway catalogue. The
+> implementation and its tests are still in the repository, and the steps below
+> are still correct — they are what to do on the day it comes back, not setup
+> anybody needs today. See the Microsoft entry in `CLAUDE.md` for exactly which
+> lists have to be restored.
+
 What the Microsoft side needs, and the three things that were measured rather
 than assumed before any of this was written.
 

@@ -122,8 +122,6 @@ export function CreatePolicyForm({ agents }: { agents: readonly AgentChoice[] })
             <option value="github_account">github_account</option>
             <option value="slack_channel">slack_channel</option>
             <option value="slack_workspace">slack_workspace</option>
-            <option value="outlook_mailbox">outlook_mailbox</option>
-            <option value="outlook_calendar">outlook_calendar</option>
           </select>
         </label>
       </div>
@@ -354,15 +352,6 @@ export function CreateGrantForm({
             <option value="slack_channel">channel — if the bot is in it</option>
             <option value="slack_workspace">
               Slack workspace — the channel list, not the messages
-            </option>
-            {/* Named for the provider, not just "mailbox": a workspace can
-                have a Gmail mailbox and an Outlook one, and a grant that did
-                not say which would be a grant nobody could read correctly. */}
-            <option value="outlook_mailbox">
-              Outlook mailbox — one person&rsquo;s Microsoft 365 mail
-            </option>
-            <option value="outlook_calendar">
-              Outlook calendar — one person&rsquo;s Microsoft 365 calendar
             </option>
           </select>
         </label>

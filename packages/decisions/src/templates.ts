@@ -68,7 +68,7 @@ export interface PolicyTemplate {
    * apply a Drive template to a workspace with no Drive connection and read the
    * resulting silence as a bug.
    */
-  readonly requires: 'google' | 'github' | 'slack' | 'microsoft' | 'nothing';
+  readonly requires: 'google' | 'github' | 'slack' | 'nothing';
   readonly rules: readonly PolicyTemplateRule[];
 }
 
@@ -88,8 +88,6 @@ const WRITABLE_TYPES = [
   'google_calendar',
   'github_repo',
   'github_account',
-  'outlook_mailbox',
-  'outlook_calendar',
   'slack_workspace',
   'slack_channel',
 ] as const;
@@ -221,47 +219,6 @@ export const POLICY_TEMPLATES: readonly PolicyTemplate[] = [
         resourceFilter: { type: 'slack_channel' },
         conditions: WHILE_PRESENT,
         explains: 'Read messages in a granted channel, within a bounded window.',
-      },
-    ],
-  },
-  {
-    id: 'microsoft-read',
-    title: 'Read Outlook mail and calendar, while you are there',
-    summary:
-      'Lets an agent search and read the connected Microsoft 365 mailbox, and list and read the calendar. Reading one item is always a separate call from finding it.',
-    requires: 'microsoft',
-    rules: [
-      {
-        action: 'search',
-        effect: 'allow',
-        resourceFilter: { type: 'outlook_mailbox' },
-        conditions: WHILE_PRESENT,
-        explains: 'Find messages in the connected mailbox \u2014 headers only, never bodies.',
-      },
-      {
-        action: 'read',
-        effect: 'allow',
-        resourceFilter: { type: 'outlook_mailbox' },
-        conditions: WHILE_PRESENT,
-        explains: 'Read one message from the connected mailbox.',
-      },
-      {
-        // `list_events` declares action `search`, not `list` \u2014 and `list` is a
-        // valid POLICY_ACTION, so a rule written from the tool's *name* would
-        // compile, match nothing, deny silently, and look exactly like the
-        // deny-by-default confusion these templates exist to cure.
-        action: 'search',
-        effect: 'allow',
-        resourceFilter: { type: 'outlook_calendar' },
-        conditions: WHILE_PRESENT,
-        explains: 'List events in a bounded window.',
-      },
-      {
-        action: 'read',
-        effect: 'allow',
-        resourceFilter: { type: 'outlook_calendar' },
-        conditions: WHILE_PRESENT,
-        explains: 'Read one event from the connected calendar.',
       },
     ],
   },

@@ -151,21 +151,6 @@ const SERVICES = [
     href: '/connections/slack/start?service=private_channels',
     detail: 'A separate decision from public channels, and a separate consent screen.',
   },
-  {
-    // A fourth provider, and the nearest in shape to Google: an ordinary
-    // consent screen, per service, read-only. Work and school accounts only —
-    // a personal Microsoft account is refused at Microsoft's own sign-in.
-    key: 'microsoft_mail',
-    label: 'Connect Outlook mail',
-    href: '/connections/microsoft/start?service=mail',
-    detail: 'Read-only. Searching and reading; there is no send permission to grant.',
-  },
-  {
-    key: 'microsoft_calendar',
-    label: 'Connect Outlook calendar',
-    href: '/connections/microsoft/start?service=calendar',
-    detail: 'Read-only. A separate decision from mail, and a separate consent screen.',
-  },
 ] as const;
 
 export default async function ConnectionsPage({

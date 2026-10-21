@@ -1,6 +1,17 @@
 /**
  * Microsoft 365 through the gateway (spec §9.1, §3.3 step 8).
  *
+ * **Skipped: Microsoft is off the tool catalogue.** The provider was withdrawn
+ * from Iteration Two at the client's request, so `TOOLS` no longer lists the
+ * four Microsoft tools and no screen offers the connection. Everything these
+ * tests exercise still exists — `packages/connections/src/microsoft.ts`, the
+ * Outlook reader, the broker wiring in `execute.ts` — it is simply unreachable.
+ *
+ * Kept rather than deleted, and skipped at the file rather than per test, so
+ * that putting the four definitions back in `tools.ts` restores a suite that
+ * already proved the hard property below. Deleting it would mean re-deriving
+ * the §15 measurements from scratch.
+ *
  * The property worth testing here is **narrowing at mint time**, because it is
  * the one that differs from Google and the one that is easy to claim and not
  * have. Microsoft's refresh grant accepts "equivalent to or a subset of" the
@@ -202,7 +213,7 @@ const call = (name: string, args: Record<string, unknown>, instance = app) =>
 const ok = (res: { json(): { result?: { isError?: boolean } } }) =>
   res.json().result?.isError !== true;
 
-describe('narrowing at mint time', () => {
+describe.skip('narrowing at mint time', () => {
   it('mints a mail token that cannot read the calendar', async () => {
     minted.length = 0;
     const res = await call('microsoft_mail.search_messages', { query: 'board' });
@@ -238,7 +249,7 @@ describe('narrowing at mint time', () => {
   });
 });
 
-describe('the bounded window', () => {
+describe.skip('the bounded window', () => {
   it('refuses a window wider than the limit', async () => {
     const res = await call('microsoft_calendar.list_events', {
       time_min: iso(0),
@@ -274,7 +285,7 @@ describe('the bounded window', () => {
   });
 });
 
-describe('what the tools will not do', () => {
+describe.skip('what the tools will not do', () => {
   it('has no tool that writes, sends or deletes', async () => {
     const tools = (
       await app.inject({
@@ -320,7 +331,7 @@ describe('what the tools will not do', () => {
   });
 });
 
-describe('when Microsoft is not configured', () => {
+describe.skip('when Microsoft is not configured', () => {
   it('refuses the tool rather than half-working', async () => {
     // Policy allows it, the connection exists, the tool is listed — and the
     // server has no exchange and no reader. The honest answer is a refusal.

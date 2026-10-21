@@ -328,11 +328,28 @@ since migration 0001 and nothing created the first kind until stage 4.
   one; dropping a replacement does not fail now, it fails on the *next*
   refresh. `MAX_HISTORY_DAYS` bounds a read in step 8, and no code here
   resolves a Slack user id to a name. Console side: `docs/slack-setup.md`.
-- **Microsoft 365 is the fourth provider, and the first whose revocation is
-  local only.** Four read-only tools — `microsoft_mail.search_messages`,
+- **Microsoft 365 is built and withdrawn.** The client removed it from
+  Iteration Two after the work was committed, so every *surface* is gone and
+  every *implementation* stays. Nothing lists it: not `TOOLS`, not
+  `POLICY_TEMPLATES`, not `GRANTABLE`, not the connect buttons or the policy
+  dropdowns. Still here and still tested: `packages/connections/src/microsoft.ts`
+  and `outlook.ts`, the API connect routes (`apps/api/test/microsoft-connect.test.ts`,
+  12 tests, green), the dashboard OAuth round trip, the `execute.ts` wiring and
+  the Permit resource types. `apps/gateway/test/microsoft.test.ts` is
+  `describe.skip` at the file level rather than deleted — restoring the four
+  tool definitions in `tools.ts` and the `microsoft-read` template brings back
+  a suite that already proved the hard property. The removal was forced to go
+  this deep by the drift guards, not by preference: `template-drift` asserts
+  every tool is reachable by some starter rule, and `resource-kinds` asserts
+  the dropdowns offer exactly what `GRANTABLE` accepts, so a tool with no
+  template, or an option with no grantable type, fails the build. Read what
+  follows as the design that is waiting, not as what the product does today.
+
+  Four read-only tools — `microsoft_mail.search_messages`,
   `.read_message`, `microsoft_calendar.list_events`, `.read_event` — against
   `outlook_mailbox` and `outlook_calendar`, each keyed by the delegating human
-  like their Google counterparts. Its own resource types rather than more
+  like their Google counterparts. **It is the first provider whose revocation
+  is local only.** Its own resource types rather than more
   instances of `gmail_mailbox`: one key space for both providers would make
   "this agent may read user X's mail" ambiguous, and revoking Google would
   leave a grant that still read as access to something. No `microsoft_tenant`,
